@@ -1,0 +1,590 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover" />
+  <meta name="theme-color" content="#79b7ff" />
+  <title>VOXEL RUN — Multiplayer v2</title>
+  <style>
+    :root {
+      --glass: rgba(13, 18, 28, .72);
+      --glass2: rgba(255,255,255,.13);
+      --line: rgba(255,255,255,.22);
+      --text: #fff;
+      --accent: #ffd84d;
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { width:100%; height:100%; margin:0; overflow:hidden; background:#7cb6ff; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; touch-action:none; }
+    #game { width:100%; height:100%; display:block; outline:none; }
+    #ui { position:fixed; inset:0; pointer-events:none; color:var(--text); user-select:none; }
+
+    .topbar {
+      position:absolute; top:max(10px, env(safe-area-inset-top)); left:10px; right:10px;
+      display:flex; justify-content:space-between; gap:8px; align-items:flex-start;
+    }
+    .card {
+      background:var(--glass); border:1px solid var(--line); border-radius:15px;
+      padding:9px 12px; box-shadow:0 8px 28px rgba(0,0,0,.18); backdrop-filter:blur(8px);
+    }
+    .brand { font-weight:900; letter-spacing:.08em; font-size:14px; }
+    .sub { margin-top:2px; opacity:.76; font-size:11px; }
+    .stats { display:flex; gap:8px; align-items:center; }
+    .coin { color:var(--accent); font-weight:900; white-space:nowrap; }
+    .server { font-size:11px; font-weight:800; white-space:nowrap; }
+
+    #hint {
+      position:absolute; top:76px; left:50%; transform:translateX(-50%);
+      font-size:11px; text-align:center; max-width:min(92vw, 480px); opacity:.86;
+      background:rgba(10,14,22,.55); padding:7px 11px; border-radius:999px;
+      transition:opacity .4s ease;
+    }
+
+    #joystick {
+      position:absolute; left:max(18px, env(safe-area-inset-left)); bottom:max(24px, calc(env(safe-area-inset-bottom) + 18px));
+      width:126px; height:126px; border-radius:50%; pointer-events:auto; touch-action:none;
+      background:rgba(8,13,24,.28); border:2px solid rgba(255,255,255,.25);
+      box-shadow:inset 0 0 35px rgba(255,255,255,.06);
+    }
+    #stick {
+      position:absolute; width:57px; height:57px; border-radius:50%; left:34.5px; top:34.5px;
+      background:rgba(255,255,255,.73); border:2px solid rgba(255,255,255,.85);
+      box-shadow:0 8px 22px rgba(0,0,0,.28); transform:translate(0,0);
+    }
+    #jump {
+      position:absolute; right:max(22px, env(safe-area-inset-right)); bottom:max(31px, calc(env(safe-area-inset-bottom) + 25px));
+      width:82px; height:82px; border-radius:50%; pointer-events:auto; touch-action:none;
+      border:2px solid rgba(255,255,255,.42); background:rgba(13,18,28,.55); color:#fff;
+      display:grid; place-items:center; font-weight:900; font-size:13px; letter-spacing:.04em;
+      box-shadow:0 8px 24px rgba(0,0,0,.22);
+    }
+    #jump:active { transform:scale(.95); background:rgba(255,255,255,.24); }
+
+    #connectPanel { position:absolute; top:55px; right:10px; width:min(350px,calc(100vw - 20px));
+      pointer-events:auto; color:#fff; font-size:12px; background:rgba(13,18,28,.78);
+      border:1px solid rgba(255,255,255,.22); border-radius:12px; padding:7px 10px; }
+    #connectPanel summary { cursor:pointer; font-weight:800; list-style:none; }
+    #connectPanel[open] { padding:10px; z-index:4; }
+    #connectPanel[open] summary { margin-bottom:9px; }
+    #connectPanel .connectRow { display:flex; gap:5px; margin:8px 0; }
+    #serverUrl { min-width:0; flex:1; padding:8px; border-radius:7px; border:0; }
+    #connectBtn { padding:8px; border:0; border-radius:7px; font-weight:800; background:#ffd84d; }
+    .connectNote { opacity:.8; font-size:11px; }
+    #crosshair { position:absolute; left:50%; top:50%; width:6px; height:6px; margin:-3px 0 0 -3px; border-radius:50%; background:rgba(255,255,255,.62); }
+    #loading { position:fixed; inset:0; display:grid; place-items:center; background:#77b1f5; z-index:10; color:#fff; font-weight:900; letter-spacing:.06em; }
+    #loading .box { text-align:center; padding:18px 22px; border-radius:18px; background:rgba(10,18,32,.25); }
+    #loading small { display:block; margin-top:7px; opacity:.8; font-weight:600; letter-spacing:0; }
+
+    @media (pointer:fine) {
+      #joystick, #jump { opacity:.48; }
+    }
+    @media (max-width:520px) {
+      .topbar { gap:6px; }
+      .card { padding:8px 10px; border-radius:13px; }
+      .brand { font-size:12px; }
+      .sub, .server { font-size:10px; }
+      #hint { top:70px; font-size:10px; }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="game"></canvas>
+  <div id="ui">
+    <div class="topbar">
+      <div class="card">
+        <div class="brand">VOXEL RUN</div>
+        <div class="sub">Multiplayer v2 • Third Person</div>
+      </div>
+      <div class="stats">
+        <div class="card coin" title="คะแนนทดลองเฉพาะเครื่องนี้">🪙 <span id="score">0</span> <small>LOCAL</small></div>
+        <div class="card server" id="netStatus">OFFLINE • LOCAL</div><div class="card server" id="onlineCount">👥 1</div>
+      </div>
+    </div>
+    <div id="hint">มือถือ: จอยซ้ายเพื่อเดิน • ลากด้านขวาเพื่อหมุนกล้อง • JUMP เพื่อกระโดด<br>คอม: WASD • Space • ลากเมาส์เพื่อหมุนกล้อง</div>
+    <details id="connectPanel">
+      <summary>⚙ เชื่อมต่อ Multiplayer</summary>
+      <div>ใส่ URL ของ Cloudflare Worker หลังเผยแพร่ เช่น https://voxel-run-v2-demo.username.workers.dev</div>
+      <div class="connectRow"><input id="serverUrl" type="url" placeholder="https://...workers.dev" autocomplete="url" aria-label="Worker URL"><button id="connectBtn" type="button">เชื่อมต่อ</button></div>
+      <div class="connectNote">คะแนนเหรียญยังเป็นการทดลองบนเครื่องนี้ และไม่บันทึกอันดับ</div>
+    </details>
+    <div id="joystick"><div id="stick"></div></div>
+    <button id="jump" aria-label="Jump">JUMP</button>
+    <div id="crosshair"></div>
+  </div>
+  <div id="loading"><div class="box">กำลังสร้างโลก VOXEL<small>โหลด Babylon.js และสร้างฉาก...</small></div></div>
+
+  <script src="https://cdn.babylonjs.com/babylon.js"></script>
+  <script>
+  (() => {
+    'use strict';
+
+    const canvas = document.getElementById('game');
+    const engine = new BABYLON.Engine(canvas, true, { preserveDrawingBuffer:false, stencil:true, adaptToDeviceRatio:true });
+    const loading = document.getElementById('loading');
+    const scoreEl = document.getElementById('score');
+    const hint = document.getElementById('hint');
+
+    // --------------------------
+    // Game state (prepared for future multiplayer)
+    // --------------------------
+    const gameState = {
+      playerId: 'connecting',
+      server: 'free',
+      score: 0,
+      velocityY: 0,
+      grounded: true,
+      jumpQueued: false,
+      moveX: 0,
+      moveY: 0,
+      cameraYaw: Math.PI,
+      cameraPitch: 0.32,
+      cameraDistance: 8.4,
+      elapsed: 0
+    };
+
+    const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+    const lerp = (a,b,t) => a + (b-a)*t;
+    function lerpAngle(a,b,t) {
+      let d = ((b-a + Math.PI) % (Math.PI*2)) - Math.PI;
+      return a + d*t;
+    }
+
+    function createScene() {
+      const scene = new BABYLON.Scene(engine);
+      scene.clearColor = new BABYLON.Color4(0.47, 0.72, 1.0, 1.0);
+      scene.collisionsEnabled = true;
+      scene.skipPointerMovePicking = true;
+
+      // Lighting
+      const hemi = new BABYLON.HemisphericLight('hemi', new BABYLON.Vector3(0.1, 1, 0.1), scene);
+      hemi.intensity = 0.86;
+      hemi.groundColor = new BABYLON.Color3(0.26,0.29,0.34);
+      const sun = new BABYLON.DirectionalLight('sun', new BABYLON.Vector3(-0.45,-1,0.35), scene);
+      sun.position = new BABYLON.Vector3(18,32,-20);
+      sun.intensity = 0.56;
+
+      // Camera: custom third-person rig for stable mobile behaviour.
+      const camera = new BABYLON.FreeCamera('camera', new BABYLON.Vector3(0,6,-8), scene);
+      camera.minZ = 0.1;
+      camera.fov = 0.92;
+      scene.activeCamera = camera;
+
+      // Materials
+      function mat(name, hex) {
+        const m = new BABYLON.StandardMaterial(name, scene);
+        m.diffuseColor = BABYLON.Color3.FromHexString(hex);
+        m.specularColor = new BABYLON.Color3(0.04,0.04,0.04);
+        return m;
+      }
+      const grassMat = mat('grass','#5EAF55');
+      const grass2Mat = mat('grass2','#70BD5E');
+      const dirtMat = mat('dirt','#8B6340');
+      const stoneMat = mat('stone','#88909A');
+      const darkStoneMat = mat('darkStone','#5F6873');
+      const trunkMat = mat('trunk','#765135');
+      const leafMat = mat('leaf','#3D8C49');
+      const redMat = mat('shirt','#E74B4B');
+      const skinMat = mat('skin','#F0BE8E');
+      const hairMat = mat('hair','#2B2B31');
+      const pantsMat = mat('pants','#253247');
+      const shoeMat = mat('shoe','#161A20');
+      const coinMat = new BABYLON.StandardMaterial('coinMat', scene);
+      coinMat.diffuseColor = BABYLON.Color3.FromHexString('#FFD84D');
+      coinMat.emissiveColor = BABYLON.Color3.FromHexString('#8C6810').scale(.34);
+      coinMat.specularColor = new BABYLON.Color3(.7,.55,.12);
+
+      // Invisible collision floor. Visual ground uses voxel tiles for style/performance.
+      const collisionFloor = BABYLON.MeshBuilder.CreateGround('collisionFloor', {width:58, height:58}, scene);
+      collisionFloor.position.y = 0;
+      collisionFloor.isVisible = false;
+      collisionFloor.checkCollisions = true;
+
+      // Voxel floor via thin instances: visually hundreds of blocks, one draw structure.
+      const tile = BABYLON.MeshBuilder.CreateBox('voxelTile', {size:1}, scene);
+      tile.material = grassMat;
+      tile.isVisible = false;
+      const groundCount = 51 * 51;
+      const groundMatrices = new Float32Array(groundCount * 16);
+      let groundIndex = 0;
+      for (let x=-25; x<=25; x++) {
+        for (let z=-25; z<=25; z++) {
+          const matrix = BABYLON.Matrix.Compose(
+            new BABYLON.Vector3(0.98, 0.60, 0.98),
+            BABYLON.Quaternion.Identity(),
+            new BABYLON.Vector3(x, -0.30, z)
+          );
+          matrix.copyToArray(groundMatrices, groundIndex * 16);
+          groundIndex++;
+        }
+      }
+      tile.thinInstanceSetBuffer('matrix', groundMatrices, 16, true);
+
+      // Checker tint using a second thin-instance mesh on selected cells.
+      const tile2 = BABYLON.MeshBuilder.CreateBox('voxelTile2', {size:1}, scene);
+      tile2.material = grass2Mat;
+      tile2.isVisible = false;
+      const tintCount = 25 * 25;
+      const tintMatrices = new Float32Array(tintCount * 16);
+      let tintIndex = 0;
+      for (let x=-24; x<=24; x+=2) {
+        for (let z=-24; z<=24; z+=2) {
+          const matrix = BABYLON.Matrix.Compose(
+            new BABYLON.Vector3(0.96,0.012,0.96), BABYLON.Quaternion.Identity(), new BABYLON.Vector3(x,0.008,z)
+          );
+          matrix.copyToArray(tintMatrices, tintIndex * 16);
+          tintIndex++;
+        }
+      }
+      tile2.thinInstanceSetBuffer('matrix', tintMatrices, 16, true);
+
+      // Arena border blocks
+      function makeBlock(name, pos, scale, material, collider=true) {
+        const b = BABYLON.MeshBuilder.CreateBox(name, {size:1}, scene);
+        b.position.copyFrom(pos);
+        b.scaling.copyFrom(scale);
+        b.material = material;
+        b.checkCollisions = collider;
+        return b;
+      }
+      for (let i=-25; i<=25; i+=2) {
+        makeBlock('borderN', new BABYLON.Vector3(i,1.0,25.8), new BABYLON.Vector3(2,2,1), darkStoneMat);
+        makeBlock('borderS', new BABYLON.Vector3(i,1.0,-25.8), new BABYLON.Vector3(2,2,1), darkStoneMat);
+        makeBlock('borderE', new BABYLON.Vector3(25.8,1.0,i), new BABYLON.Vector3(1,2,2), darkStoneMat);
+        makeBlock('borderW', new BABYLON.Vector3(-25.8,1.0,i), new BABYLON.Vector3(1,2,2), darkStoneMat);
+      }
+
+      // Voxel obstacles / small platforms
+      const obstacleData = [
+        [-8,1,-6, 4,2,3,'stone'], [7,1,-5, 3,2,3,'stone'],
+        [-3,.5,8, 5,1,3,'dirt'], [10,.75,8, 3,1.5,5,'dirt'],
+        [-12,.5,7, 2,1,6,'stone'], [2,.5,-12, 6,1,2,'stone'],
+        [14,.5,-13, 4,1,4,'dirt'], [-15,.5,-14, 5,1,3,'dirt']
+      ];
+      obstacleData.forEach((o,idx) => {
+        const [x,y,z,sx,sy,sz,type] = o;
+        makeBlock('obstacle'+idx, new BABYLON.Vector3(x,y,z), new BABYLON.Vector3(sx,sy,sz), type==='stone'?stoneMat:dirtMat);
+      });
+
+      // Simple voxel trees
+      const treeSpots = [[-18,-4],[18,4],[-18,16],[17,17],[-7,17],[18,-18],[-18,-19]];
+      treeSpots.forEach(([x,z],i) => {
+        makeBlock('trunk'+i, new BABYLON.Vector3(x,1.5,z), new BABYLON.Vector3(.8,3,.8), trunkMat, true);
+        makeBlock('leaves'+i, new BABYLON.Vector3(x,3.55,z), new BABYLON.Vector3(3,2.2,3), leafMat, true);
+      });
+
+      // Player collider + block character children
+      const player = BABYLON.MeshBuilder.CreateBox('playerCollider', {width:.82,height:1.82,depth:.82}, scene);
+      player.position = new BABYLON.Vector3(0,0.93,0);
+      player.isVisible = false;
+      player.checkCollisions = true;
+      player.ellipsoid = new BABYLON.Vector3(.41,.91,.41);
+      player.ellipsoidOffset = BABYLON.Vector3.Zero();
+
+      const avatar = new BABYLON.TransformNode('avatar', scene);
+      avatar.parent = player;
+      avatar.position.y = -0.02;
+
+      const body = BABYLON.MeshBuilder.CreateBox('body',{width:.72,height:.72,depth:.38},scene);
+      body.parent=avatar; body.position.y=.05; body.material=redMat;
+      const head = BABYLON.MeshBuilder.CreateBox('head',{size:.54},scene);
+      head.parent=avatar; head.position.y=.70; head.material=skinMat;
+      const hair = BABYLON.MeshBuilder.CreateBox('hair',{width:.57,height:.17,depth:.57},scene);
+      hair.parent=avatar; hair.position.y=1.00; hair.material=hairMat;
+      const armL = BABYLON.MeshBuilder.CreateBox('armL',{width:.20,height:.68,depth:.22},scene);
+      armL.parent=avatar; armL.position=new BABYLON.Vector3(-.48,.04,0); armL.material=skinMat;
+      const armR = armL.clone('armR'); armR.parent=avatar; armR.position.x=.48;
+      const legL = BABYLON.MeshBuilder.CreateBox('legL',{width:.27,height:.72,depth:.30},scene);
+      legL.parent=avatar; legL.position=new BABYLON.Vector3(-.19,-.68,0); legL.material=pantsMat;
+      const legR = legL.clone('legR'); legR.parent=avatar; legR.position.x=.19;
+      const footL = BABYLON.MeshBuilder.CreateBox('footL',{width:.29,height:.17,depth:.43},scene);
+      footL.parent=avatar; footL.position=new BABYLON.Vector3(-.19,-1.02,-.06); footL.material=shoeMat;
+      const footR = footL.clone('footR'); footR.parent=avatar; footR.position.x=.19;
+
+      // Multiplayer v2: anonymous positions only. Coins and scores never leave this page.
+      const remotePlayers = new Map();
+      const netStatus = document.getElementById('netStatus');
+      const onlineCount = document.getElementById('onlineCount');
+      const panel = document.getElementById('connectPanel');
+      const serverUrlInput = document.getElementById('serverUrl');
+      const connectBtn = document.getElementById('connectBtn');
+      let socket = null, reconnectTimer = null, lastSend = 0, lastPosition = null;
+      let endpoint = localStorage.getItem('voxelV2Endpoint') || '';
+      serverUrlInput.value = endpoint;
+
+      function setStatus(status) { netStatus.textContent = status; }
+      function updateCount(n) { onlineCount.textContent = '👥 ' + Math.max(1,Number(n)||1); }
+      function clearRemotes() {
+        for (const id of remotePlayers.keys()) removeRemote(id);
+        updateCount(1);
+      }
+      function removeRemote(id) {
+        const item = remotePlayers.get(id);
+        if (!item) return;
+        item.root.dispose(false, false);
+        item.blue.dispose();
+        remotePlayers.delete(id);
+      }
+      function addRemote(p) {
+        if (!p || typeof p.id !== 'string' || p.id === gameState.playerId || remotePlayers.has(p.id)) return;
+        const root = new BABYLON.TransformNode('remote-'+p.id,scene);
+        root.position.set(p.x,p.y,p.z);
+        const figure = new BABYLON.TransformNode('figure-'+p.id,scene);
+        figure.parent = root;
+        figure.rotation.y = p.r;
+        const blue = mat('remoteShirt-'+p.id,'#368BEE');
+        function box(name, w, h, d, x, y, z, material) {
+          const part = BABYLON.MeshBuilder.CreateBox(name,{width:w,height:h,depth:d},scene);
+          part.parent=figure; part.position.set(x,y,z); part.material=material;
+        }
+        box('body',.72,.72,.38,0,.05,0,blue);
+        box('head',.54,.54,.54,0,.70,0,skinMat);
+        box('hair',.57,.17,.57,0,1,0,hairMat);
+        box('armL',.20,.68,.22,-.48,.04,0,skinMat);
+        box('armR',.20,.68,.22,.48,.04,0,skinMat);
+        box('legL',.27,.72,.30,-.19,-.68,0,pantsMat);
+        box('legR',.27,.72,.30,.19,-.68,0,pantsMat);
+        box('footL',.29,.17,.43,-.19,-1.02,-.06,shoeMat);
+        box('footR',.29,.17,.43,.19,-1.02,-.06,shoeMat);
+        remotePlayers.set(p.id,{root,figure,blue,target:new BABYLON.Vector3(p.x,p.y,p.z),rotation:p.r,seen:Date.now()});
+      }
+      function incoming(event) {
+        let m; try { m=JSON.parse(event.data); } catch (_) { return; }
+        if (m.type === 'welcome') {
+          gameState.playerId=m.id;
+          player.position.set(m.spawn.x,m.spawn.y,m.spawn.z);
+          gameState.velocityY=0;
+          lastPosition=null;
+          clearRemotes();
+          (m.players || []).forEach(addRemote);
+          updateCount(m.count);
+          setStatus('FREE • ONLINE');
+          panel.open=false;
+        } else if (m.type === 'join' || m.type === 'move') {
+          if (!m.player || m.player.id === gameState.playerId) return;
+          addRemote(m.player);
+          const other=remotePlayers.get(m.player.id);
+          if (other) {
+            other.target.set(m.player.x,m.player.y,m.player.z);
+            other.rotation=m.player.r;
+            other.seen=Date.now();
+          }
+          if (m.count) updateCount(m.count);
+        } else if (m.type === 'leave') {
+          removeRemote(m.id); updateCount(m.count);
+        }
+      }
+      function connect() {
+        clearTimeout(reconnectTimer);
+        if (socket) { socket.onclose=null; socket.close(); socket=null; }
+        clearRemotes();
+        if (!endpoint) { setStatus('OFFLINE • LOCAL'); return; }
+        let u;
+        try {
+          u=new URL(endpoint);
+          if (!['https:','wss:'].includes(u.protocol)) throw Error('Use HTTPS');
+          u.protocol='wss:';
+          u.pathname='/play'; u.search=''; u.hash='';
+        } catch (_) { setStatus('URL ไม่ถูกต้อง'); panel.open=true; return; }
+        setStatus('กำลังเชื่อมต่อ...');
+        const ws=new WebSocket(u.href);
+        socket=ws;
+        ws.onmessage=incoming;
+        ws.onerror=()=>{ if (socket===ws) setStatus('เชื่อมต่อไม่สำเร็จ'); };
+        ws.onclose=()=>{
+          if (socket!==ws) return;
+          clearRemotes(); gameState.playerId='offline';
+          setStatus('OFFLINE • ลองใหม่');
+          reconnectTimer=setTimeout(connect,3000);
+        };
+      }
+      connectBtn.addEventListener('click',()=>{
+        endpoint=serverUrlInput.value.trim().replace(/\/+$/,'');
+        localStorage.setItem('voxelV2Endpoint',endpoint);
+        connect();
+      });
+      if (endpoint) connect(); else panel.open=true;
+
+      function updateNetwork(dt) {
+        for (const [id,other] of remotePlayers) {
+          if (Date.now()-other.seen>30000) { removeRemote(id); continue; }
+          other.root.position=BABYLON.Vector3.Lerp(other.root.position,other.target,Math.min(1,dt*12));
+          other.figure.rotation.y=lerpAngle(other.figure.rotation.y,other.rotation,Math.min(1,dt*12));
+        }
+        if (!socket || socket.readyState!==WebSocket.OPEN || gameState.playerId==='connecting') return;
+        const now=performance.now();
+        if (now-lastSend<100) return;
+        const position={x:+player.position.x.toFixed(3),y:+player.position.y.toFixed(3),
+          z:+player.position.z.toFixed(3),r:+avatar.rotation.y.toFixed(3)};
+        if (lastPosition && now-lastSend<1500 &&
+            Math.hypot(position.x-lastPosition.x,position.y-lastPosition.y,position.z-lastPosition.z)<.015 &&
+            Math.abs(position.r-lastPosition.r)<.015) return;
+        socket.send(JSON.stringify({type:'move',...position}));
+        lastSend=now; lastPosition=position;
+      }
+
+      // Coins (LOCAL prototype only; later collection is validated by authoritative server)
+      const coinPositions = [
+        [0,2], [3,4], [-4,5], [8,1], [-8,-2], [12,12], [-13,12], [15,-8], [-16,-9],
+        [5,15], [-4,-16], [19,0], [-20,1], [11,-18], [-12,-18], [2,20], [-1,-8], [9,17]
+      ];
+      const coins = [];
+      coinPositions.forEach(([x,z],i) => {
+        const c = BABYLON.MeshBuilder.CreateCylinder('coin_'+i,{diameter:.72,height:.16,tessellation:16},scene);
+        c.rotation.x = Math.PI/2;
+        c.position = new BABYLON.Vector3(x,1.05,z);
+        c.material = coinMat;
+        c.metadata = { collected:false, baseY:c.position.y, phase:i*.73 };
+        coins.push(c);
+      });
+
+      // Input — keyboard
+      const keys = Object.create(null);
+      window.addEventListener('keydown', e => {
+        keys[e.code] = true;
+        if (['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code)) e.preventDefault();
+        if (e.code === 'Space') gameState.jumpQueued = true;
+      }, {passive:false});
+      window.addEventListener('keyup', e => { keys[e.code] = false; });
+      window.addEventListener('blur', () => { Object.keys(keys).forEach(k=>keys[k]=false); gameState.moveX=0; gameState.moveY=0; });
+
+      // Input — joystick
+      const joystick = document.getElementById('joystick');
+      const stick = document.getElementById('stick');
+      let joyId = null;
+      function updateJoy(e) {
+        const r = joystick.getBoundingClientRect();
+        const cx=r.left+r.width/2, cy=r.top+r.height/2;
+        let dx=e.clientX-cx, dy=e.clientY-cy;
+        const max=r.width*.34;
+        const len=Math.hypot(dx,dy) || 1;
+        if (len>max) { dx=dx/len*max; dy=dy/len*max; }
+        stick.style.transform=`translate(${dx}px,${dy}px)`;
+        gameState.moveX=clamp(dx/max,-1,1);
+        gameState.moveY=clamp(-dy/max,-1,1);
+      }
+      joystick.addEventListener('pointerdown', e=>{ joyId=e.pointerId; joystick.setPointerCapture(e.pointerId); updateJoy(e); e.preventDefault(); });
+      joystick.addEventListener('pointermove', e=>{ if(e.pointerId===joyId) updateJoy(e); });
+      const endJoy=e=>{ if(e.pointerId!==joyId)return; joyId=null; gameState.moveX=0; gameState.moveY=0; stick.style.transform='translate(0,0)'; };
+      joystick.addEventListener('pointerup',endJoy); joystick.addEventListener('pointercancel',endJoy);
+      document.getElementById('jump').addEventListener('pointerdown', e=>{ gameState.jumpQueued=true; e.preventDefault(); });
+
+      // Camera drag. Ignore events that start on UI controls.
+      let lookId=null, lastX=0, lastY=0;
+      canvas.addEventListener('pointerdown', e=>{
+        lookId=e.pointerId; lastX=e.clientX; lastY=e.clientY; canvas.setPointerCapture(e.pointerId);
+      });
+      canvas.addEventListener('pointermove', e=>{
+        if(e.pointerId!==lookId)return;
+        const dx=e.clientX-lastX, dy=e.clientY-lastY; lastX=e.clientX; lastY=e.clientY;
+        gameState.cameraYaw -= dx*0.0061;
+        gameState.cameraPitch = clamp(gameState.cameraPitch + dy*0.0045, -0.02, 0.72);
+      });
+      const endLook=e=>{ if(e.pointerId===lookId) lookId=null; };
+      canvas.addEventListener('pointerup',endLook); canvas.addEventListener('pointercancel',endLook);
+      canvas.addEventListener('wheel', e=>{
+        gameState.cameraDistance = clamp(gameState.cameraDistance + Math.sign(e.deltaY)*.6, 4.8, 12.5);
+        e.preventDefault();
+      }, {passive:false});
+
+      // Main update
+      scene.onBeforeRenderObservable.add(() => {
+        const dt = Math.min(engine.getDeltaTime()/1000, 0.033);
+        gameState.elapsed += dt;
+
+        let ix=gameState.moveX, iy=gameState.moveY;
+        if (keys['KeyA'] || keys['ArrowLeft']) ix -= 1;
+        if (keys['KeyD'] || keys['ArrowRight']) ix += 1;
+        if (keys['KeyW'] || keys['ArrowUp']) iy += 1;
+        if (keys['KeyS'] || keys['ArrowDown']) iy -= 1;
+        const len=Math.hypot(ix,iy);
+        if(len>1){ ix/=len; iy/=len; }
+
+        // Camera-relative movement on XZ plane.
+        const forward = new BABYLON.Vector3(Math.sin(gameState.cameraYaw),0,Math.cos(gameState.cameraYaw));
+        const right = new BABYLON.Vector3(forward.z,0,-forward.x);
+        const move = forward.scale(iy).add(right.scale(ix));
+        const moving = move.lengthSquared() > 0.002;
+        const speed = 5.35;
+        if (moving) {
+          move.normalize();
+          player.moveWithCollisions(move.scale(speed*dt));
+          const targetRot = Math.atan2(move.x, move.z);
+          avatar.rotation.y = lerpAngle(avatar.rotation.y, targetRot, clamp(dt*12,0,1));
+          const bob = Math.sin(gameState.elapsed*13)*0.05;
+          body.position.y = .05 + bob;
+          armL.rotation.x = Math.sin(gameState.elapsed*12)*.55;
+          armR.rotation.x = -armL.rotation.x;
+          legL.rotation.x = -armL.rotation.x;
+          legR.rotation.x = armL.rotation.x;
+        } else {
+          body.position.y = lerp(body.position.y,.05,clamp(dt*10,0,1));
+          armL.rotation.x = lerp(armL.rotation.x,0,clamp(dt*9,0,1));
+          armR.rotation.x = lerp(armR.rotation.x,0,clamp(dt*9,0,1));
+          legL.rotation.x = lerp(legL.rotation.x,0,clamp(dt*9,0,1));
+          legR.rotation.x = lerp(legR.rotation.x,0,clamp(dt*9,0,1));
+        }
+
+        // Ground/jump uses collider contact with flat collision floor.
+        if (player.position.y <= 0.94) {
+          gameState.grounded = true;
+          if (gameState.velocityY < 0) gameState.velocityY = 0;
+          player.position.y = Math.max(player.position.y,0.93);
+        } else {
+          gameState.grounded = false;
+        }
+        if (gameState.jumpQueued && gameState.grounded) {
+          gameState.velocityY = 7.7;
+          gameState.grounded = false;
+        }
+        gameState.jumpQueued = false;
+        gameState.velocityY += -20.5 * dt;
+        player.moveWithCollisions(new BABYLON.Vector3(0,gameState.velocityY*dt,0));
+        if (player.position.y < -5) {
+          player.position.set(0,.93,0); gameState.velocityY=0;
+        }
+
+        // Third-person camera follow with smoothing.
+        const target = player.position.add(new BABYLON.Vector3(0,0.72,0));
+        const cp=Math.cos(gameState.cameraPitch), sp=Math.sin(gameState.cameraPitch);
+        const offset = new BABYLON.Vector3(
+          -Math.sin(gameState.cameraYaw)*cp*gameState.cameraDistance,
+          2.2 + sp*gameState.cameraDistance,
+          -Math.cos(gameState.cameraYaw)*cp*gameState.cameraDistance
+        );
+        const desired = target.add(offset);
+        camera.position = BABYLON.Vector3.Lerp(camera.position, desired, 1-Math.pow(.002,dt));
+        camera.setTarget(target);
+
+        updateNetwork(dt);
+
+        // Coins animation + local collection prototype.
+        coins.forEach(c=>{
+          if(c.metadata.collected)return;
+          c.rotation.z += dt*2.8;
+          c.position.y = c.metadata.baseY + Math.sin(gameState.elapsed*2.8+c.metadata.phase)*.12;
+          const dx=c.position.x-player.position.x, dz=c.position.z-player.position.z;
+          if(dx*dx+dz*dz < 1.15*1.15) {
+            c.metadata.collected=true;
+            c.setEnabled(false);
+            gameState.score++;
+            scoreEl.textContent=String(gameState.score);
+          }
+        });
+      });
+
+      return scene;
+    }
+
+    const scene = createScene();
+    engine.runRenderLoop(() => scene.render());
+    window.addEventListener('resize', () => engine.resize());
+
+    scene.executeWhenReady(() => {
+      loading.style.opacity = '0';
+      loading.style.transition = 'opacity .35s ease';
+      setTimeout(()=>loading.remove(),380);
+      setTimeout(()=>hint.style.opacity='0',7000);
+    });
+  })();
+  </script>
+</body>
+</html>
