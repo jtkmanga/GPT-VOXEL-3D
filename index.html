@@ -1,0 +1,3345 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Voxel Adventure 3D - Secure Worker Beta</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- Three.js Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <!-- Google Font (Kanit) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+
+    <!-- Firebase SDKs (v10.8.0 - Compat Version for Web) -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
+
+    <style>
+        * {
+            font-family: 'Kanit', sans-serif;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: manipulation;
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #0f172a;
+        }
+
+        #game-canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        /* Virtual Joystick Styles */
+        .joystick-container {
+            position: absolute;
+            bottom: 30px;
+            left: 30px;
+            width: 120px;
+            height: 120px;
+            background: rgba(255, 255, 255, 0.15);
+            backdrop-filter: blur(8px);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            touch-action: none;
+            z-index: 20;
+        }
+
+        .joystick-handle {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 50px;
+            height: 50px;
+            background: linear-gradient(135deg, #f59e0b, #d97706);
+            border: 2px solid #ffffff;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            pointer-events: none;
+        }
+
+        /* 3D Floating Name Tag */
+        .name-tag {
+            position: absolute;
+            transform: translate(-50%, -100%);
+            background: rgba(15, 23, 42, 0.85);
+            border: 1.5px solid #f59e0b;
+            color: #ffffff;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 700;
+            white-space: nowrap;
+            pointer-events: none;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: opacity 0.2s ease;
+            z-index: 10;
+        }
+
+        /* Wheel Pointer Arrow */
+        .wheel-pointer {
+            width: 0;
+            height: 0;
+            border-left: 18px solid transparent;
+            border-right: 18px solid transparent;
+            border-top: 30px solid #ef4444;
+            filter: drop-shadow(0px 4px 6px rgba(0,0,0,0.4));
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(245, 158, 11, 0.5);
+            border-radius: 10px;
+        }
+
+        /* Landscape Orientation Warning Screen */
+        #portrait-warning {
+            display: none;
+        }
+
+        @media screen and (orientation: portrait) {
+            #portrait-warning {
+                display: flex !important;
+            }
+        }
+
+        @media screen and (max-height: 500px) {
+            .joystick-container {
+                width: 85px !important;
+                height: 85px !important;
+                bottom: 12px !important;
+                left: 12px !important;
+            }
+            .joystick-handle {
+                width: 36px !important;
+                height: 36px !important;
+            }
+            #btn-jump {
+                width: 52px !important;
+                height: 52px !important;
+                bottom: 12px !important;
+                right: 12px !important;
+                font-size: 1rem !important;
+            }
+            .hud-btn {
+                width: 36px !important;
+                height: 36px !important;
+                border-radius: 12px !important;
+            }
+            .hud-widget {
+                padding: 4px 8px !important;
+                border-radius: 12px !important;
+            }
+            .hud-mini-board {
+                width: 150px !important;
+                padding: 6px 8px !important;
+            }
+            .wheel-canvas-container {
+                width: 170px !important;
+                height: 170px !important;
+            }
+        }
+    </style>
+</head>
+<body class="relative">
+
+    <!-- Canvas for Three.js Rendering -->
+    <canvas id="game-canvas"></canvas>
+
+    <!-- Floating 2D Player Name Tag -->
+    <div id="player-nametag" class="name-tag hidden">
+        <span id="nametag-text">Player</span>
+    </div>
+
+    <!-- FORCE LANDSCAPE OVERLAY -->
+    <div id="portrait-warning" class="fixed inset-0 z-[100] bg-slate-950 text-white flex-col items-center justify-center p-6 text-center space-y-4">
+        <div class="w-20 h-20 rounded-2xl bg-amber-500/20 border-2 border-amber-500 text-amber-400 flex items-center justify-center text-4xl animate-bounce">
+            <i class="fa-solid fa-rotate"></i>
+        </div>
+        <h2 class="text-2xl font-extrabold text-amber-400">กรุณาหมุนจอเป็นแนวนอน</h2>
+        <p class="text-slate-300 text-sm max-w-xs">เกมนี้ออกแบบมาสำหรับเล่นในหน้าจอแนวนอน (Landscape Mode) เท่านั้น กรุณาเอียงอุปกรณ์ของคุณเพื่อเริ่มเล่น</p>
+    </div>
+
+    <!-- START / LOGIN OVERLAY -->
+    <div id="start-screen" class="absolute inset-0 z-50 flex items-center justify-center bg-slate-950/85 backdrop-blur-md p-3">
+        <div class="max-w-md w-full max-h-[95vh] overflow-y-auto bg-slate-900 border-2 border-amber-500/40 rounded-3xl p-4 sm:p-6 text-center shadow-2xl relative">
+            <div class="absolute -top-20 -left-20 w-48 h-48 bg-amber-500/20 rounded-full blur-3xl pointer-events-none"></div>
+            <div class="absolute -bottom-20 -right-20 w-48 h-48 bg-rose-500/20 rounded-full blur-3xl pointer-events-none"></div>
+
+            <!-- Game Title -->
+            <div class="mb-4 relative">
+                <div class="inline-block bg-gradient-to-r from-amber-500 to-rose-500 text-transparent bg-clip-text">
+                    <h1 class="text-3xl sm:text-4xl font-extrabold tracking-wider uppercase">VOXEL WORLD</h1>
+                </div>
+                <p class="text-slate-400 text-xs mt-0.5">3D Sunset Adventure & Servers (Multiplayer)</p>
+            </div>
+
+            <!-- Login / Auth Container -->
+            <div id="auth-container" class="space-y-3">
+                <!-- State 1: Real Google Login Button -->
+                <button id="btn-google-login" onclick="loginWithGoogle()" class="w-full flex items-center justify-center gap-3 bg-white hover:bg-slate-100 text-slate-800 font-bold py-3 px-4 rounded-xl shadow-lg transition duration-200 transform active:scale-95 text-sm">
+                    <svg class="w-5 h-5" viewBox="0 0 24 24">
+                        <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                        <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                        <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                        <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                    </svg>
+                    <span>เข้าสู่ระบบด้วย Google Account</span>
+                </button>
+
+                <!-- State 2: Profile Info Card (Shown when logged in) -->
+                <div id="user-profile-card" class="hidden bg-slate-800/90 p-3 rounded-2xl border border-amber-500/40 flex items-center gap-3">
+                    <img id="user-avatar" src="" class="w-10 h-10 rounded-full border-2 border-amber-400 object-cover shadow" alt="User Avatar">
+                    <div class="text-left flex-1 min-w-0">
+                        <div id="user-display-name" class="text-sm text-white font-bold truncate">...</div>
+                        <div id="user-email" class="text-[11px] text-amber-400 truncate">...</div>
+                    </div>
+                    <button onclick="logoutGoogle()" class="text-xs text-rose-400 hover:text-rose-300 font-semibold px-2 py-1 border border-rose-500/30 rounded-lg hover:bg-rose-500/10 transition">
+                        ออกจากระบบ
+                    </button>
+                </div>
+
+                <!-- Username Input for Game -->
+                <div class="text-left">
+                    <label class="block text-[11px] font-semibold text-slate-300 mb-1 ml-1">ชื่อที่แสดงในเกม (Player Name)</label>
+                    <input type="text" id="input-username" placeholder="กรุณาล็อกอินหรือพิมพ์ชื่อ..." maxlength="12" class="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-amber-500 font-semibold transition">
+                </div>
+
+                <!-- 🌐 SERVER SELECTION SECTION (FREE & VIP) -->
+                <div class="text-left mt-3">
+                    <div class="flex items-center justify-between mb-1 ml-1">
+                        <label class="text-[11px] font-bold text-amber-400 flex items-center gap-1">
+                            <i class="fa-solid fa-server text-xs"></i> เลือกเซิร์ฟเวอร์ (แมพแยกอิสระ)
+                        </label>
+                        <span id="selected-server-badge" class="text-[10px] font-bold bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full border border-amber-500/30">
+                            ยังไม่ได้เลือกเซิร์ฟเวอร์
+                        </span>
+                    </div>
+
+                    <div id="servers-container" class="space-y-2 max-h-52 overflow-y-auto pr-1">
+                        <!-- Free Server 1 -->
+                        <div id="card-free1" class="bg-slate-800/80 border border-slate-700 rounded-xl p-2.5 flex items-center justify-between transition">
+                            <div class="text-left">
+                                <div class="text-xs font-bold text-white flex items-center gap-1.5">
+                                    <span>🌐 Free Server</span>
+                                    <span class="text-[9px] bg-blue-500/20 text-blue-400 border border-blue-500/40 px-1.5 py-0.2 rounded">ฟรีไม่จำกัด</span>
+                                </div>
+                                <div class="text-[10px] text-slate-400 mt-0.5">ผู้เล่น: <span class="text-blue-400 font-bold">ไม่จำกัดผู้เล่น</span></div>
+                            </div>
+                            <div id="action-free1">
+                                <button onclick="selectFreeServer('free1')" class="bg-blue-600 hover:bg-blue-500 text-white font-bold text-[11px] px-3 py-1 rounded-lg transition active:scale-95">เลือกเล่น</button>
+                            </div>
+                        </div>
+
+                        <!-- VIP Server 1 -->
+                        <div id="card-vip1" class="bg-slate-800/80 border border-slate-700 rounded-xl p-2.5 flex items-center justify-between transition">
+                            <div class="text-left">
+                                <div class="text-xs font-bold text-white flex items-center gap-1.5">
+                                    <span>👑 VIP Server 1</span>
+                                    <span id="badge-owned-vip1" class="hidden text-[9px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 px-1.5 py-0.2 rounded">มีสิทธิ์แล้ว</span>
+                                </div>
+                                <div class="text-[10px] text-slate-400 mt-0.5">สมาชิก: <span id="count-vip1" class="text-amber-400 font-bold">0/100</span></div>
+                            </div>
+                            <div id="action-vip1" class="flex gap-1"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Start Game Button -->
+                <button id="btn-start-game" onclick="startGame()" class="w-full bg-gradient-to-r from-amber-500 via-amber-600 to-rose-600 hover:from-amber-400 hover:to-rose-500 text-white font-extrabold py-3 px-5 rounded-xl shadow-xl shadow-amber-600/30 transition transform active:scale-95 text-base flex items-center justify-center gap-2 mt-2">
+                    <i class="fa-solid fa-gamepad"></i>
+                    <span>เริ่มเล่นเกม</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- IN-GAME HUD OVERLAY -->
+    <div id="game-hud" class="absolute inset-0 z-30 pointer-events-none hidden flex flex-col justify-between p-2 sm:p-4">
+        <!-- Top Navigation Bar -->
+        <div class="flex items-start justify-between w-full pointer-events-auto gap-2">
+            <div class="flex items-center gap-2 flex-wrap">
+                <button onclick="openHomeConfirmModal()" class="hud-btn w-10 h-10 bg-slate-900/85 backdrop-blur-md border-2 border-amber-500/60 text-amber-400 hover:text-amber-300 hover:bg-slate-800 rounded-xl flex items-center justify-center shadow-lg transition active:scale-90">
+                    <i class="fa-solid fa-house text-base"></i>
+                </button>
+                <button onclick="toggleAudio()" id="btn-audio-toggle" class="hud-btn w-10 h-10 bg-slate-900/85 backdrop-blur-md border-2 border-amber-500/60 text-amber-400 hover:text-amber-300 hover:bg-slate-800 rounded-xl flex items-center justify-center shadow-lg transition active:scale-90">
+                    <i id="audio-icon" class="fa-solid fa-volume-high text-base"></i>
+                </button>
+                <div class="hud-widget bg-slate-900/85 backdrop-blur-md border-2 border-amber-500/60 text-white px-3 py-1.5 rounded-xl flex items-center gap-2 shadow-lg">
+                    <div class="hud-widget-icon w-7 h-7 rounded-full bg-amber-500/20 border border-amber-400 flex items-center justify-center">
+                        <i class="fa-solid fa-coins text-amber-400 text-xs"></i>
+                    </div>
+                    <div>
+                        <div class="text-[9px] text-amber-300 uppercase font-semibold leading-none">คะแนนสะสม</div>
+                        <div id="hud-score" class="text-sm sm:text-base font-extrabold text-amber-400 leading-tight">0</div>
+                    </div>
+                </div>
+                <div class="hud-widget bg-slate-900/85 backdrop-blur-md border-2 border-amber-500/60 text-white px-3 py-1.5 rounded-xl flex items-center gap-2 shadow-lg">
+                    <div class="hud-widget-icon w-7 h-7 rounded-full bg-amber-500/20 border border-amber-400 flex items-center justify-center">
+                        <i class="fa-solid fa-box-open text-amber-400 text-xs"></i>
+                    </div>
+                    <div>
+                        <div class="text-[9px] text-amber-300 uppercase font-semibold leading-none">กล่องสมบัติถัดไป</div>
+                        <div id="hud-box-timer" class="text-xs sm:text-sm font-extrabold text-emerald-400 leading-tight">พร้อมเปิด!</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Leaderboard Mini HUD -->
+            <div class="hud-mini-board bg-slate-900/85 backdrop-blur-md border-2 border-amber-500/60 rounded-xl p-2 w-44 sm:w-52 shadow-lg text-white">
+                <div class="flex items-center justify-between border-b border-slate-700/60 pb-1 mb-1">
+                    <div class="flex items-center gap-1 text-[11px] font-bold text-amber-400">
+                        <i class="fa-solid fa-trophy text-amber-400"></i>
+                        <span>5 อันดับสูงสุด (Real-time)</span>
+                    </div>
+                    <button onclick="openFullLeaderboard()" class="text-[9px] text-slate-400 hover:text-amber-300 underline font-medium">ดูทั้งหมด</button>
+                </div>
+                <div id="mini-leaderboard-list" class="space-y-1 text-[10px] sm:text-xs"></div>
+            </div>
+        </div>
+
+        <!-- SHOP BUTTON ON THE LEFT SIDE OF THE SCREEN -->
+        <div class="absolute left-2 sm:left-4 top-16 pointer-events-auto z-40">
+            <button onclick="openShopModal()" class="w-12 h-12 bg-slate-900/90 hover:bg-slate-800 backdrop-blur-md border-2 border-amber-400 text-amber-400 rounded-2xl flex items-center justify-center shadow-2xl transition active:scale-90 group relative">
+                <i class="fa-solid fa-store text-xl group-hover:scale-110 transition"></i>
+                <span class="absolute -bottom-1 -right-1 flex h-3 w-3">
+                  <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                  <span class="relative inline-flex rounded-full h-3 w-3 bg-amber-500"></span>
+                </span>
+            </button>
+        </div>
+
+        <!-- Touch Controls -->
+        <div class="relative w-full h-full pointer-events-none">
+            <div id="joystick-zone" class="joystick-container pointer-events-auto">
+                <div id="joystick-handle" class="joystick-handle"></div>
+            </div>
+            <div class="absolute bottom-4 right-4 flex items-center gap-3 pointer-events-auto">
+                <button id="btn-jump" class="w-16 h-16 sm:w-20 sm:h-20 bg-gradient-to-tr from-amber-600 to-amber-400 text-white font-extrabold text-lg sm:text-xl rounded-full border-2 sm:border-4 border-white shadow-2xl flex items-center justify-center active:scale-90 transition">
+                    <i class="fa-solid fa-arrow-up text-xl sm:text-2xl"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- SHOP MODAL -->
+    <div id="shop-modal" class="hidden fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-3">
+        <div class="bg-slate-900 border-2 border-amber-500 rounded-2xl p-4 max-w-sm sm:max-w-md w-full max-h-[92vh] flex flex-col shadow-2xl relative overflow-hidden">
+            <!-- Header -->
+            <div class="flex items-center justify-between border-b border-slate-800 pb-2 mb-3">
+                <div class="flex items-center gap-2 text-amber-400 font-bold text-lg">
+                    <i class="fa-solid fa-cart-shopping"></i>
+                    <span>ร้านค้าไอเทม (Shop)</span>
+                </div>
+                <button onclick="closeShopModal()" class="text-slate-400 hover:text-white p-1 rounded-lg bg-slate-800/80 w-8 h-8 flex items-center justify-center active:scale-90 transition">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+
+            <!-- Items List -->
+            <div class="space-y-3 overflow-y-auto pr-1 flex-1 min-h-0">
+                <!-- Item 1: Speed x2 -->
+                <div class="bg-slate-800/70 border border-slate-700/80 rounded-xl p-3 flex items-center gap-3">
+                    <div class="w-12 h-12 rounded-xl bg-amber-500/20 border border-amber-400/40 flex items-center justify-center text-amber-400 text-2xl flex-shrink-0">
+                        <i class="fa-solid fa-bolt"></i>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <div class="text-sm font-bold text-white">เพิ่มความเร็วเคลื่อนที่ ×2</div>
+                        <div class="text-[11px] text-slate-400">วิ่งไวขึ้น 2 เท่า (ระยะเวลา 24 ช.ม.)</div>
+                    </div>
+                    <button id="btn-buy-speed" onclick="openPaymentModal('speed', 10, 'เพิ่มความเร็วเคลื่อนที่ x2 (24 ช.ม.)')" class="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-white font-bold py-1.5 px-3 rounded-lg text-xs shadow transition active:scale-95 flex-shrink-0">
+                        10 ฿
+                    </button>
+                </div>
+
+                <!-- Item 2: Coin Multiplier x2 -->
+                <div class="bg-slate-800/70 border border-slate-700/80 rounded-xl p-3 flex items-center gap-3">
+                    <div class="w-12 h-12 rounded-xl bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center text-emerald-400 text-2xl flex-shrink-0">
+                        <i class="fa-solid fa-coins"></i>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <div class="text-sm font-bold text-white">เหรียญตามแมพ ×2</div>
+                        <div class="text-[11px] text-slate-400">เก็บเหรียญได้ทีละ 2 เหรียญ (24 ช.ม.)</div>
+                    </div>
+                    <button id="btn-buy-coin" onclick="openPaymentModal('coin', 20, 'เหรียญตามแมพ x2 (24 ช.ม.)')" class="bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-white font-bold py-1.5 px-3 rounded-lg text-xs shadow transition active:scale-95 flex-shrink-0">
+                        20 ฿
+                    </button>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <button onclick="closeShopModal()" class="w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-2 rounded-xl text-xs transition mt-3">
+                ปิดร้านค้า
+            </button>
+        </div>
+    </div>
+
+    <!-- PROMPTPAY PAYMENT & SLIP VERIFICATION MODAL -->
+    <div id="payment-modal" class="hidden fixed inset-0 z-[60] bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-3">
+        <div class="bg-slate-900 border-2 border-amber-500 rounded-2xl p-4 max-w-sm w-full max-h-[95vh] flex flex-col shadow-2xl relative overflow-y-auto">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-2 mb-3">
+                <div class="flex items-center gap-2 text-amber-400 font-bold text-base">
+                    <i class="fa-solid fa-qrcode"></i>
+                    <span>ชำระเงินผ่าน PromptPay</span>
+                </div>
+                <button onclick="closePaymentModal()" class="text-slate-400 hover:text-white p-1 rounded-lg bg-slate-800/80 w-7 h-7 flex items-center justify-center active:scale-90 transition">
+                    <i class="fa-solid fa-xmark text-base"></i>
+                </button>
+            </div>
+
+            <div class="text-center space-y-3">
+                <div class="bg-slate-800/80 p-3 rounded-xl border border-slate-700">
+                    <div id="pay-item-title" class="text-xs text-slate-300 font-bold">รายการสินค้า</div>
+                    <div id="pay-item-price" class="text-xl font-extrabold text-amber-400 mt-0.5">0.00 บาท</div>
+                </div>
+
+                <!-- QR Code Display (PromptPay QR) -->
+                <div class="bg-white p-3 rounded-xl inline-block shadow-lg mx-auto">
+                    <img id="promptpay-qr-img" src="" alt="PromptPay QR" class="w-48 h-48 object-contain mx-auto">
+                </div>
+                <div class="text-[11px] text-slate-400">
+                    ชื่อบัญชี: <span class="text-white font-bold">นาย จิตกร</span><br>
+                    เลขที่อ้างอิง: <span class="text-amber-400 font-bold">004999086038089</span>
+                </div>
+
+                <!-- Slip Upload & Check Section -->
+                <div class="text-left space-y-1.5 pt-2 border-t border-slate-800">
+                    <label class="block text-xs font-bold text-amber-400">อัปโหลดสลิปโอนเงินเพื่อตรวจสอบอัตโนมัติ:</label>
+                    <input type="file" id="slip-file-input" accept="image/*" class="w-full text-xs text-slate-300 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-amber-500 file:text-slate-950 hover:file:bg-amber-400 cursor-pointer bg-slate-800 rounded-xl border border-slate-700">
+                </div>
+
+                <button id="btn-verify-slip" onclick="verifyAndBuySlip()" class="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold py-2.5 px-4 rounded-xl shadow-lg shadow-emerald-600/30 text-xs transition active:scale-95 flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-shield-check"></i>
+                    <span>ตรวจสอบสลิปและรับสิทธิ์</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- EXIT CONFIRMATION MODAL -->
+    <div id="exit-modal" class="hidden fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-3">
+        <div class="bg-slate-900 border-2 border-amber-500/50 rounded-2xl p-4 max-w-xs w-full text-center shadow-2xl space-y-3">
+            <div class="w-12 h-12 bg-amber-500/20 border-2 border-amber-500 text-amber-400 rounded-full flex items-center justify-center mx-auto text-xl">
+                <i class="fa-solid fa-door-open"></i>
+            </div>
+            <div>
+                <h3 class="text-base font-bold text-white">คุณต้องการออกเกมไหม?</h3>
+                <p class="text-slate-400 text-xs mt-0.5">คะแนนของคุณถูกบันทึกแบบเรียลไทม์ไว้แล้ว</p>
+            </div>
+            <div class="flex gap-2">
+                <button onclick="closeHomeConfirmModal()" class="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-2 rounded-xl text-xs transition">เล่นต่อ</button>
+                <button onclick="confirmExitGame()" class="flex-1 bg-rose-600 hover:bg-rose-500 text-white font-bold py-2 rounded-xl text-xs shadow-lg shadow-rose-600/30 transition">ยืนยันการออก</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- LUCKY WHEEL MODAL -->
+    <div id="wheel-modal" class="hidden fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-3 overflow-y-auto">
+        <div class="bg-slate-900 border-2 border-amber-500 rounded-2xl p-4 max-w-sm w-full max-h-[95vh] text-center shadow-2xl relative flex flex-col items-center overflow-y-auto">
+            <div class="mb-2">
+                <span class="bg-amber-500/20 text-amber-400 border border-amber-500/40 text-[10px] font-bold uppercase px-2.5 py-0.5 rounded-full">Mystery Lucky Box</span>
+                <h2 class="text-lg font-extrabold text-white mt-0.5">วงล้อสุ่มไอเทมโชคดี!</h2>
+            </div>
+            <div class="wheel-canvas-container relative w-56 h-56 my-1 flex items-center justify-center flex-shrink-0">
+                <div class="wheel-pointer absolute -top-2 z-20"></div>
+                <canvas id="wheel-canvas" width="280" height="280" class="w-full h-full rounded-full shadow-2xl border-4 border-amber-400"></canvas>
+            </div>
+            <div id="wheel-result-msg" class="h-8 flex items-center justify-center text-amber-300 font-bold text-sm my-1">
+                กดปุ่มเพื่อเริ่มหมุนวงล้อ!
+            </div>
+            <button id="btn-spin-wheel" onclick="spinWheel()" class="w-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-white font-extrabold py-2.5 px-4 rounded-xl shadow-lg shadow-amber-600/40 text-sm transition active:scale-95">
+                <i class="fa-solid fa-rotate text-sm mr-1"></i> หมุนวงล้อ
+            </button>
+            <button id="btn-close-wheel" onclick="closeWheelModal()" class="hidden w-full bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold py-2.5 px-4 rounded-xl shadow-lg shadow-emerald-600/40 text-sm transition active:scale-95">
+                รับรางวัล & เล่นต่อ
+            </button>
+        </div>
+    </div>
+
+    <!-- FULL LEADERBOARD MODAL -->
+    <div id="leaderboard-modal" class="hidden fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-3">
+        <div class="bg-slate-900 border-2 border-amber-500/60 rounded-2xl p-4 max-w-sm sm:max-w-md w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-2 mb-2 flex-shrink-0">
+                <div class="flex items-center gap-2 text-amber-400 font-bold text-base">
+                    <i class="fa-solid fa-trophy"></i>
+                    <span>ตารางคะแนนสูงสุด (Real-time)</span>
+                </div>
+                <button onclick="closeFullLeaderboard()" class="text-slate-400 hover:text-white p-1 rounded-lg bg-slate-800/80 w-7 h-7 flex items-center justify-center active:scale-90 transition">
+                    <i class="fa-solid fa-xmark text-base"></i>
+                </button>
+            </div>
+            <div id="full-leaderboard-list" class="flex-1 overflow-y-auto min-h-0 space-y-1.5 pr-1 my-1"></div>
+            <button onclick="closeFullLeaderboard()" class="w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-2 rounded-xl text-xs transition flex-shrink-0 mt-2">
+                ปิดหน้าต่าง
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // --- FIREBASE REAL GOOGLE AUTHENTICATION & DATABASE CONFIGURATION ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyCwn4rJ48I_bsVI2Ez59szQJubShvhO1SE",
+            authDomain: "lucky-game-6936b.firebaseapp.com",
+            databaseURL: "https://lucky-game-6936b-default-rtdb.asia-southeast1.firebasedatabase.app",
+            projectId: "lucky-game-6936b",
+            storageBucket: "lucky-game-6936b.firebasestorage.app",
+            messagingSenderId: "541211602508",
+            appId: "1:541211602508:web:b41b55fb5462269fbc4ee9",
+            measurementId: "G-YMC92E7BS7"
+        };
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const database = firebase.database();
+        const googleProvider = new firebase.auth.GoogleAuthProvider();
+
+        let localGuestId = null;
+        function getMyPlayerId() {
+            if (state.userId) return state.userId;
+            if (!localGuestId) {
+                localGuestId = 'guest_' + Math.random().toString(36).substring(2, 9);
+            }
+            return localGuestId;
+        }
+
+        // 🆔 ระบบดึง Key คะแนนตาม userId แยกแต่ละบัญชีทันที (voxel_score_${currentId})
+        function getScoreStorageKey() {
+            const currentId = getMyPlayerId();
+            return `voxel_score_${currentId}`;
+        }
+
+        function loadScoreForCurrentId() {
+            const key = getScoreStorageKey();
+            state.score = parseInt(localStorage.getItem(key)) || 0;
+            updateScoreDisplay();
+        }
+
+        // Listen to Auth State Changes
+        auth.onAuthStateChanged((user) => {
+            if (user) {
+                state.isLoggedIn = true;
+                state.userId = user.uid;
+                state.userEmail = user.email || "";
+                state.userAvatar = user.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.displayName || 'Player')}&background=f59e0b&color=fff`;
+                state.playerName = user.displayName ? user.displayName.split(' ')[0] : "Player" + Math.floor(100 + Math.random() * 900);
+
+                document.getElementById('user-display-name').innerText = user.displayName || "Google User";
+                document.getElementById('user-email').innerText = state.userEmail;
+                document.getElementById('user-avatar').src = state.userAvatar;
+                document.getElementById('input-username').value = state.playerName;
+
+                document.getElementById('btn-google-login').classList.add('hidden');
+                document.getElementById('user-profile-card').classList.remove('hidden');
+
+                // Sync user VIP data & Load score for this account
+                listenToUserVipStatus(user.uid);
+                loadScoreForCurrentId();
+            } else {
+                state.isLoggedIn = false;
+                state.userId = null;
+                state.userVipSubscriptions = {};
+                document.getElementById('btn-google-login').classList.remove('hidden');
+                document.getElementById('user-profile-card').classList.add('hidden');
+                renderServersUI();
+                loadScoreForCurrentId();
+            }
+        });
+
+        // Global Game State
+        const state = {
+            playerName: "Player1",
+            userId: null,
+            score: 0,
+            isLoggedIn: false,
+            userEmail: "",
+            userAvatar: "",
+            audioMuted: false,
+            isPlaying: false,
+            isPaused: false,
+            wheelSpinning: false,
+            wheelReward: null,
+            // 🌐 SERVER STATE
+            selectedServerId: null,
+            userVipSubscriptions: {},
+            vipServers: {
+                vip1: { count: 0, max: 100 }
+            },
+            shop: {
+                speedBuffExpires: 0,
+                coinBuffExpires: 0
+            },
+            // PAYMENT STATE
+            pendingPayment: {
+                type: null,
+                price: 0,
+                title: ''
+            }
+        };
+
+        // ฟังก์ชันบวกคะแนนและบันทึกลงหน่วยความจำ (localStorage) แยกตาม userId ของบัญชีนั้น ๆ
+        function addScore(points) {
+            state.score += points; 
+            const key = getScoreStorageKey();
+            localStorage.setItem(key, state.score); 
+            updateScoreDisplay();
+            syncMyPlayerData(true);
+        }
+
+        // ฟังก์ชันสำหรับรีเซ็ตคะแนนใหม่
+        function resetHighScore() {
+            state.score = 0;
+            const key = getScoreStorageKey();
+            localStorage.setItem(key, 0); 
+            updateScoreDisplay();
+            syncMyPlayerData(true);
+        }
+
+        // Real Google Login Trigger
+        function loginWithGoogle() {
+            auth.signInWithPopup(googleProvider)
+                .catch((err) => {
+                    console.error("Google Authentication Error:", err);
+                    alert("เข้าสู่ระบบด้วย Google ไม่สำเร็จ: " + err.message);
+                });
+        }
+
+        function logoutGoogle() {
+            auth.signOut().catch((err) => console.error("Sign Out Error:", err));
+        }
+
+        // 🌐 REALTIME SERVER SYSTEM LOGIC
+        function listenToVipServersRealtime() {
+            database.ref('vip_servers').on('value', (snapshot) => {
+                const data = snapshot.val() || {};
+                const now = Date.now();
+                ['vip1'].forEach(sId => {
+                    const serverData = data[sId] || {};
+                    const members = serverData.members || {};
+                    let activeCount = 0;
+
+                    Object.keys(members).forEach(mId => {
+                        const mData = members[mId];
+                        let exp = 0;
+                        if (typeof mData === 'object' && mData.expireTime) exp = mData.expireTime;
+                        else if (typeof mData === 'number') exp = mData;
+                        else if (mData === true) exp = Infinity;
+
+                        if (!exp || now <= exp) {
+                            activeCount++;
+                        }
+                    });
+
+                    state.vipServers[sId].count = activeCount;
+                });
+                renderServersUI();
+            });
+        }
+
+        function listenToUserVipStatus(uid) {
+            database.ref('users/' + uid + '/vip_subscriptions').on('value', (snapshot) => {
+                state.userVipSubscriptions = snapshot.val() || {};
+                renderServersUI();
+            });
+        }
+
+        function selectFreeServer(serverId) {
+            state.selectedServerId = serverId;
+            renderServersUI();
+        }
+
+        // เปิด Modal ชำระเงินด้วย PromptPay
+        function openPaymentModal(type, price, title) {
+            if (!state.isLoggedIn) {
+                alert("กรุณาล็อกอินด้วย Google Account ก่อนทำการซื้อไอเทมหรือเซิร์ฟเวอร์ VIP!");
+                return;
+            }
+
+            state.pendingPayment = { type, price, title };
+            document.getElementById('pay-item-title').innerText = title;
+            document.getElementById('pay-item-price').innerText = price + " บาท";
+
+            const promptpayTarget = "0999999999"; 
+            document.getElementById('promptpay-qr-img').src = `https://promptpay.io/${promptpayTarget}/${price}.png`;
+
+            document.getElementById('slip-file-input').value = "";
+            document.getElementById('payment-modal').classList.remove('hidden');
+        }
+
+        function closePaymentModal() {
+            document.getElementById('payment-modal').classList.add('hidden');
+        }
+
+        // Legacy client-side Slip2Go verification and client-side entitlement grant
+        // were removed. The secure Worker overrides below own both operations.
+        async function verifyAndBuySlip() {
+            throw new Error('Secure Worker payment handler not initialized yet');
+        }
+
+        function grantPurchasedItem() {
+            return false;
+        }
+
+        function selectVipServer(serverId) {
+            const vipSub = state.userVipSubscriptions[serverId];
+            const now = Date.now();
+            let isVipActive = false;
+            let expireTime = 0;
+
+            if (vipSub) {
+                if (typeof vipSub === 'object' && vipSub.expireTime) expireTime = vipSub.expireTime;
+                else if (typeof vipSub === 'number') expireTime = vipSub;
+                else if (vipSub === true) expireTime = Infinity;
+
+                if (expireTime === Infinity || now <= expireTime) {
+                    isVipActive = true;
+                }
+            }
+
+            if (!isVipActive) {
+                alert("สิทธิ์ VIP เซิร์ฟเวอร์นี้หมดอายุแล้ว! กรุณาต่ออายุก่อนเข้าเล่น");
+                return;
+            }
+            state.selectedServerId = serverId;
+            renderServersUI();
+        }
+
+        function renderServersUI() {
+            const isSelectedFree1 = state.selectedServerId === 'free1';
+            const cardFree1 = document.getElementById('card-free1');
+            const actionFree1 = document.getElementById('action-free1');
+
+            if (cardFree1) {
+                cardFree1.className = isSelectedFree1 
+                    ? "bg-blue-500/20 border-2 border-blue-400 rounded-xl p-2.5 flex items-center justify-between transition shadow-md shadow-blue-500/10"
+                    : "bg-slate-800/80 border border-slate-700 rounded-xl p-2.5 flex items-center justify-between transition";
+            }
+
+            if (actionFree1) {
+                actionFree1.innerHTML = `
+                    <button onclick="selectFreeServer('free1')" class="${isSelectedFree1 ? 'bg-blue-500 text-slate-950 font-extrabold text-[11px] px-3 py-1 rounded-lg' : 'bg-slate-700 hover:bg-slate-600 text-blue-400 font-bold text-[11px] px-2.5 py-1 rounded-lg border border-blue-500/30 transition active:scale-95'}">
+                        ${isSelectedFree1 ? 'กำลังเลือก' : 'เลือกเซิร์ฟ'}
+                    </button>
+                `;
+            }
+
+            ['vip1'].forEach(sId => {
+                const count = state.vipServers[sId].count;
+                const max = state.vipServers[sId].max;
+                const vipSub = state.userVipSubscriptions[sId];
+                const now = Date.now();
+
+                let isVipActive = false;
+                let expireTime = 0;
+                if (vipSub) {
+                    if (typeof vipSub === 'object' && vipSub.expireTime) expireTime = vipSub.expireTime;
+                    else if (typeof vipSub === 'number') expireTime = vipSub;
+                    else if (vipSub === true) expireTime = Infinity;
+
+                    if (expireTime === Infinity || now <= expireTime) {
+                        isVipActive = true;
+                    }
+                }
+
+                const isSelected = state.selectedServerId === sId;
+
+                const cardEl = document.getElementById(`card-${sId}`);
+                const countEl = document.getElementById(`count-${sId}`);
+                const badgeOwnedEl = document.getElementById(`badge-owned-${sId}`);
+                const actionContainer = document.getElementById(`action-${sId}`);
+
+                if (countEl) countEl.innerText = `${count}/${max}`;
+
+                if (badgeOwnedEl) {
+                    if (isVipActive) {
+                        badgeOwnedEl.classList.remove('hidden');
+                        if (expireTime !== Infinity) {
+                            const remainingMs = expireTime - now;
+                            const days = Math.floor(remainingMs / (1000 * 60 * 60 * 24));
+                            const hours = Math.floor((remainingMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                            badgeOwnedEl.innerText = `เหลือ ${days}วัน ${hours}ชม.`;
+                            badgeOwnedEl.className = "text-[9px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 px-1.5 py-0.2 rounded font-bold";
+                        } else {
+                            badgeOwnedEl.innerText = `มีสิทธิ์ (ถาวร)`;
+                        }
+                    } else {
+                        badgeOwnedEl.classList.add('hidden');
+                    }
+                }
+
+                if (cardEl) {
+                    cardEl.className = isSelected 
+                        ? "bg-amber-500/20 border-2 border-amber-400 rounded-xl p-2.5 flex items-center justify-between transition shadow-md shadow-amber-500/10"
+                        : "bg-slate-800/80 border border-slate-700 rounded-xl p-2.5 flex items-center justify-between transition";
+                }
+
+                if (actionContainer) {
+                    actionContainer.innerHTML = '';
+
+                    if (isVipActive) {
+                        const btnSelect = document.createElement('button');
+                        btnSelect.className = isSelected 
+                            ? "bg-amber-500 text-slate-950 font-extrabold text-[11px] px-3 py-1 rounded-lg"
+                            : "bg-slate-700 hover:bg-slate-600 text-amber-400 font-bold text-[11px] px-2.5 py-1 rounded-lg border border-amber-500/30 transition active:scale-95";
+                        btnSelect.innerText = isSelected ? "กำลังเลือก" : "เลือกเซิร์ฟ";
+                        btnSelect.onclick = () => selectVipServer(sId);
+                        actionContainer.appendChild(btnSelect);
+
+                        const btnRenew = document.createElement('button');
+                        btnRenew.className = "bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 text-white font-bold text-[11px] px-2 py-1 rounded-lg shadow transition active:scale-95 ml-1";
+                        btnRenew.innerText = "ต่ออายุ (+30วัน)";
+                        btnRenew.onclick = () => openPaymentModal(sId, 50, 'ต่ออายุสิทธิ์ VIP Server 1 (30 วัน)');
+                        actionContainer.appendChild(btnRenew);
+                    } else {
+                        const btnBuy = document.createElement('button');
+                        if (count >= max) {
+                            btnBuy.className = "bg-slate-700 text-slate-400 font-bold text-[11px] px-3 py-1 rounded-lg cursor-not-allowed";
+                            btnBuy.innerText = "เต็มแล้ว";
+                            btnBuy.disabled = true;
+                        } else {
+                            btnBuy.className = "bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-white font-bold text-[11px] px-3 py-1 rounded-lg shadow transition active:scale-95";
+                            btnBuy.innerText = "ซื้อ VIP (50฿)";
+                            btnBuy.onclick = () => openPaymentModal(sId, 50, 'สิทธิ์ VIP Server 1 (30 วัน)');
+                        }
+                        actionContainer.appendChild(btnBuy);
+                    }
+                }
+            });
+
+            const badgeHeader = document.getElementById('selected-server-badge');
+            if (badgeHeader) {
+                if (state.selectedServerId) {
+                    badgeHeader.innerText = `เข้าเล่น: ${state.selectedServerId.toUpperCase()}`;
+                    badgeHeader.className = "text-[10px] font-extrabold bg-amber-400 text-slate-900 px-2 py-0.5 rounded-full shadow";
+                } else {
+                    badgeHeader.innerText = "ยังไม่ได้เลือกเซิร์ฟเวอร์";
+                    badgeHeader.className = "text-[10px] font-bold bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full border border-amber-500/30";
+                }
+            }
+        }
+
+        // Web Audio Synthesizer
+        const audio = {
+            ctx: null,
+            muted: false,
+            init() {
+                if (!this.ctx) {
+                    const AudioCtxClass = window.AudioContext || window.webkitAudioContext;
+                    if (AudioCtxClass) this.ctx = new AudioCtxClass();
+                }
+                if (this.ctx && this.ctx.state === 'suspended') {
+                    this.ctx.resume();
+                }
+            },
+            playTone(freq, type, duration, startVol = 0.1, endVol = 0) {
+                if (this.muted) return;
+                this.init();
+                if (!this.ctx) return;
+                try {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = type;
+                    osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+                    gain.gain.setValueAtTime(startVol, this.ctx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(Math.max(endVol, 0.0001), this.ctx.currentTime + duration);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start();
+                    osc.stop(this.ctx.currentTime + duration);
+                } catch(e) {}
+            },
+            playStart() {
+                if (this.muted) return;
+                this.playTone(440, 'sine', 0.1, 0.15);
+                setTimeout(() => this.playTone(554.37, 'sine', 0.1, 0.15), 100);
+                setTimeout(() => this.playTone(659.25, 'sine', 0.2, 0.2), 200);
+            },
+            playJump() {
+                if (this.muted) return;
+                this.init();
+                if (!this.ctx) return;
+                try {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(160, this.ctx.currentTime);
+                    osc.frequency.exponentialRampToValueAtTime(420, this.ctx.currentTime + 0.15);
+                    gain.gain.setValueAtTime(0.15, this.ctx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.15);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start();
+                    osc.stop(this.ctx.currentTime + 0.15);
+                } catch(e) {}
+            },
+            playCoin() {
+                if (this.muted) return;
+                this.playTone(987.77, 'triangle', 0.08, 0.15);
+                setTimeout(() => this.playTone(1318.51, 'triangle', 0.15, 0.2), 60);
+            },
+            playBoxHit() {
+                if (this.muted) return;
+                this.playTone(300, 'square', 0.1, 0.12);
+                setTimeout(() => this.playTone(600, 'square', 0.2, 0.18), 80);
+            },
+            playWheelTick() {
+                if (this.muted) return;
+                this.playTone(800, 'sine', 0.03, 0.06);
+            },
+            playReward() {
+                if (this.muted) return;
+                const notes = [523.25, 659.25, 783.99, 1046.50];
+                notes.forEach((freq, idx) => {
+                    setTimeout(() => this.playTone(freq, 'sine', 0.2, 0.2), idx * 100);
+                });
+            }
+        };
+
+        // FIREBASE REALTIME DATABASE LEADERBOARD & MULTIPLAYER SYSTEM
+        let currentLeaderboardRef = null;
+
+        // AOI (Area Of Interest) / Spatial Zones
+        // The player never sees or selects a Zone. The client automatically
+        // calculates its Zone and listens only to nearby Zones.
+        const AOI_GRID_SIZE = 15;
+        const AOI_ZONE_SIZE = 100; // MAP_SIZE 1500 / 15 Zones = 100 units per Zone
+        const AOI_LISTEN_RADIUS = 1; // 3x3 Zones around the current Zone
+
+        let currentPlayerZoneId = null;
+        let currentZonePlayerRef = null;
+        const remotePlayersRefs = {};
+        const otherPlayers = {};
+
+        function getPlayerZoneId(x, z) {
+            const half = MAP_SIZE / 2;
+            const col = Math.max(0, Math.min(
+                AOI_GRID_SIZE - 1,
+                Math.floor((x + half) / AOI_ZONE_SIZE)
+            ));
+            const row = Math.max(0, Math.min(
+                AOI_GRID_SIZE - 1,
+                Math.floor((z + half) / AOI_ZONE_SIZE)
+            ));
+            return `z_${row}_${col}`;
+        }
+
+        function getNearbyZoneIds(zoneId, radius = AOI_LISTEN_RADIUS) {
+            const match = /^z_(\d+)_(\d+)$/.exec(zoneId || "");
+            if (!match) return [];
+
+            const row = Number(match[1]);
+            const col = Number(match[2]);
+            const zones = [];
+
+            for (let r = row - radius; r <= row + radius; r++) {
+                for (let c = col - radius; c <= col + radius; c++) {
+                    if (
+                        r >= 0 && r < AOI_GRID_SIZE &&
+                        c >= 0 && c < AOI_GRID_SIZE
+                    ) {
+                        zones.push(`z_${r}_${c}`);
+                    }
+                }
+            }
+            return zones;
+        }
+
+        function removeAllAOIListeners() {
+            Object.keys(remotePlayersRefs).forEach(zoneId => {
+                const ref = remotePlayersRefs[zoneId];
+                if (ref) ref.off();
+                delete remotePlayersRefs[zoneId];
+            });
+            currentZonePlayerRef = null;
+            currentPlayerZoneId = null;
+            removeAllOtherPlayers();
+        }
+
+        function listenToRemotePlayers(serverId, force = false) {
+            if (!serverId || !state.isPlaying) return;
+
+            const myId = getMyPlayerId();
+            const nextZoneId = getPlayerZoneId(playerPos.x, playerPos.z);
+
+            if (!force && nextZoneId === currentPlayerZoneId && Object.keys(remotePlayersRefs).length) {
+                return;
+            }
+
+            // Player crossed a Zone boundary: stop listening to the old AOI,
+            // clear stale remote players, then subscribe to the new nearby Zones.
+            removeAllAOIListeners();
+            currentPlayerZoneId = nextZoneId;
+
+            const nearbyZones = getNearbyZoneIds(nextZoneId);
+
+            nearbyZones.forEach(zoneId => {
+                const ref = database.ref(`servers/${serverId}/zones/${zoneId}/players`);
+                remotePlayersRefs[zoneId] = ref;
+
+                ref.on('child_added', snapshot => {
+                    const pId = snapshot.key;
+                    if (pId === myId) return;
+                    addOtherPlayer(pId, snapshot.val());
+                });
+
+                ref.on('child_changed', snapshot => {
+                    const pId = snapshot.key;
+                    if (pId === myId) return;
+                    updateOtherPlayer(pId, snapshot.val());
+                });
+
+                ref.on('child_removed', snapshot => {
+                    const pId = snapshot.key;
+                    if (pId === myId) return;
+                    removeOtherPlayer(pId);
+                });
+            });
+
+            // Keep a direct reference to the player's current Zone.
+            currentZonePlayerRef = database.ref(
+                `servers/${serverId}/zones/${currentPlayerZoneId}/players/${myId}`
+            );
+        }
+
+        function listenToRealtimeLeaderboard(serverId) {
+            if (!serverId) return;
+            
+            if (currentLeaderboardRef) {
+                currentLeaderboardRef.off();
+            }
+
+            currentLeaderboardRef = database.ref(`servers/${serverId}/leaderboard`).orderByChild('score').limitToLast(20);
+            
+            currentLeaderboardRef.on('value', (snapshot) => {
+                const board = [];
+                snapshot.forEach((child) => {
+                    board.push(child.val());
+                });
+                board.reverse();
+                updateLeaderboardUI(board);
+            }, (error) => {
+                console.error("Database Read Error:", error);
+            });
+        }
+
+        // 🌐 MULTIPLAYER: Real-time Player Position & Score Synchronization
+        let lastSyncTime = 0;
+        function syncMyPlayerData(force = false) {
+            if (!state.isPlaying || !state.selectedServerId) return;
+
+            const myId = getMyPlayerId();
+            const now = Date.now();
+            const nextZoneId = getPlayerZoneId(playerPos.x, playerPos.z);
+
+            // Automatically move the player's database record to the new Zone.
+            if (nextZoneId !== currentPlayerZoneId) {
+                const oldZoneId = currentPlayerZoneId;
+                const oldRef = oldZoneId
+                    ? database.ref(`servers/${state.selectedServerId}/zones/${oldZoneId}/players/${myId}`)
+                    : null;
+
+                if (oldRef) {
+                    oldRef.onDisconnect().cancel();
+                    oldRef.remove().catch(err => console.warn("AOI old-zone cleanup:", err));
+                }
+
+                currentPlayerZoneId = nextZoneId;
+                currentZonePlayerRef = database.ref(
+                    `servers/${state.selectedServerId}/zones/${nextZoneId}/players/${myId}`
+                );
+
+                currentZonePlayerRef.onDisconnect().remove();
+                listenToRemotePlayers(state.selectedServerId, true);
+                force = true;
+            }
+
+            if (force || now - lastSyncTime > 70) {
+                lastSyncTime = now;
+
+                if (!currentZonePlayerRef) {
+                    currentZonePlayerRef = database.ref(
+                        `servers/${state.selectedServerId}/zones/${currentPlayerZoneId}/players/${myId}`
+                    );
+                    currentZonePlayerRef.onDisconnect().remove();
+                }
+
+                currentZonePlayerRef.set({
+                    name: state.playerName,
+                    x: Math.round(playerPos.x * 100) / 100,
+                    y: Math.round(playerPos.y * 100) / 100,
+                    z: Math.round(playerPos.z * 100) / 100,
+                    rotY: Math.round(playerRotation * 100) / 100,
+                    score: state.score,
+                    zoneId: currentPlayerZoneId,
+                    updatedAt: firebase.database.ServerValue.TIMESTAMP
+                });
+
+                if (state.score >= 0) {
+                    database.ref(`servers/${state.selectedServerId}/leaderboard/${myId}`).set({
+                        name: state.playerName,
+                        score: state.score,
+                        timestamp: Date.now()
+                    });
+                }
+            }
+        }
+
+        function addOtherPlayer(id, data) {
+            if (otherPlayers[id]) return;
+
+            const pGroup = new THREE.Group();
+            const skinMat = new THREE.MeshLambertMaterial({ color: 0xffdbac });
+            const shirtMat = new THREE.MeshLambertMaterial({ color: 0xe53e3e }); 
+            const pantsMat = new THREE.MeshLambertMaterial({ color: 0x742a2a });
+
+            const head = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.9, 0.9), skinMat);
+            head.position.y = 1.85;
+            head.castShadow = true;
+            pGroup.add(head);
+
+            const eyeMat = new THREE.MeshBasicMaterial({ color: 0x1a202c });
+            const leftEye = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.15, 0.05), eyeMat);
+            leftEye.position.set(-0.2, 1.9, 0.46);
+            pGroup.add(leftEye);
+
+            const rightEye = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.15, 0.05), eyeMat);
+            rightEye.position.set(0.2, 1.9, 0.46);
+            pGroup.add(rightEye);
+
+            const body = new THREE.Mesh(new THREE.BoxGeometry(1.0, 1.1, 0.6), shirtMat);
+            body.position.y = 1.05;
+            body.castShadow = true;
+            pGroup.add(body);
+
+            const oLeftArm = new THREE.Mesh(new THREE.BoxGeometry(0.35, 1.0, 0.35), skinMat);
+            oLeftArm.position.set(-0.7, 1.0, 0);
+            oLeftArm.castShadow = true;
+            pGroup.add(oLeftArm);
+
+            const oRightArm = new THREE.Mesh(new THREE.BoxGeometry(0.35, 1.0, 0.35), skinMat);
+            oRightArm.position.set(0.7, 1.0, 0);
+            oRightArm.castShadow = true;
+            pGroup.add(oRightArm);
+
+            const oLeftLeg = new THREE.Mesh(new THREE.BoxGeometry(0.42, 1.0, 0.42), pantsMat);
+            oLeftLeg.position.set(-0.25, 0.5, 0);
+            oLeftLeg.castShadow = true;
+            pGroup.add(oLeftLeg);
+
+            const oRightLeg = new THREE.Mesh(new THREE.BoxGeometry(0.42, 1.0, 0.42), pantsMat);
+            oRightLeg.position.set(0.25, 0.5, 0);
+            oRightLeg.castShadow = true;
+            pGroup.add(oRightLeg);
+
+            const initialPos = new THREE.Vector3(data.x || 0, data.y || 0, data.z || 0);
+            pGroup.position.copy(initialPos);
+            pGroup.rotation.y = data.rotY || 0;
+            scene.add(pGroup);
+
+            // Create 3D Name Tag Element for other online player
+            const tag = document.createElement('div');
+            tag.className = 'name-tag remote-name-tag';
+            tag.id = `nametag-${id}`;
+            const safeName = escapeHtml(data.name || 'Player');
+            tag.innerHTML = `<span>${safeName}</span>`;
+            document.body.appendChild(tag);
+
+            otherPlayers[id] = {
+                mesh: pGroup,
+                nameTagEl: tag,
+                targetPos: initialPos.clone(),
+                targetRot: data.rotY || 0,
+                walkCycle: 0,
+                leftArm: oLeftArm,
+                rightArm: oRightArm,
+                leftLeg: oLeftLeg,
+                rightLeg: oRightLeg,
+                name: data.name || 'Player',
+                _secureLastSeenAt: performance.now()
+            };
+        }
+
+        function updateOtherPlayer(id, data) {
+            const p = otherPlayers[id];
+            if (!p) return;
+            p.targetPos.set(data.x || 0, data.y || 0, data.z || 0);
+            p.targetRot = data.rotY || 0;
+            p._secureLastSeenAt = performance.now();
+            if (data.name && p.name !== data.name) {
+                p.name = data.name;
+                const label = p.nameTagEl.querySelector('span');
+                if (label) label.innerText = data.name;
+            }
+        }
+
+        function removeOtherPlayer(id) {
+            const p = otherPlayers[id];
+            if (!p) return;
+            scene.remove(p.mesh);
+            if (p.nameTagEl && p.nameTagEl.parentNode) {
+                p.nameTagEl.parentNode.removeChild(p.nameTagEl);
+            }
+            delete otherPlayers[id];
+        }
+
+        function removeAllOtherPlayers() {
+            Object.keys(otherPlayers).forEach(id => removeOtherPlayer(id));
+        }
+
+        function escapeHtml(str) {
+            return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        function updateLeaderboardUI(board = []) {
+            const miniList = document.getElementById('mini-leaderboard-list');
+            miniList.innerHTML = '';
+            
+            if (board.length === 0) {
+                miniList.innerHTML = '<div class="text-center text-slate-400 py-1">ยังไม่มีข้อมูล</div>';
+            }
+
+            board.slice(0, 5).forEach((item, index) => {
+                const rankColor = index === 0 ? 'text-amber-400 font-extrabold' : (index === 1 ? 'text-slate-300 font-bold' : (index === 2 ? 'text-amber-600 font-bold' : 'text-slate-400'));
+                const div = document.createElement('div');
+                div.className = 'flex items-center justify-between';
+                div.innerHTML = `
+                    <div class="flex items-center gap-1.5 truncate">
+                        <span class="w-4 text-[11px] ${rankColor}">${index + 1}.</span>
+                        <span class="truncate font-semibold text-slate-200">${escapeHtml(item.name)}</span>
+                    </div>
+                    <span class="font-bold ${rankColor} ml-2">${item.score.toLocaleString()}</span>
+                `;
+                miniList.appendChild(div);
+            });
+
+            const fullList = document.getElementById('full-leaderboard-list');
+            fullList.innerHTML = '';
+
+            if (board.length === 0) {
+                fullList.innerHTML = '<div class="text-center text-slate-400 py-4">ยังไม่มีข้อมูลอันดับ</div>';
+            }
+
+            board.forEach((item, index) => {
+                const isTop3 = index < 3;
+                const bg = isTop3 ? 'bg-amber-500/10 border-amber-500/30' : 'bg-slate-800/60 border-slate-700/50';
+                const div = document.createElement('div');
+                div.className = `flex items-center justify-between p-3 rounded-xl border ${bg}`;
+                div.innerHTML = `
+                    <div class="flex items-center gap-3">
+                        <div class="w-7 h-7 rounded-full bg-slate-700 flex items-center justify-center font-extrabold text-xs ${index===0?'text-amber-400':(index===1?'text-slate-300':(index===2?'text-amber-600':'text-slate-400'))}">
+                            ${index + 1}
+                        </div>
+                        <span class="font-bold text-white">${escapeHtml(item.name)}</span>
+                    </div>
+                    <span class="font-extrabold text-amber-400">${item.score.toLocaleString()} pts</span>
+                `;
+                fullList.appendChild(div);
+            });
+        }
+
+        // SHOP LOGIC FUNCTIONS
+        function loadSavedBuffs() {
+            const savedSpeed = localStorage.getItem('voxel_shop_speed_expire');
+            const savedCoin = localStorage.getItem('voxel_shop_coin_expire');
+            const now = Date.now();
+
+            if (savedSpeed && parseInt(savedSpeed) > now) {
+                state.shop.speedBuffExpires = parseInt(savedSpeed);
+            }
+            if (savedCoin && parseInt(savedCoin) > now) {
+                state.shop.coinBuffExpires = parseInt(savedCoin);
+            }
+        }
+
+        function openShopModal() {
+            state.isPaused = true;
+            const localNameTag = document.getElementById('player-nametag');
+            if (localNameTag) localNameTag.style.display = 'none';
+            updateShopUI();
+            document.getElementById('shop-modal').classList.remove('hidden');
+        }
+
+        function closeShopModal() {
+            document.getElementById('shop-modal').classList.add('hidden');
+            state.isPaused = false;
+        }
+
+        function updateShopUI() {
+            const now = Date.now();
+            const btnSpeed = document.getElementById('btn-buy-speed');
+            const btnCoin = document.getElementById('btn-buy-coin');
+
+            const formatTime = (ms) => {
+                const totalSec = Math.floor(ms / 1000);
+                const h = Math.floor(totalSec / 3600);
+                const m = Math.floor((totalSec % 3600) / 60);
+                const s = totalSec % 60;
+                return `${h}h ${m}m ${s}s`;
+            };
+
+            if (state.shop.speedBuffExpires > now) {
+                btnSpeed.disabled = true;
+                btnSpeed.className = "bg-slate-700 text-amber-400 border border-amber-500/30 font-bold py-1.5 px-3 rounded-lg text-xs flex-shrink-0 cursor-not-allowed";
+                btnSpeed.innerText = `ใช้งานได้อีก ${formatTime(state.shop.speedBuffExpires - now)}`;
+            } else {
+                btnSpeed.disabled = false;
+                btnSpeed.className = "bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-white font-bold py-1.5 px-3 rounded-lg text-xs shadow transition active:scale-95 flex-shrink-0";
+                btnSpeed.innerText = "10 ฿";
+            }
+
+            if (state.shop.coinBuffExpires > now) {
+                btnCoin.disabled = true;
+                btnCoin.className = "bg-slate-700 text-emerald-400 border border-emerald-500/30 font-bold py-1.5 px-3 rounded-lg text-xs flex-shrink-0 cursor-not-allowed";
+                btnCoin.innerText = `ใช้งานได้อีก ${formatTime(state.shop.coinBuffExpires - now)}`;
+            } else {
+                btnCoin.disabled = false;
+                btnCoin.className = "bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-white font-bold py-1.5 px-3 rounded-lg text-xs shadow transition active:scale-95 flex-shrink-0";
+                btnCoin.innerText = "20 ฿";
+            }
+        }
+
+        function startGame() {
+            if (!state.selectedServerId) {
+                alert("กรุณาเลือกเซิร์ฟเวอร์ (Free หรือ VIP) ก่อนเริ่มเล่นเกมครับ!");
+                return;
+            }
+
+            const inputName = document.getElementById('input-username').value.trim();
+            if (inputName) state.playerName = inputName;
+
+            if (screen.orientation && screen.orientation.lock) {
+                screen.orientation.lock('landscape').catch(() => {});
+            }
+
+            document.getElementById('start-screen').classList.add('hidden');
+            document.getElementById('game-hud').classList.remove('hidden');
+            document.getElementById('player-nametag').classList.remove('hidden');
+            document.getElementById('nametag-text').innerText = state.playerName;
+            document.getElementById('player-nametag').style.display = 'none';
+
+            initServerMapData(state.selectedServerId);
+            listenToRealtimeLeaderboard(state.selectedServerId);
+
+            audio.playStart();
+            state.isPlaying = true;
+            // AOI starts from the player's current position; Zone is invisible to players.
+            listenToRemotePlayers(state.selectedServerId, true);
+            state.isPaused = false;
+            
+            // โหลดคะแนนเฉพาะไอดีปัจจุบันทันทีเมื่อเริ่มเล่น
+            loadScoreForCurrentId();
+            syncMyPlayerData(true);
+        }
+
+        function updateScoreDisplay() {
+            document.getElementById('hud-score').innerText = state.score.toLocaleString();
+        }
+
+        function toggleAudio() {
+            state.audioMuted = !state.audioMuted;
+            audio.muted = state.audioMuted;
+            const icon = document.getElementById('audio-icon');
+            if (state.audioMuted) {
+                icon.className = 'fa-solid fa-volume-xmark text-xl text-rose-400';
+            } else {
+                icon.className = 'fa-solid fa-volume-high text-xl text-amber-400';
+            }
+        }
+
+        function openHomeConfirmModal() {
+            state.isPaused = true;
+            const localNameTag = document.getElementById('player-nametag');
+            if (localNameTag) localNameTag.style.display = 'none';
+            document.getElementById('exit-modal').classList.remove('hidden');
+        }
+
+        function closeHomeConfirmModal() {
+            document.getElementById('exit-modal').classList.add('hidden');
+            state.isPaused = false;
+        }
+
+        function confirmExitGame() {
+            const myId = getMyPlayerId();
+
+            // Remove the player from the AOI Zone database path.
+            if (state.selectedServerId && myId) {
+                const zoneId = currentPlayerZoneId || getPlayerZoneId(playerPos.x, playerPos.z);
+                const myZoneRef = database.ref(
+                    `servers/${state.selectedServerId}/zones/${zoneId}/players/${myId}`
+                );
+                myZoneRef.onDisconnect().cancel();
+                myZoneRef.remove().catch(err => console.warn("AOI exit cleanup:", err));
+            }
+
+            // Stop all nearby-Zone listeners and clear remote player objects.
+            removeAllAOIListeners();
+
+            if (luckyBoxServerRef) luckyBoxServerRef.off();
+
+            document.getElementById('exit-modal').classList.add('hidden');
+            document.getElementById('game-hud').classList.add('hidden');
+            document.getElementById('player-nametag').classList.add('hidden');
+            document.getElementById('start-screen').classList.remove('hidden');
+            state.isPlaying = false;
+            state.isPaused = false;
+        }
+
+        function openFullLeaderboard() {
+            document.getElementById('leaderboard-modal').classList.remove('hidden');
+        }
+
+        function closeFullLeaderboard() {
+            document.getElementById('leaderboard-modal').classList.add('hidden');
+        }
+
+        // Three.js Scene Setup
+        let scene, camera, renderer;
+        let playerGroup, playerBody, leftArm, rightArm, leftLeg, rightLeg;
+        const MAP_SIZE = 1500;
+        const MAX_COINS_PER_MAP = 200;
+        const COIN_RESPAWN_MS = 60 * 1000;
+        const LUCKY_BOX_RESPAWN_MS = 4 * 60 * 60 * 1000;
+
+        const buildings = [];
+        const trees = [];
+        const coins = [];
+        let luckyBox = null;
+
+        // 🌐 SERVER MAP SYNC: ทุกคนในเซิร์ฟเวอร์เดียวกันใช้ seed เดียวกัน
+        let serverMapSeed = 'default-map';
+        let mapRandom = Math.random;
+        const staticMapObjects = [];
+
+        function createSeededRandom(seedText) {
+            let seed = 2166136261;
+            const str = String(seedText || 'default-map');
+
+            for (let i = 0; i < str.length; i++) {
+                seed ^= str.charCodeAt(i);
+                seed = Math.imul(seed, 16777619);
+            }
+
+            return function() {
+                seed += 0x6D2B79F5;
+                let t = seed;
+                t = Math.imul(t ^ (t >>> 15), t | 1);
+                t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+                return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+            };
+        }
+
+        function clearStaticMapObjects() {
+            staticMapObjects.forEach(obj => {
+                if (obj && scene) scene.remove(obj);
+            });
+            staticMapObjects.length = 0;
+            buildings.length = 0;
+            trees.length = 0;
+        }
+
+        function rebuildServerStaticMap(serverId) {
+            serverMapSeed = String(serverId || 'default-map');
+            mapRandom = createSeededRandom(serverMapSeed);
+
+            clearStaticMapObjects();
+
+            // สร้างตึก + ต้นไม้ใหม่ด้วย seed ของเซิร์ฟเวอร์
+            buildVoxelStructures();
+
+            // สร้างเหรียญใหม่ด้วย seed เดียวกัน
+            coins.forEach(c => {
+                if (c && c.mesh && scene) scene.remove(c.mesh);
+            });
+            coins.length = 0;
+            spawnCoins(MAX_COINS_PER_MAP);
+        }
+
+        const playerPos = new THREE.Vector3(0, 0, 0);
+        const playerVel = new THREE.Vector3(0, 0, 0);
+        const smoothCamTarget = new THREE.Vector3(0, 1.5, 0);
+        let playerVelocityY = 0;
+        let isGrounded = true;
+        let playerRotation = 0;
+        let walkCycle = 0;
+
+        let cameraYaw = 0;
+        let cameraPitch = 0.5;
+        const cameraDistance = 18;
+
+        const keys = { w: false, a: false, s: false, d: false };
+        const joystickVec = { x: 0, y: 0 };
+
+        function init3D() {
+            const container = document.getElementById('game-canvas');
+
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x60a5fa);
+            scene.fog = new THREE.FogExp2(0x93c5fd, 0.0007);
+
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 4000);
+
+            renderer = new THREE.WebGLRenderer({ canvas: container, antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.75);
+            scene.add(ambientLight);
+
+            const sunLight = new THREE.DirectionalLight(0xfffbeb, 1.1);
+            sunLight.position.set(300, 450, -200);
+            sunLight.castShadow = true;
+            sunLight.shadow.mapSize.width = 2048;
+            sunLight.shadow.mapSize.height = 2048;
+            sunLight.shadow.camera.near = 0.5;
+            sunLight.shadow.camera.far = 1200;
+            const d = 500;
+            sunLight.shadow.camera.left = -d;
+            sunLight.shadow.camera.right = d;
+            sunLight.shadow.camera.top = d;
+            sunLight.shadow.camera.bottom = -d;
+            scene.add(sunLight);
+
+            buildVoxelTerrain();
+            buildVoxelStructures();
+            buildVoxelPlayer();
+            setupControls();
+
+            window.addEventListener('resize', onWindowResize);
+        }
+
+        function buildVoxelTerrain() {
+            const groundGeo = new THREE.BoxGeometry(MAP_SIZE, 2, MAP_SIZE);
+            const groundMat = new THREE.MeshLambertMaterial({ color: 0x48bb78 });
+            const ground = new THREE.Mesh(groundGeo, groundMat);
+            ground.position.y = -1;
+            ground.receiveShadow = true;
+            scene.add(ground);
+
+            const detailGeo = new THREE.BoxGeometry(4, 0.1, 4);
+            const detailMat = new THREE.MeshLambertMaterial({ color: 0x38a169 });
+            for(let i = 0; i < 600; i++) {
+                const rx = (mapRandom() - 0.5) * (MAP_SIZE - 20);
+                const rz = (mapRandom() - 0.5) * (MAP_SIZE - 20);
+                const patch = new THREE.Mesh(detailGeo, detailMat);
+                patch.position.set(Math.floor(rx/4)*4, 0.05, Math.floor(rz/4)*4);
+                patch.receiveShadow = true;
+                scene.add(patch);
+            }
+        }
+
+        function buildVoxelStructures() {
+            const darkBuildingMat = new THREE.MeshLambertMaterial({ color: 0x2d3748 });
+            const brownBuildingMat = new THREE.MeshLambertMaterial({ color: 0x742a2a });
+            const blueBuildingMat = new THREE.MeshLambertMaterial({ color: 0x2b6cb0 });
+            const windowMat = new THREE.MeshBasicMaterial({ color: 0xfbd38d });
+            const trunkMat = new THREE.MeshLambertMaterial({ color: 0x5c3d2e });
+            const leafMat = new THREE.MeshLambertMaterial({ color: 0x2f855a });
+
+            const materials = [darkBuildingMat, brownBuildingMat, blueBuildingMat];
+
+            for (let bx = -600; bx <= 600; bx += 200) {
+                for (let bz = -600; bz <= 600; bz += 200) {
+                    if (Math.abs(bx) < 100 && Math.abs(bz) < 100) continue;
+
+                    const width = 18 + Math.floor(mapRandom() * 20);
+                    const depth = 18 + Math.floor(mapRandom() * 20);
+                    const height = 28 + Math.floor(mapRandom() * 65);
+                    const mat = materials[Math.floor(mapRandom() * materials.length)];
+
+                    const posX = bx + (mapRandom() - 0.5) * 60;
+                    const posZ = bz + (mapRandom() - 0.5) * 60;
+
+                    const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), mat);
+                    mesh.position.set(posX, height / 2, posZ);
+                    mesh.castShadow = true;
+                    mesh.receiveShadow = true;
+                    scene.add(mesh);
+                    staticMapObjects.push(mesh);
+
+                    for (let y = 6; y < height - 6; y += 8) {
+                        for (let x = -width / 2 + 3; x < width / 2 - 2; x += 5) {
+                            const win = new THREE.Mesh(new THREE.BoxGeometry(2, 3, 0.2), windowMat);
+                            win.position.set(posX + x, y, posZ + depth / 2 + 0.1);
+                            scene.add(win);
+                            staticMapObjects.push(win);
+                        }
+                    }
+
+                    buildings.push({
+                        minX: posX - width / 2 - 2,
+                        maxX: posX + width / 2 + 2,
+                        minZ: posZ - depth / 2 - 2,
+                        maxZ: posZ + depth / 2 + 2
+                    });
+                }
+            }
+
+            for (let i = 0; i < 250; i++) {
+                const tx = (mapRandom() - 0.5) * (MAP_SIZE - 50);
+                const tz = (mapRandom() - 0.5) * (MAP_SIZE - 50);
+
+                let insideBuilding = buildings.some(b => tx >= b.minX && tx <= b.maxX && tz >= b.minZ && tz <= b.maxZ);
+                if (insideBuilding || (Math.abs(tx) < 25 && Math.abs(tz) < 25)) continue;
+
+                const trunkHeight = 6 + mapRandom() * 4;
+                const trunk = new THREE.Mesh(new THREE.BoxGeometry(2, trunkHeight, 2), trunkMat);
+                trunk.position.set(tx, trunkHeight / 2, tz);
+                trunk.castShadow = true;
+                scene.add(trunk);
+                staticMapObjects.push(trunk);
+
+                const leafSize = 6 + mapRandom() * 3;
+                const leaves = new THREE.Mesh(new THREE.BoxGeometry(leafSize, leafSize, leafSize), leafMat);
+                leaves.position.set(tx, trunkHeight + leafSize / 2 - 1, tz);
+                leaves.castShadow = true;
+                scene.add(leaves);
+                staticMapObjects.push(leaves);
+
+                trees.push({
+                    minX: tx - 1.8,
+                    maxX: tx + 1.8,
+                    minZ: tz - 1.8,
+                    maxZ: tz + 1.8
+                });
+            }
+        }
+
+        function buildVoxelPlayer() {
+            playerGroup = new THREE.Group();
+
+            const skinMat = new THREE.MeshLambertMaterial({ color: 0xffdbac });
+            const shirtMat = new THREE.MeshLambertMaterial({ color: 0x3182ce });
+            const pantsMat = new THREE.MeshLambertMaterial({ color: 0x2b6cb0 });
+
+            const head = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.9, 0.9), skinMat);
+            head.position.y = 1.85;
+            head.castShadow = true;
+            playerGroup.add(head);
+
+            const eyeMat = new THREE.MeshBasicMaterial({ color: 0x1a202c });
+            const leftEye = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.15, 0.05), eyeMat);
+            leftEye.position.set(-0.2, 1.9, 0.46);
+            playerGroup.add(leftEye);
+
+            const rightEye = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.15, 0.05), eyeMat);
+            rightEye.position.set(0.2, 1.9, 0.46);
+            playerGroup.add(rightEye);
+
+            playerBody = new THREE.Mesh(new THREE.BoxGeometry(1.0, 1.1, 0.6), shirtMat);
+            playerBody.position.y = 1.05;
+            playerBody.castShadow = true;
+            playerGroup.add(playerBody);
+
+            leftArm = new THREE.Mesh(new THREE.BoxGeometry(0.35, 1.0, 0.35), skinMat);
+            leftArm.position.set(-0.7, 1.0, 0);
+            leftArm.castShadow = true;
+            playerGroup.add(leftArm);
+
+            rightArm = new THREE.Mesh(new THREE.BoxGeometry(0.35, 1.0, 0.35), skinMat);
+            rightArm.position.set(0.7, 1.0, 0);
+            rightArm.castShadow = true;
+            playerGroup.add(rightArm);
+
+            leftLeg = new THREE.Mesh(new THREE.BoxGeometry(0.42, 1.0, 0.42), pantsMat);
+            leftLeg.position.set(-0.25, 0.5, 0);
+            leftLeg.castShadow = true;
+            playerGroup.add(leftLeg);
+
+            rightLeg = new THREE.Mesh(new THREE.BoxGeometry(0.42, 1.0, 0.42), pantsMat);
+            rightLeg.position.set(0.25, 0.5, 0);
+            rightLeg.castShadow = true;
+            playerGroup.add(rightLeg);
+
+            playerGroup.position.set(0, 0, 0);
+            scene.add(playerGroup);
+        }
+
+        function initServerMapData(serverId) {
+            // สำคัญ: map ทั้งหมดถูกสร้างจาก seed ของ serverId เดียวกัน
+            rebuildServerStaticMap(serverId);
+
+            if (luckyBox && luckyBox.mesh) {
+                scene.remove(luckyBox.mesh);
+                luckyBox = null;
+            }
+
+            listenToCoinsRealtime(serverId);
+            spawnLuckyBoxes(serverId);
+        }
+
+        function spawnCoins(count) {
+            const coinGeo = new THREE.CylinderGeometry(0.6, 0.6, 0.15, 8);
+            const coinMat = new THREE.MeshStandardMaterial({
+                color: 0xe2e8f0,
+                metalness: 0.9,
+                roughness: 0.2
+            });
+
+            for (let i = 0; i < count; i++) {
+                let rx, rz, collision;
+                do {
+                    rx = (mapRandom() - 0.5) * (MAP_SIZE - 12);
+                    rz = (mapRandom() - 0.5) * (MAP_SIZE - 12);
+                    collision =
+                        buildings.some(b => rx >= b.minX && rx <= b.maxX && rz >= b.minZ && rz <= b.maxZ) ||
+                        trees.some(t => rx >= t.minX && rx <= t.maxX && rz >= t.minZ && rz <= t.maxZ);
+                } while (collision);
+
+                const coinMesh = new THREE.Mesh(coinGeo, coinMat);
+                coinMesh.position.set(rx, 1.2, rz);
+                coinMesh.rotation.x = Math.PI / 2;
+                coinMesh.castShadow = true;
+                scene.add(coinMesh);
+
+                coins.push({
+                    id: `coin_${i}`,
+                    mesh: coinMesh,
+                    active: true,
+                    respawnTime: 0,
+                    baseY: 1.2,
+                    rotSpeed: 1 + mapRandom() * 2
+                });
+            }
+        }
+
+        let coinsServerRef = null;
+
+        // สถานะเหรียญเป็นข้อมูลกลางของ server:
+        // เมื่อผู้เล่นคนใดเก็บ เหรียญจุดนั้นจะหายจากทุกเครื่องและกลับมาใน 1 นาที
+        function listenToCoinsRealtime(serverId) {
+            if (coinsServerRef) coinsServerRef.off();
+
+            coinsServerRef = database.ref(`servers/${serverId}/world/coins`);
+
+            coinsServerRef.on('value', (snapshot) => {
+                const data = snapshot.val() || {};
+                const now = Date.now();
+
+                coins.forEach((coin) => {
+                    const respawnAt = Number(data[coin.id]?.respawnTimestamp || 0);
+
+                    coin.respawnTime = respawnAt;
+
+                    if (respawnAt > now) {
+                        coin.active = false;
+                        coin.mesh.visible = false;
+                    } else {
+                        coin.active = true;
+                        coin.mesh.visible = true;
+                    }
+                });
+            });
+        }
+
+        // เก็บเหรียญแบบ transaction เพื่อป้องกันผู้เล่น 2 คนเก็บเหรียญจุดเดียวกันพร้อมกัน
+        function collectCoin(coin, nowMs) {
+            if (!coin || !coin.active || !coinsServerRef) return;
+
+            const coinRef = coinsServerRef.child(coin.id);
+
+            coin.active = false;
+            coin.mesh.visible = false;
+
+            coinRef.transaction(current => {
+                const currentRespawn = Number(current?.respawnTimestamp || 0);
+
+                // มีผู้เล่นคนอื่นเก็บไปก่อนแล้ว -> ไม่ให้รางวัลซ้ำ
+                if (currentRespawn > nowMs) return;
+
+                return {
+                    respawnTimestamp: nowMs + COIN_RESPAWN_MS,
+                    updatedAt: firebase.database.ServerValue.TIMESTAMP
+                };
+            }).then(result => {
+                if (!result.committed) return;
+
+                // ได้สิทธิ์เก็บจริงเพียงคนเดียว
+                let addCoinVal = 1;
+                if (state.shop.coinBuffExpires > nowMs) addCoinVal = 2;
+
+                addScore(addCoinVal);
+                audio.playCoin();
+            }).catch(err => {
+                console.error("Coin collection sync error:", err);
+            });
+        }
+
+        // จุดเกิดผู้เล่นเริ่มต้นของเกมอยู่ที่ (0, 0)
+        // กล่องสมบัติจะไม่ถูกสุ่มในรัศมีนี้ เพื่อไม่ให้เข้าเกมแล้วกล่องอยู่ติดตัวผู้เล่น
+        const LUCKY_BOX_MIN_DISTANCE_FROM_SPAWN = 120;
+
+        function getDeterministicFreePosition(key, margin = 20, minDistanceFromSpawn = 0) {
+            const rng = createSeededRandom(`${serverMapSeed}:position:${key}`);
+            let rx = 0;
+            let rz = 0;
+
+            for (let attempt = 0; attempt < 2000; attempt++) {
+                rx = (rng() - 0.5) * (MAP_SIZE - margin);
+                rz = (rng() - 0.5) * (MAP_SIZE - margin);
+
+                // ห้ามเกิดใกล้จุดเริ่มต้นผู้เล่น
+                if (minDistanceFromSpawn > 0) {
+                    const distFromSpawn = Math.sqrt(rx * rx + rz * rz);
+                    if (distFromSpawn < minDistanceFromSpawn) continue;
+                }
+
+                const collision =
+                    buildings.some(b => rx >= b.minX && rx <= b.maxX && rz >= b.minZ && rz <= b.maxZ) ||
+                    trees.some(t => rx >= t.minX && rx <= t.maxX && rz >= t.minZ && rz <= t.maxZ);
+
+                if (!collision) {
+                    return { x: rx, z: rz };
+                }
+            }
+
+            // fallback ที่ยังห่างจากจุดเกิดผู้เล่น
+            return { x: minDistanceFromSpawn + 50, z: 0 };
+        }
+
+        function relocateLuckyBox(box, spawnCycle = 0) {
+            // กล่องมีเพียง 1 กล่องต่อ server และตำแหน่งจะสุ่มใหม่ทุก spawnCycle
+            // ใช้ seed เดียวกัน ทำให้ผู้เล่นทุกคนใน server เห็นตำแหน่งเดียวกัน
+            // และเว้นระยะจากจุดเกิดกลางแมพ ไม่ให้เข้าเกมแล้วกล่องอยู่ตรงตัวผู้เล่น
+            const pos = getDeterministicFreePosition(
+                `lucky-box-${spawnCycle}`,
+                20,
+                LUCKY_BOX_MIN_DISTANCE_FROM_SPAWN
+            );
+
+            if (box && box.mesh) {
+                box.mesh.position.set(pos.x, 0, pos.z);
+            }
+        }
+
+        let luckyBoxServerRef = null;
+
+        function createTreasureChest() {
+            const chest = new THREE.Group();
+
+            const woodMat = new THREE.MeshStandardMaterial({
+                color: 0x8b4513,
+                roughness: 0.65,
+                metalness: 0.05
+            });
+            const darkWoodMat = new THREE.MeshStandardMaterial({
+                color: 0x5a2d0c,
+                roughness: 0.75
+            });
+            const goldMat = new THREE.MeshStandardMaterial({
+                color: 0xfbbf24,
+                emissive: 0x8a5a00,
+                emissiveIntensity: 0.25,
+                metalness: 0.85,
+                roughness: 0.2
+            });
+
+            // ตัวหีบทรงสี่เหลี่ยม
+            const base = new THREE.Mesh(new THREE.BoxGeometry(2.1, 1.25, 1.35), woodMat);
+            base.position.y = 0.75;
+            base.castShadow = true;
+            base.receiveShadow = true;
+            chest.add(base);
+
+            // ฝาหีบโค้งแบบง่ายด้วยกล่องหลายชิ้น
+            const lid = new THREE.Mesh(new THREE.BoxGeometry(2.15, 0.35, 1.4), darkWoodMat);
+            lid.position.y = 1.55;
+            lid.castShadow = true;
+            chest.add(lid);
+
+            const lidTop = new THREE.Mesh(new THREE.BoxGeometry(1.75, 0.28, 1.15), woodMat);
+            lidTop.position.y = 1.82;
+            lidTop.castShadow = true;
+            chest.add(lidTop);
+
+            // แถบทองคาดหีบ
+            [-0.72, 0.72].forEach(x => {
+                const band = new THREE.Mesh(new THREE.BoxGeometry(0.14, 1.65, 1.43), goldMat);
+                band.position.set(x, 1.05, 0);
+                band.castShadow = true;
+                chest.add(band);
+            });
+
+            // แถบทองด้านหน้า
+            const frontBand = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.95, 0.08), goldMat);
+            frontBand.position.set(0, 0.82, 0.72);
+            frontBand.castShadow = true;
+            chest.add(frontBand);
+
+            // แม่กุญแจ
+            const lockBody = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.48, 0.12), goldMat);
+            lockBody.position.set(0, 1.08, 0.76);
+            lockBody.castShadow = true;
+            chest.add(lockBody);
+
+            const lockRing = new THREE.Mesh(
+                new THREE.TorusGeometry(0.15, 0.045, 8, 16, Math.PI),
+                goldMat
+            );
+            lockRing.position.set(0, 1.36, 0.77);
+            lockRing.rotation.x = Math.PI / 2;
+            lockRing.castShadow = true;
+            chest.add(lockRing);
+
+            return chest;
+        }
+
+        function spawnLuckyBoxes(serverId) {
+            const chestMesh = createTreasureChest();
+            scene.add(chestMesh);
+
+            luckyBox = {
+                mesh: chestMesh,
+                active: true,
+                baseY: 0,
+                nextSpawnTimestamp: 0,
+                spawnCycle: 0,
+                collecting: false
+            };
+
+            if (luckyBoxServerRef) luckyBoxServerRef.off();
+            luckyBoxServerRef = database.ref(`servers/${serverId}/world/luckyBox`);
+
+            luckyBoxServerRef.on('value', (snapshot) => {
+                const data = snapshot.val() || {};
+                const nextSpawn = Number(data.nextSpawnTimestamp || 0);
+                const spawnCycle = Number(data.spawnCycle || 0);
+                const now = Date.now();
+
+                luckyBox.nextSpawnTimestamp = nextSpawn;
+                luckyBox.spawnCycle = spawnCycle;
+
+                if (nextSpawn > now) {
+                    luckyBox.active = false;
+                    luckyBox.mesh.visible = false;
+                } else {
+                    luckyBox.active = true;
+                    luckyBox.mesh.visible = true;
+                    relocateLuckyBox(luckyBox, spawnCycle);
+                }
+            });
+
+            luckyBoxServerRef.once('value').then(snapshot => {
+                if (!snapshot.exists()) {
+                    luckyBoxServerRef.set({
+                        nextSpawnTimestamp: 0,
+                        spawnCycle: 0,
+                        updatedAt: firebase.database.ServerValue.TIMESTAMP
+                    });
+                }
+            });
+        }
+
+        function setupControls() {
+            window.addEventListener('keydown', (e) => {
+                const code = e.code;
+                const k = e.key ? e.key.toLowerCase() : '';
+                if (code === 'KeyW' || code === 'ArrowUp' || k === 'w') keys.w = true;
+                if (code === 'KeyS' || code === 'ArrowDown' || k === 's') keys.s = true;
+                if (code === 'KeyA' || code === 'ArrowLeft' || k === 'a') keys.a = true;
+                if (code === 'KeyD' || code === 'ArrowRight' || k === 'd') keys.d = true;
+                if (code === 'Space' || e.keyCode === 32) {
+                    e.preventDefault();
+                    triggerJump();
+                }
+            });
+
+            window.addEventListener('keyup', (e) => {
+                const code = e.code;
+                const k = e.key ? e.key.toLowerCase() : '';
+                if (code === 'KeyW' || code === 'ArrowUp' || k === 'w') keys.w = false;
+                if (code === 'KeyS' || code === 'ArrowDown' || k === 's') keys.s = false;
+                if (code === 'KeyA' || code === 'ArrowLeft' || k === 'a') keys.a = false;
+                if (code === 'KeyD' || code === 'ArrowRight' || k === 'd') keys.d = false;
+            });
+
+            const jumpBtn = document.getElementById('btn-jump');
+            const handleJump = (e) => {
+                if (e.cancelable) e.preventDefault();
+                e.stopPropagation();
+                triggerJump();
+            };
+            jumpBtn.addEventListener('touchstart', handleJump, { passive: false });
+            jumpBtn.addEventListener('mousedown', handleJump);
+
+            const joystickZone = document.getElementById('joystick-zone');
+            const joystickHandle = document.getElementById('joystick-handle');
+            let joystickActive = false;
+            let joyTouchId = null;
+            let joyCenter = { x: 0, y: 0 };
+
+            function handleJoyStart(e) {
+                if (joystickActive) return;
+                const touch = e.changedTouches ? e.changedTouches[0] : e;
+                if (!touch) return;
+                joyTouchId = touch.identifier !== undefined ? touch.identifier : 'mouse';
+                joystickActive = true;
+                const rect = joystickZone.getBoundingClientRect();
+                joyCenter = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+                handleJoyMove(e);
+            }
+
+            function handleJoyMove(e) {
+                if (!joystickActive) return;
+                let touch = e;
+                if (e.changedTouches) {
+                    let found = false;
+                    for (let t of e.changedTouches) {
+                        if (t.identifier === joyTouchId) { touch = t; found = true; break; }
+                    }
+                    if (!found) return;
+                }
+                const dx = touch.clientX - joyCenter.x;
+                const dy = touch.clientY - joyCenter.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                const maxRadius = 45;
+
+                const angle = Math.atan2(dy, dx);
+                const clampedDist = Math.min(dist, maxRadius);
+
+                const handleX = Math.cos(angle) * clampedDist;
+                const handleY = Math.sin(angle) * clampedDist;
+
+                joystickHandle.style.transform = `translate(calc(-50% + ${handleX}px), calc(-50% + ${handleY}px))`;
+
+                joystickVec.x = handleX / maxRadius;
+                joystickVec.y = handleY / maxRadius;
+            }
+
+            function handleJoyEnd(e) {
+                if (!joystickActive) return;
+                if (e && e.changedTouches && joyTouchId !== 'mouse') {
+                    let joyEnded = false;
+                    for (let t of e.changedTouches) {
+                        if (t.identifier === joyTouchId) {
+                            joyEnded = true;
+                            break;
+                        }
+                    }
+                    if (!joyEnded) return;
+                }
+                joystickActive = false;
+                joyTouchId = null;
+                joystickHandle.style.transform = `translate(-50%, -50%)`;
+                joystickVec.x = 0;
+                joystickVec.y = 0;
+            }
+
+            joystickZone.addEventListener('touchstart', handleJoyStart, { passive: false });
+            window.addEventListener('touchmove', handleJoyMove, { passive: false });
+            window.addEventListener('touchend', handleJoyEnd);
+            window.addEventListener('touchcancel', handleJoyEnd);
+
+            let isDraggingCam = false;
+            let lastTouchX = 0;
+            let lastTouchY = 0;
+            let camTouchId = null;
+
+            function isUIElement(target) {
+                if (!target) return false;
+                return target.closest('#start-screen, #exit-modal, #wheel-modal, #leaderboard-modal, #shop-modal, #payment-modal, #joystick-zone, #btn-jump, button');
+            }
+
+            window.addEventListener('touchstart', (e) => {
+                for (let t of e.changedTouches) {
+                    if (!isUIElement(t.target) && camTouchId === null) {
+                        camTouchId = t.identifier;
+                        lastTouchX = t.clientX;
+                        lastTouchY = t.clientY;
+                        isDraggingCam = true;
+                        break;
+                    }
+                }
+            }, { passive: false });
+
+            window.addEventListener('touchmove', (e) => {
+                if (!isDraggingCam) return;
+                for (let t of e.changedTouches) {
+                    if (t.identifier === camTouchId) {
+                        const dx = t.clientX - lastTouchX;
+                        const dy = t.clientY - lastTouchY;
+                        lastTouchX = t.clientX;
+                        lastTouchY = t.clientY;
+
+                        cameraYaw -= dx * 0.006;
+                        cameraPitch += dy * 0.006;
+                        cameraPitch = Math.max(0.1, Math.min(1.2, cameraPitch));
+                        break;
+                    }
+                }
+            }, { passive: false });
+
+            const endCamDrag = (e) => {
+                if (e.changedTouches) {
+                    for (let t of e.changedTouches) {
+                        if (t.identifier === camTouchId) {
+                            camTouchId = null;
+                            isDraggingCam = false;
+                            break;
+                        }
+                    }
+                } else {
+                    isDraggingCam = false;
+                }
+            };
+
+            window.addEventListener('touchend', endCamDrag);
+            window.addEventListener('touchcancel', endCamDrag);
+
+            let isMouseDown = false;
+            window.addEventListener('mousedown', (e) => {
+                if (!isUIElement(e.target)) {
+                    isMouseDown = true;
+                    lastTouchX = e.clientX;
+                    lastTouchY = e.clientY;
+                }
+            });
+
+            window.addEventListener('mousemove', (e) => {
+                if (isMouseDown) {
+                    const dx = e.clientX - lastTouchX;
+                    const dy = e.clientY - lastTouchY;
+                    lastTouchX = e.clientX;
+                    lastTouchY = e.clientY;
+
+                    cameraYaw -= dx * 0.006;
+                    cameraPitch += dy * 0.006;
+                    cameraPitch = Math.max(0.1, Math.min(1.2, cameraPitch));
+                }
+            });
+
+            window.addEventListener('mouseup', () => { isMouseDown = false; });
+        }
+
+        function triggerJump() {
+            if (isGrounded && state.isPlaying && !state.isPaused) {
+                playerVelocityY = 16.0;
+                isGrounded = false;
+                audio.playJump();
+            }
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        const WHEEL_ITEMS = [
+            { label: "100 เหรียญ", value: 100, weight: 50, color: "#3b82f6" },
+            { label: "500 เหรียญ", value: 500, weight: 30, color: "#10b981" },
+            { label: "1,000 เหรียญ", value: 1000, weight: 19, color: "#8b5cf6" },
+            { label: "5,000 เหรียญ", value: 5000, weight: 0.9, color: "#f59e0b" },
+            { label: "9,999 เหรียญ", value: 9999, weight: 0.1, color: "#ef4444" }
+        ];
+
+        let currentWheelAngle = 0;
+
+        function drawLuckyWheel() {
+            const canvas = document.getElementById('wheel-canvas');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            const cx = canvas.width / 2;
+            const cy = canvas.height / 2;
+            const radius = canvas.width / 2 - 8;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            const totalSlices = WHEEL_ITEMS.length;
+            const sliceAngle = (2 * Math.PI) / totalSlices;
+
+            ctx.save();
+            ctx.translate(cx, cy);
+            ctx.rotate(currentWheelAngle);
+
+            WHEEL_ITEMS.forEach((item, idx) => {
+                const startA = idx * sliceAngle;
+                const endA = startA + sliceAngle;
+
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.arc(0, 0, radius, startA, endA);
+                ctx.closePath();
+                ctx.fillStyle = item.color;
+                ctx.fill();
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = "#ffffff";
+                ctx.stroke();
+
+                ctx.save();
+                ctx.rotate(startA + sliceAngle / 2);
+                ctx.textAlign = "right";
+                ctx.fillStyle = "#ffffff";
+                ctx.font = "bold 15px Kanit";
+                ctx.fillText(item.label, radius - 15, 5);
+                ctx.restore();
+            });
+
+            ctx.beginPath();
+            ctx.arc(0, 0, 20, 0, 2 * Math.PI);
+            ctx.fillStyle = "#ffffff";
+            ctx.fill();
+            ctx.strokeStyle = "#f59e0b";
+            ctx.lineWidth = 4;
+            ctx.stroke();
+
+            ctx.restore();
+        }
+
+        function triggerLuckyBoxModal() {
+            state.isPaused = true;
+            const localNameTag = document.getElementById('player-nametag');
+            if (localNameTag) localNameTag.style.display = 'none';
+            state.wheelSpinning = false;
+            document.getElementById('wheel-modal').classList.remove('hidden');
+            document.getElementById('btn-spin-wheel').classList.remove('hidden');
+            document.getElementById('btn-close-wheel').classList.add('hidden');
+            document.getElementById('wheel-result-msg').innerText = "กดปุ่มเพื่อเริ่มหมุนวงล้อ!";
+            drawLuckyWheel();
+            audio.playBoxHit();
+        }
+
+        function spinWheel() {
+            if (state.wheelSpinning) return;
+            state.wheelSpinning = true;
+
+            document.getElementById('btn-spin-wheel').classList.add('hidden');
+            document.getElementById('wheel-result-msg').innerText = "กำลังหมุนวงล้อ...";
+
+            const rand = Math.random() * 100;
+            let accum = 0;
+            let selectedIdx = 0;
+
+            for (let i = 0; i < WHEEL_ITEMS.length; i++) {
+                accum += WHEEL_ITEMS[i].weight;
+                if (rand < accum) {
+                    selectedIdx = i;
+                    break;
+                }
+            }
+
+            state.wheelReward = WHEEL_ITEMS[selectedIdx];
+
+            const sliceAngle = (2 * Math.PI) / WHEEL_ITEMS.length;
+            const targetSliceAngle = selectedIdx * sliceAngle + sliceAngle / 2;
+
+            const fullRotations = 5 * 2 * Math.PI;
+            const targetAngle = fullRotations + (3 * Math.PI / 2 - targetSliceAngle);
+
+            const startAngle = currentWheelAngle % (2 * Math.PI);
+            const totalDelta = targetAngle - startAngle;
+
+            const duration = 4000;
+            const startTime = performance.now();
+            let lastTickAngle = startAngle;
+
+            function animateSpin(now) {
+                const elapsed = now - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+
+                const easeOut = 1 - Math.pow(1 - progress, 3);
+                currentWheelAngle = startAngle + totalDelta * easeOut;
+
+                if (Math.abs(currentWheelAngle - lastTickAngle) > sliceAngle) {
+                    audio.playWheelTick();
+                    lastTickAngle = currentWheelAngle;
+                }
+
+                drawLuckyWheel();
+
+                if (progress < 1) {
+                    requestAnimationFrame(animateSpin);
+                } else {
+                    state.wheelSpinning = false;
+                    addScore(state.wheelReward.value);
+                    audio.playReward();
+
+                    document.getElementById('wheel-result-msg').innerHTML = `
+                        <span class="text-amber-400 font-extrabold text-xl animate-bounce">
+                            ยินดีด้วย! คุณได้รับ +${state.wheelReward.value.toLocaleString()} เหรียญ!
+                        </span>
+                    `;
+                    document.getElementById('btn-close-wheel').classList.remove('hidden');
+                }
+            }
+
+            requestAnimationFrame(animateSpin);
+        }
+
+        function closeWheelModal() {
+            document.getElementById('wheel-modal').classList.add('hidden');
+            state.isPaused = false;
+        }
+
+        // 🏷️ แสดงชื่อเฉพาะตอนอยู่ในหน้าเล่นเกม และเฉพาะผู้เล่นที่อยู่ในระยะสายตา
+        function updatePlayerNametagPosition() {
+            const localTag = document.getElementById('player-nametag');
+
+            // ป้องกันชื่อไปโผล่บนหน้าเมนู / modal / หน้าต่างอื่นของเกม
+            const gameVisible = state.isPlaying && !state.isPaused && camera && renderer;
+
+            if (!gameVisible) {
+                if (localTag) localTag.style.display = 'none';
+                Object.keys(otherPlayers).forEach(id => {
+                    const op = otherPlayers[id];
+                    if (op && op.nameTagEl) op.nameTagEl.style.display = 'none';
+                });
+                return;
+            }
+
+            const canvasRect = renderer.domElement.getBoundingClientRect();
+            const maxDistance = 28; // ระยะที่สามารถเห็นชื่อผู้เล่นอื่น
+
+            function updateTag(tag, worldPos, extraDistanceCheck = null) {
+                if (!tag) return;
+
+                if (extraDistanceCheck !== null && extraDistanceCheck > maxDistance) {
+                    tag.style.display = 'none';
+                    return;
+                }
+
+                const projected = worldPos.clone().project(camera);
+
+                // z >= 1 = อยู่หลังกล้อง
+                // x/y นอกช่วง = อยู่นอกขอบจอ
+                if (
+                    projected.z >= 1 ||
+                    projected.x < -1.05 || projected.x > 1.05 ||
+                    projected.y < -1.05 || projected.y > 1.05
+                ) {
+                    tag.style.display = 'none';
+                    return;
+                }
+
+                const x = (projected.x * 0.5 + 0.5) * canvasRect.width + canvasRect.left;
+                const y = (projected.y * -0.5 + 0.5) * canvasRect.height + canvasRect.top;
+
+                tag.style.left = `${x}px`;
+                tag.style.top = `${y}px`;
+                tag.style.display = 'block';
+            }
+
+            // ชื่อของเรา: แสดงเฉพาะตอนอยู่ในหน้าเล่นเกม
+            if (localTag) {
+                updateTag(
+                    localTag,
+                    new THREE.Vector3(playerPos.x, playerPos.y + 2.75, playerPos.z)
+                );
+            }
+
+            // ชื่อผู้เล่นอื่น: ต้องอยู่ในระยะใกล้ + อยู่ด้านหน้ากล้อง + อยู่ในจอ
+            Object.keys(otherPlayers).forEach(id => {
+                const op = otherPlayers[id];
+                if (!op || !op.mesh || !op.nameTagEl) return;
+
+                const distance = playerPos.distanceTo(op.mesh.position);
+
+                updateTag(
+                    op.nameTagEl,
+                    new THREE.Vector3(
+                        op.mesh.position.x,
+                        op.mesh.position.y + 2.75,
+                        op.mesh.position.z
+                    ),
+                    distance
+                );
+            });
+        }
+
+        const clock = new THREE.Clock();
+
+        function gameLoop() {
+            requestAnimationFrame(gameLoop);
+
+            const delta = Math.min(clock.getDelta(), 0.1);
+            const nowMs = Date.now();
+
+            if (state.isPlaying && !state.isPaused) {
+                let moveX = 0;
+                let moveZ = 0;
+
+                if (keys.w) moveZ -= 1;
+                if (keys.s) moveZ += 1;
+                if (keys.a) moveX -= 1;
+                if (keys.d) moveX += 1;
+
+                if (Math.abs(joystickVec.x) > 0.05) moveX = joystickVec.x;
+                if (Math.abs(joystickVec.y) > 0.05) moveZ = joystickVec.y;
+
+                const inputLen = Math.sqrt(moveX * moveX + moveZ * moveZ);
+
+                let moveSpeed = 22.0;
+                if (state.shop.speedBuffExpires > nowMs) {
+                    moveSpeed *= 2;
+                }
+
+                let targetVelX = 0;
+                let targetVelZ = 0;
+
+                if (inputLen > 0.05) {
+                    const normX = moveX / Math.max(1, inputLen);
+                    const normZ = moveZ / Math.max(1, inputLen);
+
+                    const forwardAmount = -normZ; 
+                    const rightAmount = normX;
+
+                    const worldMoveX = rightAmount * Math.cos(cameraYaw) - forwardAmount * Math.sin(cameraYaw);
+                    const worldMoveZ = -rightAmount * Math.sin(cameraYaw) - forwardAmount * Math.cos(cameraYaw);
+                    const inputMag = Math.min(inputLen, 1);
+
+                    targetVelX = worldMoveX * moveSpeed * inputMag;
+                    targetVelZ = worldMoveZ * moveSpeed * inputMag;
+                }
+
+                const accelDamp = Math.min(1, (isGrounded ? 18 : 10) * delta);
+                playerVel.x += (targetVelX - playerVel.x) * accelDamp;
+                playerVel.z += (targetVelZ - playerVel.z) * accelDamp;
+
+                const nextX = playerPos.x + playerVel.x * delta;
+                const nextZ = playerPos.z + playerVel.z * delta;
+
+                const limit = MAP_SIZE / 2 - 2;
+                const isObstacle = (x, z) => {
+                    return buildings.some(b => x >= b.minX && x <= b.maxX && z >= b.minZ && z <= b.maxZ) ||
+                           trees.some(t => x >= t.minX && x <= t.maxX && z >= t.minZ && z <= t.maxZ);
+                };
+
+                let collideX = isObstacle(nextX, playerPos.z);
+                let collideZ = isObstacle(playerPos.x, nextZ);
+
+                if (!collideX && Math.abs(nextX) < limit) playerPos.x = nextX; else playerVel.x = 0;
+                if (!collideZ && Math.abs(nextZ) < limit) playerPos.z = nextZ; else playerVel.z = 0;
+
+                const currentSpeed = Math.sqrt(playerVel.x * playerVel.x + playerVel.z * playerVel.z);
+
+                if (currentSpeed > 0.5) {
+                    const targetRotation = Math.atan2(playerVel.x, playerVel.z);
+                    let diff = targetRotation - playerRotation;
+                    while (diff < -Math.PI) diff += Math.PI * 2;
+                    while (diff > Math.PI) diff -= Math.PI * 2;
+                    playerRotation += diff * Math.min(1, 18 * delta);
+                    playerGroup.rotation.y = playerRotation;
+                }
+
+                if (currentSpeed > 0.5) {
+                    walkCycle += delta * 12;
+                    const armAngle = Math.sin(walkCycle) * 0.6;
+                    leftArm.rotation.x = armAngle;
+                    rightArm.rotation.x = -armAngle;
+                    leftLeg.rotation.x = -armAngle;
+                    rightLeg.rotation.x = armAngle;
+                } else {
+                    const limbDamp = Math.min(1, 15 * delta);
+                    leftArm.rotation.x += (0 - leftArm.rotation.x) * limbDamp;
+                    rightArm.rotation.x += (0 - rightArm.rotation.x) * limbDamp;
+                    leftLeg.rotation.x += (0 - leftLeg.rotation.x) * limbDamp;
+                    rightLeg.rotation.x += (0 - rightLeg.rotation.x) * limbDamp;
+                }
+
+                if (!isGrounded) {
+                    playerPos.y += playerVelocityY * delta;
+                    playerVelocityY -= 42.0 * delta;
+
+                    if (playerPos.y <= 0) {
+                        playerPos.y = 0;
+                        playerVelocityY = 0;
+                        isGrounded = true;
+                    }
+                }
+
+                playerGroup.position.copy(playerPos);
+
+                // Broadcast local position & score to multiplayer server
+                syncMyPlayerData();
+
+                const camDx = Math.sin(cameraYaw) * Math.cos(cameraPitch) * cameraDistance;
+                const camDy = Math.sin(cameraPitch) * cameraDistance;
+                const camDz = Math.cos(cameraYaw) * Math.cos(cameraPitch) * cameraDistance;
+
+                const targetCamPos = new THREE.Vector3(
+                    playerPos.x + camDx,
+                    playerPos.y + camDy,
+                    playerPos.z + camDz
+                );
+
+                const rawLookAt = new THREE.Vector3(playerPos.x, playerPos.y + 1.5, playerPos.z);
+                const camDamp = Math.min(1, 12 * delta);
+
+                camera.position.lerp(targetCamPos, camDamp);
+                smoothCamTarget.lerp(rawLookAt, camDamp);
+                camera.lookAt(smoothCamTarget);
+
+                coins.forEach((coin) => {
+                    // Firebase เป็นตัวกลางของสถานะ แต่การกลับมาแสดงผลหลัง 1 นาที
+                    // ต้องทำได้ทันทีในเครื่องนี้โดยไม่ต้องรอ snapshot ใหม่
+                    if (!coin.active && coin.respawnTime > 0 && nowMs >= coin.respawnTime) {
+                        coin.active = true;
+                        coin.mesh.visible = true;
+                        coin.respawnTime = 0;
+                    }
+
+                    if (coin.active) {
+                        coin.mesh.rotation.z += delta * coin.rotSpeed;
+                        coin.mesh.position.y = coin.baseY + Math.sin(nowMs * 0.005 + coin.mesh.position.x) * 0.3;
+
+                        const distToPlayer = playerPos.distanceTo(coin.mesh.position);
+                        if (distToPlayer < 2.2) {
+                            collectCoin(coin, nowMs);
+                        }
+                    }
+                });
+
+                if (luckyBox) {
+                    secureUpdateLuckyBoxTimer();
+
+                    if (luckyBox.active && luckyBox.mesh) {
+                        luckyBox.mesh.rotation.y += delta * 0.8;
+                        luckyBox.mesh.position.y = luckyBox.baseY + Math.sin(nowMs * 0.004) * 0.18;
+
+                        const distToBox = playerPos.distanceTo(luckyBox.mesh.position);
+                        if (distToBox < 2.8) {
+                            secureRequestLuckyBoxCollect();
+                        }
+                    }
+                }
+
+                // Update 3D Nametags position on screen smoothly
+                updatePlayerNametagPosition();
+
+                // Update remote players animation & movement
+                Object.keys(otherPlayers).forEach(id => {
+                    const op = otherPlayers[id];
+                    if (op._secureLastSeenAt && performance.now() - op._secureLastSeenAt > 3500) {
+                        removeOtherPlayer(id);
+                        return;
+                    }
+                    op.mesh.position.lerp(op.targetPos, 0.15);
+                    
+                    let diffRot = op.targetRot - op.mesh.rotation.y;
+                    while (diffRot < -Math.PI) diffRot += Math.PI * 2;
+                    while (diffRot > Math.PI) diffRot -= Math.PI * 2;
+                    op.mesh.rotation.y += diffRot * 0.15;
+
+                    const pDist = op.mesh.position.distanceTo(op.targetPos);
+                    if (pDist > 0.1) {
+                        op.walkCycle += delta * 12;
+                        const armAngle = Math.sin(op.walkCycle) * 0.6;
+                        op.leftArm.rotation.x = armAngle;
+                        op.rightArm.rotation.x = -armAngle;
+                        op.leftLeg.rotation.x = -armAngle;
+                        op.rightLeg.rotation.x = armAngle;
+                    } else {
+                        op.leftArm.rotation.x = 0;
+                        op.rightArm.rotation.x = 0;
+                        op.leftLeg.rotation.x = 0;
+                        op.rightLeg.rotation.x = 0;
+                    }
+                });
+            }
+
+            renderer.render(scene, camera);
+        }
+
+
+        // ============================================================
+        // SECURE WORKER CLIENT OVERRIDES (2026-09-28)
+        // Payment/entitlements + Free Server multiplayer + Coin + Lucky Box are server-authoritative.
+        // VIP gameplay remains disabled until separate VIP room routing is completed.
+        // ============================================================
+        const SECURE_WORKER_HTTP_BASE = 'https://voxel-run-v2-demo.hjinffv5426.workers.dev';
+        const SECURE_WORKER_WS_URL = SECURE_WORKER_HTTP_BASE.replace(/^http/, 'ws') + '/play';
+        const SECURE_PAYMENT_PROMPTPAY_TARGET = '0999999999'; // MUST match PAYMENT_RECEIVER_ACCOUNT before public launch.
+
+        let secureGameSocket = null;
+        let secureGameReady = false;
+        let secureGameIntentionalClose = false;
+        let secureWelcomeResolve = null;
+        let secureWelcomeReject = null;
+        let secureWelcomeTimer = null;
+        let secureLastMoveSentAt = 0;
+        let secureServerTimeOffset = 0;
+        let secureEntitlementRefreshTimer = null;
+
+        function secureNow() {
+            return Date.now() + secureServerTimeOffset;
+        }
+
+        function secureSetServerNow(serverNow) {
+            const n = Number(serverNow);
+            if (Number.isFinite(n) && n > 0) {
+                secureServerTimeOffset = n - Date.now();
+            }
+        }
+
+        function secureNormalizeEntitlements(raw = {}) {
+            return {
+                speedExpires: Number(raw.speedExpires ?? raw.speed_expires ?? 0) || 0,
+                coinExpires: Number(raw.coinExpires ?? raw.coin_expires ?? 0) || 0,
+                vip1Expires: Number(raw.vip1Expires ?? raw.vip1_expires ?? 0) || 0
+            };
+        }
+
+        function secureApplyEntitlements(rawEntitlements = {}, serverInfo = null, serverNow = null) {
+            if (serverNow) secureSetServerNow(serverNow);
+            const ent = secureNormalizeEntitlements(rawEntitlements);
+            state.shop.speedBuffExpires = ent.speedExpires;
+            state.shop.coinBuffExpires = ent.coinExpires;
+            state.userVipSubscriptions = ent.vip1Expires > secureNow()
+                ? { vip1: { expireTime: ent.vip1Expires } }
+                : {};
+
+            if (serverInfo?.vip1) {
+                state.vipServers.vip1.count = Math.max(0, Number(serverInfo.vip1.count) || 0);
+                state.vipServers.vip1.max = Math.max(1, Number(serverInfo.vip1.max) || 100);
+            }
+
+            updateShopUI();
+            renderServersUI();
+        }
+
+        async function secureLoadEntitlements(forceTokenRefresh = false) {
+            const user = auth.currentUser;
+            if (!user) {
+                state.shop.speedBuffExpires = 0;
+                state.shop.coinBuffExpires = 0;
+                state.userVipSubscriptions = {};
+                state.vipServers.vip1.count = 0;
+                renderServersUI();
+                updateShopUI();
+                return null;
+            }
+
+            const token = await user.getIdToken(forceTokenRefresh);
+            const response = await fetch(SECURE_WORKER_HTTP_BASE + '/entitlements', {
+                method: 'GET',
+                headers: { 'Authorization': 'Bearer ' + token }
+            });
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok || !result?.ok) {
+                throw new Error(result?.error || 'ไม่สามารถโหลดสิทธิ์จาก Server ได้');
+            }
+
+            secureApplyEntitlements(result.entitlements, result.servers, result.serverNow);
+            return result;
+        }
+
+        // Legacy localStorage buffs are intentionally ignored and removed.
+        loadSavedBuffs = function() {
+            localStorage.removeItem('voxel_shop_speed_expire');
+            localStorage.removeItem('voxel_shop_coin_expire');
+            state.shop.speedBuffExpires = 0;
+            state.shop.coinBuffExpires = 0;
+        };
+
+        loadScoreForCurrentId = function() {
+            // Competitive score comes only from the Worker welcome/score messages.
+            if (!secureGameReady) state.score = 0;
+            updateScoreDisplay();
+        };
+
+        addScore = function() {
+            console.warn('Blocked client-side score mutation: score is server-authoritative.');
+        };
+
+        resetHighScore = function() {
+            console.warn('Blocked client-side score reset: score is server-authoritative.');
+        };
+
+        listenToVipServersRealtime = function() {
+            // VIP counts come from /entitlements, not writable Firebase membership data.
+            if (auth.currentUser) {
+                secureLoadEntitlements().catch(err => console.warn('Entitlement refresh:', err));
+            }
+        };
+
+        listenToUserVipStatus = function() {
+            secureLoadEntitlements(true).catch(err => {
+                console.error('Entitlement load failed:', err);
+                state.userVipSubscriptions = {};
+                state.shop.speedBuffExpires = 0;
+                state.shop.coinBuffExpires = 0;
+                renderServersUI();
+                updateShopUI();
+            });
+
+            if (secureEntitlementRefreshTimer) clearInterval(secureEntitlementRefreshTimer);
+            secureEntitlementRefreshTimer = setInterval(() => {
+                if (auth.currentUser) {
+                    secureLoadEntitlements().catch(() => {});
+                }
+            }, 60_000);
+        };
+
+        const SECURE_PAYMENT_ITEMS = {
+            speed: { price: 10, title: 'เพิ่มความเร็วเคลื่อนที่ x2 (24 ช.ม.)' },
+            coin: { price: 20, title: 'เหรียญตามแมพ x2 (24 ช.ม.)' },
+            vip1: { price: 50, title: 'สิทธิ์ VIP Server 1 (30 วัน)' }
+        };
+
+        openPaymentModal = function(type, _price, title) {
+            if (!state.isLoggedIn || !auth.currentUser) {
+                alert('กรุณาล็อกอินด้วย Google Account ก่อนทำรายการ');
+                return;
+            }
+
+            if (type === 'vip1') {
+                alert('เวอร์ชัน Security Test ยังปิดการซื้อ VIP ชั่วคราว จนกว่า Worker จะแยกห้อง VIP ออกจาก Free Server เรียบร้อย เพื่อไม่ให้รับเงินจริงก่อนระบบพร้อม');
+                return;
+            }
+
+            const cfg = SECURE_PAYMENT_ITEMS[type];
+            if (!cfg) {
+                alert('รายการสินค้าไม่ถูกต้อง');
+                return;
+            }
+
+            state.pendingPayment = { type, price: cfg.price, title: title || cfg.title };
+            document.getElementById('pay-item-title').innerText = state.pendingPayment.title;
+            document.getElementById('pay-item-price').innerText = cfg.price + ' บาท';
+            document.getElementById('promptpay-qr-img').src = `https://promptpay.io/${SECURE_PAYMENT_PROMPTPAY_TARGET}/${cfg.price}.png`;
+            document.getElementById('slip-file-input').value = '';
+            document.getElementById('payment-modal').classList.remove('hidden');
+        };
+
+        verifyAndBuySlip = async function() {
+            const user = auth.currentUser;
+            if (!user) {
+                alert('กรุณาล็อกอินใหม่ก่อนตรวจสอบสลิป');
+                return;
+            }
+
+            const item = state.pendingPayment?.type;
+            if (!SECURE_PAYMENT_ITEMS[item] || item === 'vip1') {
+                alert('รายการชำระเงินนี้ยังไม่เปิดใช้งานใน Security Test');
+                return;
+            }
+
+            const fileInput = document.getElementById('slip-file-input');
+            if (!fileInput.files || fileInput.files.length === 0) {
+                alert('กรุณาอัปโหลดรูปภาพสลิปก่อนตรวจสอบ');
+                return;
+            }
+
+            const btnVerify = document.getElementById('btn-verify-slip');
+            btnVerify.disabled = true;
+            btnVerify.innerHTML = `<i class="fa-solid fa-spinner animate-spin"></i> กำลังตรวจสอบกับ Server...`;
+
+            try {
+                const token = await user.getIdToken(true);
+                const formData = new FormData();
+                formData.append('file', fileInput.files[0]);
+                formData.append('item', item);
+
+                const response = await fetch(SECURE_WORKER_HTTP_BASE + '/verify-slip', {
+                    method: 'POST',
+                    headers: { 'Authorization': 'Bearer ' + token },
+                    body: formData
+                });
+                const result = await response.json().catch(() => ({}));
+
+                if (!response.ok || !result?.ok || !result?.verified) {
+                    if (response.status === 409 || result?.duplicate) {
+                        throw new Error('สลิปนี้ถูกใช้รับสิทธิ์ไปแล้ว');
+                    }
+                    throw new Error(result?.error || 'ตรวจสอบสลิปไม่ผ่าน');
+                }
+
+                secureApplyEntitlements(result.entitlements, null, null);
+                await secureLoadEntitlements().catch(() => null);
+
+                alert(item === 'speed'
+                    ? 'ชำระเงินสำเร็จ! Speed ×2 ถูกบันทึกบน Server 24 ชั่วโมง'
+                    : 'ชำระเงินสำเร็จ! Coin ×2 ถูกบันทึกบน Server 24 ชั่วโมง');
+
+                closePaymentModal();
+                closeShopModal();
+            } catch (error) {
+                console.error('Secure payment error:', error);
+                alert('การตรวจสอบสลิปไม่ผ่าน: ' + (error?.message || 'เกิดข้อผิดพลาด'));
+            } finally {
+                btnVerify.disabled = false;
+                btnVerify.innerHTML = `<i class="fa-solid fa-shield-check"></i> <span>ตรวจสอบสลิปและรับสิทธิ์</span>`;
+            }
+        };
+
+        grantPurchasedItem = function() {
+            console.warn('Blocked grantPurchasedItem(): paid entitlements can only be granted by the Worker.');
+            return false;
+        };
+
+        selectVipServer = async function() {
+            try {
+                await secureLoadEntitlements(true);
+            } catch (err) {
+                alert('ตรวจสอบสิทธิ์ VIP กับ Server ไม่สำเร็จ: ' + err.message);
+                return;
+            }
+
+            const vipSub = state.userVipSubscriptions.vip1;
+            const expiry = Number(vipSub?.expireTime || 0);
+            if (expiry <= secureNow()) {
+                alert('คุณยังไม่มีสิทธิ์ VIP ที่ใช้งานได้');
+                return;
+            }
+
+            alert('สิทธิ์ VIP ของคุณถูกยืนยันจาก Server แล้ว แต่ Security Test นี้ยังไม่เปิดห้อง VIP เพราะ Worker ปัจจุบัน route /play ไปห้อง Free เดียวกัน การเข้า VIP จะเปิดหลังแยกห้องฝั่ง Server เสร็จ');
+        };
+
+        function securePlayerNameFromId(id) {
+            const text = String(id || 'player');
+            return 'Player-' + text.slice(-6);
+        }
+
+        function secureNormalizePlayer(p = {}) {
+            return {
+                id: String(p.id || ''),
+                x: Number(p.x) || 0,
+                y: Number(p.y) || 0,
+                z: Number(p.z) || 0,
+                rotY: Number(p.rotY ?? p.r) || 0,
+                name: String(p.name || p.nickname || securePlayerNameFromId(p.id))
+            };
+        }
+
+        function secureNormalizeLeaderboard(top = []) {
+            return Array.isArray(top) ? top.map(row => ({
+                name: String(row?.name || row?.nickname || 'Player'),
+                score: Number(row?.score) || 0
+            })) : [];
+        }
+
+        function secureApplyCoinSnapshot(serverCoins = [], serverNow = null) {
+            if (serverNow) secureSetServerNow(serverNow);
+            const now = serverNow ? Number(serverNow) : secureNow();
+
+            coins.forEach(c => {
+                c.serverId = null;
+                c.active = false;
+                c.mesh.visible = false;
+            });
+
+            if (!Array.isArray(serverCoins)) return;
+
+            serverCoins.forEach(data => {
+                const id = Number(data?.id);
+                if (!Number.isInteger(id) || id < 0 || id >= coins.length) return;
+                const coin = coins[id];
+                coin.serverId = id;
+                coin.id = `server_coin_${id}`;
+                coin.mesh.position.x = Number(data.x) || 0;
+                coin.mesh.position.z = Number(data.z) || 0;
+                coin.mesh.position.y = coin.baseY;
+                coin.respawnTime = Number(data.respawnAt) || 0;
+                coin.active = coin.respawnTime <= now;
+                coin.mesh.visible = coin.active;
+            });
+        }
+
+        function secureUpdateCoinState(message) {
+            const id = Number(message?.id);
+            if (!Number.isInteger(id) || id < 0 || id >= coins.length) return;
+            if (message?.serverNow) secureSetServerNow(message.serverNow);
+            const coin = coins[id];
+            coin.serverId = id;
+            if (Number.isFinite(Number(message?.x)) && Number.isFinite(Number(message?.z))) {
+                coin.mesh.position.x = Number(message.x);
+                coin.mesh.position.z = Number(message.z);
+                coin.mesh.position.y = coin.baseY;
+            }
+            coin.respawnTime = Number(message?.respawnAt) || 0;
+            coin._collectPendingUntil = 0;
+            coin.active = coin.respawnTime <= secureNow();
+            coin.mesh.visible = coin.active;
+        }
+
+        function secureHandleSocketMessage(message) {
+            if (!message || typeof message !== 'object') return;
+
+            switch (message.type) {
+                case 'welcome': {
+                    if (message.serverNow) secureSetServerNow(message.serverNow);
+                    state.serverPlayerId = String(message.id || '');
+                    state.score = Number(message.score) || 0;
+                    updateScoreDisplay();
+
+                    if (message.spawn) {
+                        playerPos.set(
+                            Number(message.spawn.x) || 0,
+                            Number(message.spawn.y) || 0,
+                            Number(message.spawn.z) || 0
+                        );
+                        if (playerGroup) playerGroup.position.copy(playerPos);
+                    }
+
+                    removeAllOtherPlayers();
+                    (Array.isArray(message.players) ? message.players : []).forEach(raw => {
+                        const p = secureNormalizePlayer(raw);
+                        if (p.id && p.id !== state.serverPlayerId) addOtherPlayer(p.id, p);
+                    });
+
+                    secureApplyCoinSnapshot(message.coins, message.serverNow);
+                    secureApplyLuckyBoxState(message.luckyBox, message.serverNow);
+                    updateLeaderboardUI(secureNormalizeLeaderboard(message.leaderboard));
+                    secureGameReady = true;
+
+                    if (secureWelcomeTimer) clearTimeout(secureWelcomeTimer);
+                    secureWelcomeTimer = null;
+                    if (secureWelcomeResolve) secureWelcomeResolve(message);
+                    secureWelcomeResolve = null;
+                    secureWelcomeReject = null;
+                    break;
+                }
+                case 'join': {
+                    const p = secureNormalizePlayer(message.player);
+                    if (p.id && p.id !== state.serverPlayerId) addOtherPlayer(p.id, p);
+                    break;
+                }
+                case 'move': {
+                    const p = secureNormalizePlayer(message.player);
+                    if (!p.id || p.id === state.serverPlayerId) break;
+                    if (!otherPlayers[p.id]) addOtherPlayer(p.id, p);
+                    else updateOtherPlayer(p.id, p);
+                    break;
+                }
+                case 'leave':
+                    if (message.id) removeOtherPlayer(String(message.id));
+                    break;
+                case 'score':
+                    state.score = Number(message.score) || 0;
+                    updateScoreDisplay();
+                    break;
+                case 'leaderboard':
+                    updateLeaderboardUI(secureNormalizeLeaderboard(message.top));
+                    break;
+                case 'coin_collected':
+                case 'coin_state':
+                    secureUpdateCoinState(message);
+                    break;
+                case 'box_state':
+                    secureApplyLuckyBoxState(message.box || message.luckyBox || message, message.serverNow);
+                    break;
+                case 'box_spin_ready':
+                    secureApplyLuckyBoxState(message.box || message.luckyBox || null, message.serverNow);
+                    triggerLuckyBoxModal();
+                    break;
+                case 'box_reward':
+                    if (message.serverNow) secureSetServerNow(message.serverNow);
+                    if (Number.isFinite(Number(message.score))) {
+                        state.score = Number(message.score);
+                        updateScoreDisplay();
+                    }
+                    secureAnimateWheelToReward(Number(message.reward) || 0);
+                    break;
+                case 'box_error':
+                    console.warn('Lucky Box:', message.message || message);
+                    break;
+                case 'auth_error':
+                    if (secureWelcomeReject) secureWelcomeReject(new Error(message.message || 'เข้าสู่ Game Server ไม่สำเร็จ'));
+                    break;
+                case 'server_error':
+                    console.error('Game server error:', message.message || message);
+                    break;
+            }
+        }
+
+        async function secureConnectGameSocket() {
+            if (!auth.currentUser) throw new Error('ต้องล็อกอิน Google ก่อนเข้าเล่น');
+            if (state.selectedServerId !== 'free1') throw new Error('Security Test เปิดเฉพาะ Free Server จนกว่า VIP room routing จะเสร็จ');
+
+            if (secureGameSocket) {
+                try { secureGameIntentionalClose = true; secureGameSocket.close(1000, 'Reconnect'); } catch (_) {}
+                secureGameSocket = null;
+            }
+
+            secureGameReady = false;
+            secureGameIntentionalClose = false;
+            const token = await auth.currentUser.getIdToken(true);
+
+            return new Promise((resolve, reject) => {
+                secureWelcomeResolve = resolve;
+                secureWelcomeReject = reject;
+                secureWelcomeTimer = setTimeout(() => {
+                    secureWelcomeTimer = null;
+                    secureWelcomeResolve = null;
+                    secureWelcomeReject = null;
+                    try { secureGameSocket?.close(); } catch (_) {}
+                    reject(new Error('เชื่อมต่อ Game Server ไม่สำเร็จภายในเวลาที่กำหนด'));
+                }, 10_000);
+
+                const ws = new WebSocket(SECURE_WORKER_WS_URL);
+                secureGameSocket = ws;
+
+                ws.onopen = () => {
+                    ws.send(JSON.stringify({ type: 'auth', token }));
+                };
+
+                ws.onmessage = event => {
+                    try {
+                        secureHandleSocketMessage(JSON.parse(event.data));
+                    } catch (err) {
+                        console.warn('Invalid game socket message:', err);
+                    }
+                };
+
+                ws.onerror = () => {
+                    if (!secureGameReady && secureWelcomeReject) {
+                        secureWelcomeReject(new Error('WebSocket Game Server มีปัญหา'));
+                        secureWelcomeReject = null;
+                    }
+                };
+
+                ws.onclose = event => {
+                    const wasReady = secureGameReady;
+                    secureGameReady = false;
+                    secureGameSocket = null;
+                    if (secureWelcomeTimer) clearTimeout(secureWelcomeTimer);
+                    secureWelcomeTimer = null;
+                    if (!wasReady && secureWelcomeReject) {
+                        secureWelcomeReject(new Error(`Game Server ปิดการเชื่อมต่อ (${event.code})`));
+                        secureWelcomeReject = null;
+                    }
+                    if (wasReady && !secureGameIntentionalClose && state.isPlaying) {
+                        alert('การเชื่อมต่อ Game Server หลุด กรุณาเข้าเกมใหม่');
+                        secureReturnToMenu();
+                    }
+                };
+            });
+        }
+
+        function secureReturnToMenu() {
+            state.isPlaying = false;
+            state.isPaused = false;
+            secureGameReady = false;
+            removeAllOtherPlayers();
+            document.getElementById('exit-modal').classList.add('hidden');
+            document.getElementById('game-hud').classList.add('hidden');
+            document.getElementById('player-nametag').classList.add('hidden');
+            document.getElementById('start-screen').classList.remove('hidden');
+        }
+
+        removeAllAOIListeners = function() {
+            removeAllOtherPlayers();
+            currentZonePlayerRef = null;
+            currentPlayerZoneId = null;
+        };
+
+        listenToRemotePlayers = function() {
+            // Remote players arrive through Worker WebSocket broadcasts.
+        };
+
+        listenToRealtimeLeaderboard = function() {
+            // Leaderboard arrives through Worker WebSocket messages.
+        };
+
+        listenToCoinsRealtime = function() {
+            // Coin state arrives through Worker WebSocket messages.
+            coins.forEach(c => { c.active = false; c.mesh.visible = false; });
+        };
+
+        collectCoin = function(coin) {
+            if (!coin || !coin.active || !secureGameReady || !secureGameSocket || secureGameSocket.readyState !== WebSocket.OPEN) return;
+            const id = Number(coin.serverId);
+            if (!Number.isInteger(id)) return;
+            const now = Date.now();
+            if (Number(coin._collectPendingUntil || 0) > now) return;
+            coin._collectPendingUntil = now + 600;
+            secureGameSocket.send(JSON.stringify({ type: 'collect', id }));
+        };
+
+        syncMyPlayerData = function(force = false) {
+            if (!state.isPlaying || !secureGameReady || !secureGameSocket || secureGameSocket.readyState !== WebSocket.OPEN) return;
+            const now = Date.now();
+            if (!force && now - secureLastMoveSentAt < 200) return; // FREE_10K_PHASE1_CLIENT: 5Hz
+            secureLastMoveSentAt = now;
+            secureGameSocket.send(JSON.stringify({
+                type: 'move',
+                x: Math.round(playerPos.x * 100) / 100,
+                y: Math.round(playerPos.y * 100) / 100,
+                z: Math.round(playerPos.z * 100) / 100,
+                r: Math.round(playerRotation * 1000) / 1000
+            }));
+        };
+
+        // Lucky Box is fully server-authoritative in this build.
+        // The Worker owns: one-box state, claim locking, 4-hour respawn and reward RNG.
+        function secureApplyLuckyBoxState(raw = null, serverNow = null) {
+            if (serverNow) secureSetServerNow(serverNow);
+            if (!raw || typeof raw !== 'object') return;
+
+            if (!luckyBox || !luckyBox.mesh) {
+                const chestMesh = createTreasureChest();
+                chestMesh.visible = false;
+                scene.add(chestMesh);
+                luckyBox = {
+                    mesh: chestMesh,
+                    active: false,
+                    baseY: 0,
+                    nextSpawnTimestamp: 0,
+                    spawnCycle: 0,
+                    collecting: false,
+                    claimExpiresAt: 0,
+                    claimed: false
+                };
+            }
+
+            luckyBox.nextSpawnTimestamp = Number(raw.nextSpawnAt ?? raw.nextSpawnTimestamp ?? 0) || 0;
+            luckyBox.spawnCycle = Number(raw.cycle ?? raw.spawnCycle ?? 0) || 0;
+            luckyBox.claimExpiresAt = Number(raw.claimExpiresAt ?? 0) || 0;
+            luckyBox.claimed = Boolean(raw.claimed);
+            luckyBox.collecting = false;
+
+            const x = Number(raw.x);
+            const z = Number(raw.z);
+            if (Number.isFinite(x) && Number.isFinite(z)) {
+                luckyBox.mesh.position.set(x, 0, z);
+            }
+
+            const now = secureNow();
+            const claimStillActive = luckyBox.claimed && luckyBox.claimExpiresAt > now;
+            const waitingRespawn = luckyBox.nextSpawnTimestamp > now;
+            luckyBox.active = Boolean(raw.active) && !claimStillActive && !waitingRespawn;
+            luckyBox.mesh.visible = luckyBox.active;
+            secureUpdateLuckyBoxTimer();
+        }
+
+        function secureUpdateLuckyBoxTimer() {
+            const timerEl = document.getElementById('hud-box-timer');
+            if (!timerEl || !luckyBox) return;
+
+            const now = secureNow();
+
+            // A claim has a short timeout. If the winner closes the page before spinning,
+            // the same global box becomes available again automatically.
+            if (luckyBox.claimed && luckyBox.claimExpiresAt > now) {
+                timerEl.innerText = 'มีผู้เล่นกำลังสุ่ม...';
+                luckyBox.active = false;
+                if (luckyBox.mesh) luckyBox.mesh.visible = false;
+                return;
+            }
+
+            if (luckyBox.nextSpawnTimestamp > now) {
+                const totalSec = Math.max(0, Math.ceil((luckyBox.nextSpawnTimestamp - now) / 1000));
+                const hours = Math.floor(totalSec / 3600);
+                const minutes = Math.floor((totalSec % 3600) / 60);
+                const seconds = totalSec % 60;
+                timerEl.innerText = `${String(hours).padStart(2,'0')}:${String(minutes).padStart(2,'0')}:${String(seconds).padStart(2,'0')}`;
+                luckyBox.active = false;
+                if (luckyBox.mesh) luckyBox.mesh.visible = false;
+                return;
+            }
+
+            luckyBox.claimed = false;
+            luckyBox.active = true;
+            if (luckyBox.mesh) luckyBox.mesh.visible = true;
+            timerEl.innerText = 'พร้อมเปิด!';
+        }
+
+        function secureRequestLuckyBoxCollect() {
+            if (!luckyBox || !luckyBox.active || luckyBox.collecting) return;
+            if (!secureGameReady || !secureGameSocket || secureGameSocket.readyState !== WebSocket.OPEN) return;
+            luckyBox.collecting = true;
+            setTimeout(() => { if (luckyBox) luckyBox.collecting = false; }, 1200);
+            secureGameSocket.send(JSON.stringify({ type: 'collect_box' }));
+        }
+
+        spawnLuckyBoxes = function() {
+            if (luckyBox?.mesh && scene) scene.remove(luckyBox.mesh);
+            const chestMesh = createTreasureChest();
+            chestMesh.visible = false;
+            scene.add(chestMesh);
+            luckyBox = {
+                mesh: chestMesh,
+                active: false,
+                baseY: 0,
+                nextSpawnTimestamp: 0,
+                spawnCycle: 0,
+                collecting: false,
+                claimExpiresAt: 0,
+                claimed: false
+            };
+            luckyBoxServerRef = null;
+            const timerEl = document.getElementById('hud-box-timer');
+            if (timerEl) timerEl.innerText = 'กำลังโหลดจาก Server...';
+        };
+
+        triggerLuckyBoxModal = function() {
+            state.isPaused = true;
+            const localNameTag = document.getElementById('player-nametag');
+            if (localNameTag) localNameTag.style.display = 'none';
+            state.wheelSpinning = false;
+            state.wheelReward = null;
+            document.getElementById('wheel-modal').classList.remove('hidden');
+            document.getElementById('btn-spin-wheel').classList.remove('hidden');
+            document.getElementById('btn-close-wheel').classList.add('hidden');
+            document.getElementById('wheel-result-msg').innerText = 'กดปุ่มเพื่อเริ่มหมุนวงล้อ!';
+            drawLuckyWheel();
+            audio.playBoxHit();
+        };
+
+        spinWheel = function() {
+            if (state.wheelSpinning) return;
+            if (!secureGameReady || !secureGameSocket || secureGameSocket.readyState !== WebSocket.OPEN) {
+                alert('Game Server หลุด กรุณาเข้าเกมใหม่');
+                return;
+            }
+            state.wheelSpinning = true;
+            document.getElementById('btn-spin-wheel').classList.add('hidden');
+            document.getElementById('wheel-result-msg').innerText = 'กำลังขอผลสุ่มจาก Server...';
+            secureGameSocket.send(JSON.stringify({ type: 'spin_box' }));
+        };
+
+        function secureAnimateWheelToReward(rewardValue) {
+            const selectedIdx = WHEEL_ITEMS.findIndex(item => item.value === rewardValue);
+            if (selectedIdx < 0) {
+                state.wheelSpinning = false;
+                document.getElementById('wheel-result-msg').innerText = 'Server ส่งผลรางวัลไม่ถูกต้อง';
+                return;
+            }
+
+            state.wheelReward = WHEEL_ITEMS[selectedIdx];
+            const sliceAngle = (2 * Math.PI) / WHEEL_ITEMS.length;
+            const targetSliceAngle = selectedIdx * sliceAngle + sliceAngle / 2;
+            const fullRotations = 5 * 2 * Math.PI;
+            const targetAngle = fullRotations + (3 * Math.PI / 2 - targetSliceAngle);
+            const startAngle = currentWheelAngle % (2 * Math.PI);
+            const totalDelta = targetAngle - startAngle;
+            const duration = 4000;
+            const startTime = performance.now();
+            let lastTickAngle = startAngle;
+
+            document.getElementById('wheel-result-msg').innerText = 'กำลังหมุนวงล้อ...';
+
+            function animateSpin(now) {
+                const elapsed = now - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                const easeOut = 1 - Math.pow(1 - progress, 3);
+                currentWheelAngle = startAngle + totalDelta * easeOut;
+
+                if (Math.abs(currentWheelAngle - lastTickAngle) > sliceAngle) {
+                    audio.playWheelTick();
+                    lastTickAngle = currentWheelAngle;
+                }
+
+                drawLuckyWheel();
+
+                if (progress < 1) {
+                    requestAnimationFrame(animateSpin);
+                } else {
+                    state.wheelSpinning = false;
+                    audio.playReward();
+                    document.getElementById('wheel-result-msg').innerHTML = `
+                        <span class="text-amber-400 font-extrabold text-xl animate-bounce">
+                            ยินดีด้วย! คุณได้รับ +${rewardValue.toLocaleString()} เหรียญ!
+                        </span>`;
+                    document.getElementById('btn-close-wheel').classList.remove('hidden');
+                }
+            }
+            requestAnimationFrame(animateSpin);
+        }
+
+        startGame = async function() {
+            if (!state.selectedServerId) {
+                alert('กรุณาเลือกเซิร์ฟเวอร์ก่อนเริ่มเล่น');
+                return;
+            }
+            if (!auth.currentUser) {
+                alert('Security Test ต้องล็อกอิน Google ก่อนเข้าเล่น เพื่อให้ Server ยืนยันตัวตนและคะแนน');
+                return;
+            }
+            if (state.selectedServerId === 'vip1') {
+                await selectVipServer('vip1');
+                return;
+            }
+
+            const inputName = document.getElementById('input-username').value.trim();
+            if (inputName) state.playerName = inputName;
+
+            const btn = document.getElementById('btn-start-game');
+            const oldHtml = btn?.innerHTML;
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = `<i class="fa-solid fa-spinner animate-spin"></i><span>กำลังเชื่อมต่อ Server...</span>`;
+            }
+
+            try {
+                initServerMapData('free1');
+                await secureLoadEntitlements().catch(() => null);
+                await secureConnectGameSocket();
+
+                if (screen.orientation && screen.orientation.lock) {
+                    screen.orientation.lock('landscape').catch(() => {});
+                }
+
+                document.getElementById('start-screen').classList.add('hidden');
+                document.getElementById('game-hud').classList.remove('hidden');
+                document.getElementById('player-nametag').classList.remove('hidden');
+                document.getElementById('nametag-text').innerText = state.playerName;
+                document.getElementById('player-nametag').style.display = 'none';
+
+                state.isPlaying = true;
+                state.isPaused = false;
+                audio.playStart();
+                syncMyPlayerData(true);
+            } catch (err) {
+                console.error('Start secure game failed:', err);
+                try { secureGameIntentionalClose = true; secureGameSocket?.close(); } catch (_) {}
+                secureGameSocket = null;
+                secureGameReady = false;
+                alert('เข้าเกมไม่สำเร็จ: ' + (err?.message || 'Game Server error'));
+            } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = oldHtml || `<i class="fa-solid fa-gamepad"></i><span>เริ่มเล่นเกม</span>`;
+                }
+            }
+        };
+
+        confirmExitGame = function() {
+            secureGameIntentionalClose = true;
+            try { secureGameSocket?.close(1000, 'Bye'); } catch (_) {}
+            secureGameSocket = null;
+            secureGameReady = false;
+            if (luckyBoxServerRef) {
+                try { luckyBoxServerRef.off(); } catch (_) {}
+            }
+            removeAllOtherPlayers();
+            secureReturnToMenu();
+        };
+
+
+        init3D();
+        loadSavedBuffs();
+        listenToVipServersRealtime();
+        gameLoop();
+    </script>
+</body>
+</html>

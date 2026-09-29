@@ -1,9 +1,117 @@
 // VOXEL RUN v4 — Firebase Google identity + server-owned coins + persistent leaderboard.
 // Scores live in the game's Durable Object, separate from Firebase Realtime Database.
-const COINS = [
-  [0,2],[3,4],[-4,5],[8,1],[-8,-2],[12,12],[-13,12],[15,-8],[-16,-9],
-  [5,15],[-4,-16],[19,0],[-20,1],[11,-18],[-12,-18],[2,20],[-1,-8],[9,17]
-];
+// WORLD_LUCKYBOX_V2_PATCH
+const SERVER_MAP_SIZE = 1500;
+const SERVER_WORLD_SEED = 'free1';
+const SERVER_COIN_COUNT = 200;
+const LUCKY_BOX_RESPAWN_MS = 4 * 60 * 60 * 1000;
+const LUCKY_BOX_CLAIM_MS = 90 * 1000;
+// FREE_10K_PHASE1
+// Phase 1: reduce movement traffic and only fan out nearby player movement.
+// This is the safe foundation before spatial zone sharding in Phase 2.
+const MOVE_TICK_MS = 200;              // 5 movement updates/sec
+const PLAYER_VISIBILITY_RADIUS = 120;   // only nearby avatars are streamed
+const ROOM_SOFT_CAP = 160;              // temporary per-room test cap before sharding
+
+
+function serverSeededRandom(seedText) {
+  let seed = 2166136261;
+  const str = String(seedText || 'default-map');
+  for (let i = 0; i < str.length; i++) {
+    seed ^= str.charCodeAt(i);
+    seed = Math.imul(seed, 16777619);
+  }
+  return function() {
+    seed += 0x6D2B79F5;
+    let t = seed;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function buildServerCollisionWorld(seedText) {
+  const rng = serverSeededRandom(seedText);
+  const buildings = [];
+  const trees = [];
+
+  for (let bx = -600; bx <= 600; bx += 200) {
+    for (let bz = -600; bz <= 600; bz += 200) {
+      if (Math.abs(bx) < 100 && Math.abs(bz) < 100) continue;
+      const width = 18 + Math.floor(rng() * 20);
+      const depth = 18 + Math.floor(rng() * 20);
+      28 + Math.floor(rng() * 65); // advance height RNG
+      Math.floor(rng() * 3);       // advance material RNG
+      const posX = bx + (rng() - 0.5) * 60;
+      const posZ = bz + (rng() - 0.5) * 60;
+      buildings.push({
+        minX: posX - width / 2 - 2,
+        maxX: posX + width / 2 + 2,
+        minZ: posZ - depth / 2 - 2,
+        maxZ: posZ + depth / 2 + 2
+      });
+    }
+  }
+
+  for (let i = 0; i < 250; i++) {
+    const tx = (rng() - 0.5) * (SERVER_MAP_SIZE - 50);
+    const tz = (rng() - 0.5) * (SERVER_MAP_SIZE - 50);
+    const insideBuilding = buildings.some(b => tx >= b.minX && tx <= b.maxX && tz >= b.minZ && tz <= b.maxZ);
+    if (insideBuilding || (Math.abs(tx) < 25 && Math.abs(tz) < 25)) continue;
+    6 + rng() * 4; // advance trunkHeight RNG
+    6 + rng() * 3; // advance leafSize RNG
+    trees.push({
+      minX: tx - 1.8,
+      maxX: tx + 1.8,
+      minZ: tz - 1.8,
+      maxZ: tz + 1.8
+    });
+  }
+
+  return { buildings, trees };
+}
+
+const SERVER_WORLD = buildServerCollisionWorld(SERVER_WORLD_SEED);
+
+function safeWorldPosition(seedText, minDistanceFromSpawn = 0, margin = 12) {
+  const rng = serverSeededRandom(seedText);
+  let rx = 0, rz = 0;
+  for (let attempt = 0; attempt < 2000; attempt++) {
+    rx = (rng() - 0.5) * (SERVER_MAP_SIZE - margin);
+    rz = (rng() - 0.5) * (SERVER_MAP_SIZE - margin);
+    if (minDistanceFromSpawn > 0 && Math.hypot(rx, rz) < minDistanceFromSpawn) continue;
+    const collision =
+      SERVER_WORLD.buildings.some(b => rx >= b.minX && rx <= b.maxX && rz >= b.minZ && rz <= b.maxZ) ||
+      SERVER_WORLD.trees.some(t => rx >= t.minX && rx <= t.maxX && rz >= t.minZ && rz <= t.maxZ);
+    if (!collision) return { x: rx, z: rz };
+  }
+  return { x: minDistanceFromSpawn + 50, z: 0 };
+}
+
+function coinPosition(id, cycle = 0) {
+  return safeWorldPosition(`${SERVER_WORLD_SEED}:coin:${Number(id) || 0}:cycle:${Number(cycle) || 0}`, 0, 12);
+}
+
+const COINS = Array.from({length:SERVER_COIN_COUNT}, (_,id) => {
+  const pos = coinPosition(id, 0);
+  return [pos.x, pos.z];
+});
+
+function luckyBoxPosition(cycle = 0) {
+  return safeWorldPosition(`${SERVER_WORLD_SEED}:position:lucky-box-${Number(cycle) || 0}`, 120, 20);
+}
+
+function secureLuckyReward() {
+  const a = new Uint32Array(1);
+  crypto.getRandomValues(a);
+  const roll = (a[0] / 4294967296) * 100;
+  if (roll < 50) return 100;      // 50.0%
+  if (roll < 80) return 500;      // 30.0%
+  if (roll < 99) return 1000;     // 19.0%
+  if (roll < 99.9) return 5000;   // 0.9%
+  return 9999;                    // 0.1%
+}
+
 const RESPAWN_MS = 60_000;
 const CERTS_URL = 'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com';
 let cachedCerts = null, certsExpireAt = 0;
@@ -77,15 +185,401 @@ export async function verifyFirebaseIdToken(token,projectId) {
   return {uid:claims.sub,exp:claims.exp};
 }
 
+function corsHeaders(request, env) {
+  const origin = request.headers.get('Origin') || '';
+  const allowed = env.ALLOWED_ORIGIN || origin;
+
+  return {
+    'Access-Control-Allow-Origin': allowed,
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+    'Vary': 'Origin'
+  };
+}
+
+function jsonResponse(request, env, body, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      ...corsHeaders(request, env),
+      'content-type': 'application/json; charset=utf-8'
+    }
+  });
+}
+
+async function handleVerifySlip(request, env) {
+  if (
+    env.ALLOWED_ORIGIN &&
+    request.headers.get('Origin') !== env.ALLOWED_ORIGIN
+  ) {
+    return jsonResponse(request, env, {
+      ok: false,
+      error: 'Origin not allowed'
+    }, 403);
+  }
+
+  const authHeader = request.headers.get('Authorization') || '';
+  const match = /^Bearer\s+(.+)$/i.exec(authHeader);
+
+  if (!match) {
+    return jsonResponse(request, env, {
+      ok: false,
+      error: 'Sign in required'
+    }, 401);
+  }
+
+  let verified;
+
+  try {
+    verified = await verifyFirebaseIdToken(
+      match[1],
+      env.FIREBASE_PROJECT_ID
+    );
+  } catch {
+    return jsonResponse(request, env, {
+      ok: false,
+      error: 'Invalid Firebase token'
+    }, 401);
+  }
+
+  let input;
+
+  try {
+    input = await request.formData();
+  } catch {
+    return jsonResponse(request, env, {
+      ok: false,
+      error: 'Invalid form data'
+    }, 400);
+  }
+
+  const file = input.get('file');
+  const item = String(input.get('item') || '');
+
+  const prices = {
+    speed: 10,
+    coin: 20,
+    vip1: 50
+  };
+
+  const price = prices[item];
+
+  if (!price) {
+    return jsonResponse(request, env, {
+      ok: false,
+      error: 'Invalid item'
+    }, 400);
+  }
+
+  if (!(file instanceof File) || file.size <= 0) {
+    return jsonResponse(request, env, {
+      ok: false,
+      error: 'Slip image required'
+    }, 400);
+  }
+
+  if (file.size > 8 * 1024 * 1024) {
+    return jsonResponse(request, env, {
+      ok: false,
+      error: 'Slip image too large'
+    }, 413);
+  }
+
+  if (!String(file.type || '').startsWith('image/')) {
+    return jsonResponse(request, env, {
+      ok: false,
+      error: 'Image file required'
+    }, 400);
+  }
+
+  if (!env.SLIP2GO_API_SECRET || !env.PAYMENT_RECEIVER_ACCOUNT) {
+    return jsonResponse(request, env, {
+      ok: false,
+      error: 'Payment server is not configured'
+    }, 500);
+  }
+
+  const payload = {
+    checkDuplicate: true,
+    checkReceiver: [{
+      accountType: '02001',
+      accountNumber: env.PAYMENT_RECEIVER_ACCOUNT
+    }],
+    checkAmount: {
+      type: 'eq',
+      amount: String(price)
+    }
+  };
+
+  const slipForm = new FormData();
+  slipForm.append('file', file, file.name || 'slip.jpg');
+  slipForm.append('payload', JSON.stringify(payload));
+
+  let slipResponse;
+
+  try {
+    slipResponse = await fetch(
+      'https://connect.slip2go.com/api/verify-slip/qr-image/info',
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': env.SLIP2GO_API_SECRET
+        },
+        body: slipForm
+      }
+    );
+  } catch {
+    return jsonResponse(request, env, {
+      ok: false,
+      error: 'Slip verification service unavailable'
+    }, 502);
+  }
+
+  let result;
+
+  try {
+    result = await slipResponse.json();
+  } catch {
+    return jsonResponse(request, env, {
+      ok: false,
+      error: 'Invalid response from slip service'
+    }, 502);
+  }
+
+  if (!slipResponse.ok || result?.code !== '200000') {
+    return jsonResponse(request, env, {
+      ok: false,
+      error: result?.message || 'Slip verification failed',
+      code: result?.code || null
+    }, 400);
+  }
+
+  const slipData = result?.data || {};
+  const actualAmount = Number(slipData.amount);
+
+  // ตรวจยอดจากผลตอบกลับอีกครั้ง แม้เราจะส่ง checkAmount ให้ Slip2Go แล้ว
+  if (!Number.isFinite(actualAmount) || actualAmount !== price) {
+    return jsonResponse(request, env, {
+      ok: false,
+      error: 'Slip amount does not match item price'
+    }, 400);
+  }
+
+  const transRef = String(slipData.transRef || '').trim();
+  const referenceId = String(slipData.referenceId || '').trim();
+  const senderBankId = String(
+    slipData?.sender?.bank?.id || ''
+  ).trim();
+
+  let transactionId = '';
+
+  if (transRef) {
+    transactionId = `${senderBankId || 'bank'}:${transRef}`;
+  } else if (referenceId) {
+    transactionId = `ref:${referenceId}`;
+  }
+
+  if (!transactionId) {
+    return jsonResponse(request, env, {
+      ok: false,
+      error: 'Slip transaction reference missing'
+    }, 502);
+  }
+
+  // ให้ Durable Object เป็นคนมอบสิทธิ์จริง
+  let grantResponse;
+
+  try {
+    grantResponse = await env.ROOM
+      .getByName('free-v2-demo')
+      .fetch(
+        new Request(
+          'https://internal/_internal/grant-payment',
+          {
+            method: 'POST',
+            headers: {
+              'content-type': 'application/json'
+            },
+            body: JSON.stringify({
+              uid: verified.uid,
+              item,
+              amount: price,
+              transactionId
+            })
+          }
+        )
+      );
+  } catch {
+    return jsonResponse(request, env, {
+      ok: false,
+      error: 'Could not grant purchased item'
+    }, 500);
+  }
+
+  let grantResult;
+
+  try {
+    grantResult = await grantResponse.json();
+  } catch {
+    return jsonResponse(request, env, {
+      ok: false,
+      error: 'Invalid payment storage response'
+    }, 500);
+  }
+
+  if (!grantResponse.ok || !grantResult?.ok) {
+    return jsonResponse(request, env, {
+      ok: false,
+      error: grantResult?.error || 'Could not grant purchased item',
+      duplicate: grantResult?.duplicate === true
+    }, grantResult?.duplicate ? 409 : 400);
+  }
+
+  return jsonResponse(request, env, {
+    ok: true,
+    verified: true,
+    item,
+    price,
+    expiresAt: grantResult.expiresAt,
+    entitlements: grantResult.entitlements
+  });
+}
+
+
+async function handleGetEntitlements(request, env) {
+  if (
+    env.ALLOWED_ORIGIN &&
+    request.headers.get('Origin') !== env.ALLOWED_ORIGIN
+  ) {
+    return jsonResponse(request, env, {
+      ok: false,
+      error: 'Origin not allowed'
+    }, 403);
+  }
+
+  const authHeader = request.headers.get('Authorization') || '';
+  const match = /^Bearer\s+(.+)$/i.exec(authHeader);
+
+  if (!match) {
+    return jsonResponse(request, env, {
+      ok: false,
+      error: 'Sign in required'
+    }, 401);
+  }
+
+  let verified;
+
+  try {
+    verified = await verifyFirebaseIdToken(
+      match[1],
+      env.FIREBASE_PROJECT_ID
+    );
+  } catch {
+    return jsonResponse(request, env, {
+      ok: false,
+      error: 'Invalid Firebase token'
+    }, 401);
+  }
+
+  let roomResponse;
+
+  try {
+    roomResponse = await env.ROOM
+      .getByName('free-v2-demo')
+      .fetch(
+        new Request(
+          'https://internal/_internal/get-entitlements',
+          {
+            method: 'POST',
+            headers: {
+              'content-type': 'application/json'
+            },
+            body: JSON.stringify({
+              uid: verified.uid
+            })
+          }
+        )
+      );
+  } catch {
+    return jsonResponse(request, env, {
+      ok: false,
+      error: 'Could not read entitlements'
+    }, 500);
+  }
+
+  let result;
+
+  try {
+    result = await roomResponse.json();
+  } catch {
+    return jsonResponse(request, env, {
+      ok: false,
+      error: 'Invalid entitlement response'
+    }, 500);
+  }
+
+  if (!roomResponse.ok || !result?.ok) {
+    return jsonResponse(request, env, {
+      ok: false,
+      error: result?.error || 'Could not read entitlements'
+    }, 400);
+  }
+
+  return jsonResponse(request, env, result);
+}
+
 export default {
   async fetch(request,env) {
     const url=new URL(request.url);
-    if (url.pathname==='/health') return new Response('VOXEL RUN v4 online',
-      {headers:{'content-type':'text/plain; charset=utf-8'}});
-    if (url.pathname!=='/play' || request.headers.get('Upgrade')?.toLowerCase()!=='websocket')
+
+    if (url.pathname==='/health')
+      return new Response('VOXEL RUN v4 online',
+        {headers:{'content-type':'text/plain; charset=utf-8'}});
+
+    if (url.pathname==='/entitlements') {
+      if (request.method==='OPTIONS')
+        return new Response(null,{
+          status:204,
+          headers:corsHeaders(request,env)
+        });
+
+      if (request.method!=='GET')
+        return jsonResponse(request,env,{
+          ok:false,
+          error:'Method not allowed'
+        },405);
+
+      return handleGetEntitlements(request,env);
+    }
+
+    if (url.pathname==='/verify-slip') {
+      if (request.method==='OPTIONS')
+        return new Response(null,{
+          status:204,
+          headers:corsHeaders(request,env)
+        });
+
+      if (request.method!=='POST')
+        return jsonResponse(request,env,{
+          ok:false,
+          error:'Method not allowed'
+        },405);
+
+      return handleVerifySlip(request,env);
+    }
+
+    if (
+      url.pathname!='/play' ||
+      request.headers.get('Upgrade')?.toLowerCase()!=='websocket'
+    )
       return new Response('WebSocket endpoint: /play',{status:404});
-    if (env.ALLOWED_ORIGIN && request.headers.get('Origin')!==env.ALLOWED_ORIGIN)
+
+    if (
+      env.ALLOWED_ORIGIN &&
+      request.headers.get('Origin')!==env.ALLOWED_ORIGIN
+    )
       return new Response('Origin not allowed',{status:403});
+
     return env.ROOM.getByName('free-v2-demo').fetch(request);
   }
 };
@@ -97,6 +591,35 @@ export class GameRoom {
     this.sql=ctx.storage.sql;
     this.sql.exec('CREATE TABLE IF NOT EXISTS voxel_scores (uid TEXT PRIMARY KEY, nickname TEXT NOT NULL, score INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL)');
     this.sql.exec('CREATE TABLE IF NOT EXISTS voxel_coins (id INTEGER PRIMARY KEY, respawn_at INTEGER NOT NULL)');
+    try { this.sql.exec('ALTER TABLE voxel_coins ADD COLUMN cycle INTEGER NOT NULL DEFAULT 0'); } catch (_) {}
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS voxel_lucky_box (
+      id INTEGER PRIMARY KEY,
+      next_spawn_at INTEGER NOT NULL DEFAULT 0,
+      cycle INTEGER NOT NULL DEFAULT 0,
+      claimed_uid TEXT,
+      claim_expires_at INTEGER NOT NULL DEFAULT 0
+    )`);
+    this.sql.exec(`INSERT OR IGNORE INTO voxel_lucky_box
+      (id, next_spawn_at, cycle, claimed_uid, claim_expires_at)
+      VALUES (1, 0, 0, NULL, 0)`);
+
+    // Server-authoritative paid entitlements
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS voxel_entitlements (
+      uid TEXT PRIMARY KEY,
+      speed_expires INTEGER NOT NULL DEFAULT 0,
+      coin_expires INTEGER NOT NULL DEFAULT 0,
+      vip1_expires INTEGER NOT NULL DEFAULT 0,
+      updated_at INTEGER NOT NULL
+    )`);
+
+    // One payment transaction can only be granted once
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS voxel_payments (
+      transaction_id TEXT PRIMARY KEY,
+      uid TEXT NOT NULL,
+      item TEXT NOT NULL,
+      amount INTEGER NOT NULL,
+      created_at INTEGER NOT NULL
+    )`);
     this.ready=ctx.blockConcurrencyWhile(async()=>{
       // Preserve the existing v3 coin cooldowns when the room upgrades.
       const old=await ctx.storage.get('coinRespawns');
@@ -120,18 +643,266 @@ export class GameRoom {
       try { ws.send(data); } catch (_) {}
     }
   }
+  nearbySockets(sourcePlayer, except) {
+    if (!sourcePlayer?.uid) return [];
+    const out=[];
+    const maxD2=PLAYER_VISIBILITY_RADIUS*PLAYER_VISIBILITY_RADIUS;
+    for (const ws of this.sockets()) {
+      if (ws===except) continue;
+      const other=this.player(ws);
+      if (!other?.uid) continue;
+      const dx=(Number(other.x)||0)-(Number(sourcePlayer.x)||0);
+      const dz=(Number(other.z)||0)-(Number(sourcePlayer.z)||0);
+      if (dx*dx+dz*dz<=maxD2) out.push(ws);
+    }
+    return out;
+  }
+  broadcastNearby(value,sourcePlayer,except) {
+    const data=JSON.stringify(value);
+    for (const ws of this.nearbySockets(sourcePlayer,except)) {
+      try { ws.send(data); } catch (_) {}
+    }
+  }
   publicPlayer(p) { return p?.uid && {id:p.id,x:p.x,y:p.y,z:p.z,r:p.r}; }
   coinSnapshot() {
-    const respawns=new Map(this.sql.exec('SELECT id,respawn_at FROM voxel_coins').toArray().map(row=>[row.id,row.respawn_at]));
-    return COINS.map(([x,z],id)=>({id,x,z,respawnAt:Number(respawns.get(id))||0}));
+    const rows = new Map(
+      this.sql.exec('SELECT id, respawn_at, cycle FROM voxel_coins').toArray()
+        .map(row => [Number(row.id), {respawnAt:Number(row.respawn_at)||0, cycle:Number(row.cycle)||0}])
+    );
+    return COINS.map((_,id) => {
+      const row = rows.get(id) || {respawnAt:0, cycle:0};
+      const pos = coinPosition(id, row.cycle);
+      return {id,x:pos.x,z:pos.z,respawnAt:row.respawnAt,cycle:row.cycle};
+    });
   }
   top() {
     return this.sql.exec('SELECT nickname, score FROM voxel_scores ORDER BY score DESC, updated_at ASC LIMIT 10').toArray();
   }
 
-  async fetch() {
+  grantPayment(uid, item, amount, transactionId) {
+    if (
+      typeof uid !== 'string' || !uid ||
+      typeof transactionId !== 'string' || !transactionId
+    ) {
+      return { ok:false, error:'Invalid payment data' };
+    }
+
+    const config = {
+      speed: {
+        price: 10,
+        column: 'speed_expires',
+        duration: 24 * 60 * 60 * 1000
+      },
+      coin: {
+        price: 20,
+        column: 'coin_expires',
+        duration: 24 * 60 * 60 * 1000
+      },
+      vip1: {
+        price: 50,
+        column: 'vip1_expires',
+        duration: 30 * 24 * 60 * 60 * 1000
+      }
+    };
+
+    const cfg = config[item];
+
+    if (!cfg || Number(amount) !== cfg.price) {
+      return { ok:false, error:'Invalid item or amount' };
+    }
+
+    const now = Date.now();
+
+    return this.ctx.storage.transactionSync(() => {
+      const oldPayment = this.sql.exec(
+        'SELECT transaction_id FROM voxel_payments WHERE transaction_id=?',
+        transactionId
+      ).toArray()[0];
+
+      if (oldPayment) {
+        return { ok:false, duplicate:true, error:'Payment already granted' };
+      }
+
+      const current = this.sql.exec(
+        'SELECT speed_expires, coin_expires, vip1_expires FROM voxel_entitlements WHERE uid=?',
+        uid
+      ).toArray()[0] || {
+        speed_expires: 0,
+        coin_expires: 0,
+        vip1_expires: 0
+      };
+
+      const currentExpiry = Number(current[cfg.column]) || 0;
+
+      // VIP จำกัดสูงสุด 100 บัญชีที่ยังมีสิทธิ์ใช้งาน
+      // ผู้ที่มี VIP อยู่แล้วสามารถต่ออายุได้แม้ครบ 100 คน
+      if (item === 'vip1' && currentExpiry <= now) {
+        const activeVipCount = Number(
+          this.sql.exec(
+            'SELECT COUNT(*) AS count FROM voxel_entitlements WHERE vip1_expires>?',
+            now
+          ).toArray()[0]?.count || 0
+        );
+
+        if (activeVipCount >= 100) {
+          return {
+            ok:false,
+            error:'VIP server is full'
+          };
+        }
+      }
+
+      const base = currentExpiry > now ? currentExpiry : now;
+      const newExpiry = base + cfg.duration;
+
+      this.sql.exec(
+        `INSERT INTO voxel_entitlements
+          (uid, speed_expires, coin_expires, vip1_expires, updated_at)
+         VALUES (?, 0, 0, 0, ?)
+         ON CONFLICT(uid) DO NOTHING`,
+        uid, now
+      );
+
+      this.sql.exec(
+        `UPDATE voxel_entitlements
+         SET ${cfg.column}=?, updated_at=?
+         WHERE uid=?`,
+        newExpiry, now, uid
+      );
+
+      this.sql.exec(
+        `INSERT INTO voxel_payments
+          (transaction_id, uid, item, amount, created_at)
+         VALUES (?, ?, ?, ?, ?)`,
+        transactionId, uid, item, cfg.price, now
+      );
+
+      const entitlements = this.sql.exec(
+        `SELECT speed_expires, coin_expires, vip1_expires
+         FROM voxel_entitlements WHERE uid=?`,
+        uid
+      ).toArray()[0];
+
+      return {
+        ok:true,
+        item,
+        expiresAt:newExpiry,
+        entitlements
+      };
+    });
+  }
+
+  async fetch(request) {
     await this.ready;
-    if (this.sockets().length>=64) return new Response('Demo room full',{status:503});
+
+    const url = new URL(request.url);
+
+    if (
+      url.pathname === '/_internal/get-entitlements' &&
+      request.method === 'POST'
+    ) {
+      let body;
+
+      try {
+        body = await request.json();
+      } catch {
+        return Response.json(
+          { ok:false, error:'Invalid JSON' },
+          { status:400 }
+        );
+      }
+
+      const uid = String(body.uid || '');
+
+      if (!uid || uid.length > 128) {
+        return Response.json(
+          { ok:false, error:'Invalid UID' },
+          { status:400 }
+        );
+      }
+
+      const now = Date.now();
+
+      const row = this.sql.exec(
+        `SELECT speed_expires, coin_expires, vip1_expires
+         FROM voxel_entitlements
+         WHERE uid=?`,
+        uid
+      ).toArray()[0] || {
+        speed_expires: 0,
+        coin_expires: 0,
+        vip1_expires: 0
+      };
+
+      const speedExpires = Number(row.speed_expires) || 0;
+      const coinExpires = Number(row.coin_expires) || 0;
+      const vip1Expires = Number(row.vip1_expires) || 0;
+
+      const vip1Count = Number(
+        this.sql.exec(
+          'SELECT COUNT(*) AS count FROM voxel_entitlements WHERE vip1_expires>?',
+          now
+        ).toArray()[0]?.count || 0
+      );
+
+      return Response.json({
+        ok:true,
+        serverNow:now,
+        entitlements:{
+          speedExpires,
+          coinExpires,
+          vip1Expires
+        },
+        servers:{
+          vip1:{
+            count:vip1Count,
+            max:100
+          }
+        },
+        active:{
+          speed:speedExpires > now,
+          coin:coinExpires > now,
+          vip1:vip1Expires > now
+        }
+      });
+    }
+
+
+    if (
+      url.pathname === '/_internal/grant-payment' &&
+      request.method === 'POST'
+    ) {
+      let body;
+
+      try {
+        body = await request.json();
+      } catch {
+        return Response.json(
+          { ok:false, error:'Invalid JSON' },
+          { status:400 }
+        );
+      }
+
+      try {
+        const result = this.grantPayment(
+          body.uid,
+          body.item,
+          body.amount,
+          body.transactionId
+        );
+
+        return Response.json(
+          result,
+          { status:result.ok ? 200 : 400 }
+        );
+      } catch (err) {
+        return Response.json(
+          { ok:false, error:'Payment storage failed' },
+          { status:500 }
+        );
+      }
+    }
+    if (this.sockets().length>=ROOM_SOFT_CAP) return new Response('Scale test room full',{status:503});
     const pair=new WebSocketPair();
     const [client,server]=Object.values(pair);
     this.ctx.acceptWebSocket(server);
@@ -150,6 +921,8 @@ export class GameRoom {
     if (message.length>256) return;
     if (m?.type==='move') return this.handleMove(ws,p,m);
     if (m?.type==='collect') return this.handleCollect(ws,p,m);
+      if (m?.type==='collect_box') return this.handleCollectBox(ws,p,m);
+      if (m?.type==='spin_box') return this.handleSpinBox(ws,p,m);
   }
 
   async handleAuth(ws,p,m) {
@@ -168,50 +941,195 @@ export class GameRoom {
     this.sql.exec('INSERT INTO voxel_scores(uid,nickname,score,updated_at) VALUES (?, ?, 0, ?) ON CONFLICT(uid) DO NOTHING',uid,nickname,now);
     const score=this.sql.exec('SELECT score FROM voxel_scores WHERE uid=?',uid).toArray()[0]?.score||0;
     const n=this.count();
-    Object.assign(p,{uid,exp:verified.exp,id,x:(n%5)*2-4,y:.93,z:Math.floor(n/5)*2,r:0,at:now,last:0,lastCollect:0});
+    Object.assign(p,{uid,exp:verified.exp,id,x:(n%5)*2-4,y:0,z:Math.floor(n/5)*2,r:0,at:now,last:0,lastCollect:0});
     ws.serializeAttachment(p);
     this.send(ws,{type:'welcome',protocol:4,id,spawn:{x:p.x,y:p.y,z:p.z},
-      players:this.sockets().filter(other=>other!==ws).map(other=>this.publicPlayer(this.player(other))).filter(Boolean),
-      coins:this.coinSnapshot(),score,leaderboard:this.top(),serverNow:now,count:this.count()});
-    this.broadcast({type:'join',player:this.publicPlayer(p),count:this.count()},ws);
+      players:this.nearbySockets(p,ws).map(other=>this.publicPlayer(this.player(other))).filter(Boolean),
+      coins:this.coinSnapshot(),luckyBox:this.boxSnapshot(now),score,leaderboard:this.top(),serverNow:now,count:this.count()});
+    this.broadcastNearby({type:'join',player:this.publicPlayer(p),count:this.count()},p,ws);
     this.broadcast({type:'leaderboard',top:this.top()});
   }
 
+  boxSnapshot(now = Date.now()) {
+    let row = this.sql.exec(
+      'SELECT next_spawn_at, cycle, claimed_uid, claim_expires_at FROM voxel_lucky_box WHERE id=1'
+    ).toArray()[0] || { next_spawn_at:0, cycle:0, claimed_uid:null, claim_expires_at:0 };
+
+    if (row.claimed_uid && Number(row.claim_expires_at || 0) <= now && Number(row.next_spawn_at || 0) <= now) {
+      this.sql.exec('UPDATE voxel_lucky_box SET claimed_uid=NULL, claim_expires_at=0 WHERE id=1');
+      row = { ...row, claimed_uid:null, claim_expires_at:0 };
+    }
+
+    const cycle = Number(row.cycle || 0);
+    const pos = luckyBoxPosition(cycle);
+    const nextSpawnAt = Number(row.next_spawn_at || 0);
+    const claimExpiresAt = Number(row.claim_expires_at || 0);
+    const claimed = Boolean(row.claimed_uid && claimExpiresAt > now);
+
+    return {
+      active: nextSpawnAt <= now && !claimed,
+      x: pos.x,
+      z: pos.z,
+      nextSpawnAt,
+      cycle,
+      claimed,
+      claimExpiresAt,
+      serverNow: now
+    };
+  }
+
+  handleCollectBox(ws,p) {
+    const now = Date.now();
+    const snap = this.boxSnapshot(now);
+    if (!snap.active) {
+      this.send(ws,{type:'box_state',box:snap,serverNow:now});
+      return;
+    }
+    if (Math.hypot(p.x-snap.x,p.z-snap.z) > 2.8 || p.y > 3.2) return;
+
+    let claimed = false;
+    try {
+      claimed = this.ctx.storage.transactionSync(() => {
+        const row = this.sql.exec(
+          'SELECT next_spawn_at, claimed_uid, claim_expires_at FROM voxel_lucky_box WHERE id=1'
+        ).toArray()[0];
+        if (!row) return false;
+        if (Number(row.next_spawn_at || 0) > now) return false;
+        if (row.claimed_uid && Number(row.claim_expires_at || 0) > now && row.claimed_uid !== p.uid) return false;
+        this.sql.exec(
+          'UPDATE voxel_lucky_box SET claimed_uid=?, claim_expires_at=? WHERE id=1',
+          p.uid, now + LUCKY_BOX_CLAIM_MS
+        );
+        return true;
+      });
+    } catch (_) { return; }
+
+    const state = this.boxSnapshot(now);
+    this.broadcast({type:'box_state',box:state,serverNow:now});
+    if (claimed) this.send(ws,{type:'box_spin_ready',box:state,serverNow:now});
+  }
+
+  handleSpinBox(ws,p) {
+    const now = Date.now();
+    const reward = secureLuckyReward();
+    let result;
+
+    try {
+      result = this.ctx.storage.transactionSync(() => {
+        const row = this.sql.exec(
+          'SELECT next_spawn_at, cycle, claimed_uid, claim_expires_at FROM voxel_lucky_box WHERE id=1'
+        ).toArray()[0];
+        if (!row) return {ok:false,message:'Lucky Box state missing'};
+        if (Number(row.next_spawn_at || 0) > now) return {ok:false,message:'Lucky Box is cooling down'};
+        if (row.claimed_uid !== p.uid || Number(row.claim_expires_at || 0) <= now) {
+          return {ok:false,message:'Lucky Box claim expired'};
+        }
+
+        this.sql.exec(
+          'UPDATE voxel_scores SET score=score+?, updated_at=? WHERE uid=?',
+          reward, now, p.uid
+        );
+        const score = Number(this.sql.exec(
+          'SELECT score FROM voxel_scores WHERE uid=?', p.uid
+        ).toArray()[0]?.score || 0);
+
+        const nextSpawnAt = now + LUCKY_BOX_RESPAWN_MS;
+        const nextCycle = Number(row.cycle || 0) + 1;
+        this.sql.exec(
+          'UPDATE voxel_lucky_box SET next_spawn_at=?, cycle=?, claimed_uid=NULL, claim_expires_at=0 WHERE id=1',
+          nextSpawnAt, nextCycle
+        );
+        return {ok:true,reward,score,nextSpawnAt,nextCycle};
+      });
+    } catch (_) {
+      this.send(ws,{type:'box_error',message:'Lucky Box storage unavailable'});
+      return;
+    }
+
+    if (!result?.ok) {
+      this.send(ws,{type:'box_error',message:result?.message || 'Lucky Box spin failed'});
+      this.send(ws,{type:'box_state',box:this.boxSnapshot(now),serverNow:now});
+      return;
+    }
+
+    this.send(ws,{type:'box_reward',reward:result.reward,score:result.score,serverNow:now});
+    this.broadcast({type:'box_state',box:this.boxSnapshot(now),serverNow:now});
+    this.broadcast({type:'leaderboard',top:this.top()});
+  }
+
+
   handleMove(ws,p,m) {
     const now=Date.now();
-    if (now-p.last<70) return;
+    if (now-p.last<MOVE_TICK_MS) return;
     const {x,y,z,r}=m;
     if (![x,y,z,r].every(Number.isFinite)) return;
-    if (Math.abs(x)>24 || Math.abs(z)>24 || y<.85 || y>5 || Math.abs(r)>10000) return;
+    if (Math.abs(x)>748 || Math.abs(z)>748 || y<-.25 || y>8 || Math.abs(r)>10000) return;
     const dt=Math.min(1.5,Math.max(0,(now-p.at)/1000));
-    if (Math.hypot(x-p.x,z-p.z)>7.5*dt+.65 || Math.abs(y-p.y)>9*dt+.5) return;
+    
+    const speedEntitlement = this.sql.exec(
+      'SELECT speed_expires FROM voxel_entitlements WHERE uid=?',
+      p.uid
+    ).toArray()[0];
+
+    const speedActive =
+      Number(speedEntitlement?.speed_expires || 0) > now;
+
+    const maxHorizontalSpeed = speedActive ? 50 : 26;
+
+    if (
+      Math.hypot(x-p.x,z-p.z) > maxHorizontalSpeed*dt+.65 ||
+      Math.abs(y-p.y) > 9*dt+.5
+    ) return;
     Object.assign(p,{x,y,z,r,at:now,last:now});
     ws.serializeAttachment(p);
-    this.broadcast({type:'move',player:this.publicPlayer(p)},ws);
+    this.broadcastNearby({type:'move',player:this.publicPlayer(p)},p,ws);
   }
 
   async handleCollect(ws,p,m) {
     const now=Date.now(), id=m.id;
     if (!Number.isInteger(id) || id<0 || id>=COINS.length || now-p.lastCollect<150) return;
     p.lastCollect=now; ws.serializeAttachment(p);
-    const [x,z]=COINS[id];
-    if (Math.hypot(p.x-x,p.z-z)>1.35 || p.y>2.6) return;
+    const visibleRow = this.sql.exec(
+      'SELECT cycle FROM voxel_coins WHERE id=?', id
+    ).toArray()[0];
+    const visibleCycle = Number(visibleRow?.cycle || 0);
+    const {x,z} = coinPosition(id, visibleCycle);
+    if (Math.hypot(p.x-x,p.z-z)>2.35 || p.y>2.6) return;
     let result;
     try {
       result=this.ctx.storage.transactionSync(()=>{
-        const activeAfter=Number(this.sql.exec('SELECT respawn_at FROM voxel_coins WHERE id=?',id).toArray()[0]?.respawn_at)||0;
+        const row=this.sql.exec(
+          'SELECT respawn_at, cycle FROM voxel_coins WHERE id=?', id
+        ).toArray()[0];
+        const activeAfter=Number(row?.respawn_at)||0;
         if (activeAfter>now) return {activeAfter};
+        const nextCycle=(Number(row?.cycle)||0)+1;
         const respawnAt=now+RESPAWN_MS;
-        this.sql.exec('INSERT INTO voxel_coins(id,respawn_at) VALUES (?,?) ON CONFLICT(id) DO UPDATE SET respawn_at=excluded.respawn_at',id,respawnAt);
-        this.sql.exec('UPDATE voxel_scores SET score=score+1, updated_at=? WHERE uid=?',now,p.uid);
+        this.sql.exec(
+          'INSERT INTO voxel_coins(id,respawn_at,cycle) VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET respawn_at=excluded.respawn_at, cycle=excluded.cycle',
+          id, respawnAt, nextCycle
+        );
+        const coinEntitlement = this.sql.exec(
+          'SELECT coin_expires FROM voxel_entitlements WHERE uid=?',
+          p.uid
+        ).toArray()[0];
+
+        const coinReward =
+          Number(coinEntitlement?.coin_expires || 0) > now ? 2 : 1;
+
+        this.sql.exec(
+          'UPDATE voxel_scores SET score=score+?, updated_at=? WHERE uid=?',
+          coinReward, now, p.uid
+        );
         const score=this.sql.exec('SELECT score FROM voxel_scores WHERE uid=?',p.uid).toArray()[0].score;
-        return {respawnAt,score};
+        return {respawnAt,score,cycle:nextCycle};
       });
     } catch (_) { this.send(ws,{type:'server_error',message:'Score storage unavailable'}); return; }
     if (result.activeAfter) {
       this.send(ws,{type:'coin_state',id,respawnAt:result.activeAfter,serverNow:now}); return;
     }
-    this.broadcast({type:'coin_collected',id,respawnAt:result.respawnAt,serverNow:now});
+    const nextPos=coinPosition(id,Number(result.cycle)||0);
+    this.broadcast({type:'coin_collected',id,x:nextPos.x,z:nextPos.z,cycle:result.cycle,respawnAt:result.respawnAt,serverNow:now});
     this.send(ws,{type:'score',score:result.score});
     this.broadcast({type:'leaderboard',top:this.top()});
   }
