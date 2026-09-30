@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Voxel Adventure 3D - Secure Worker Beta</title>
+    <title>Voxel Adventure 3D - Free 10K Phase 2C1</title>
 
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -2575,19 +2575,26 @@
         // Payment/entitlements + Free Server multiplayer + Coin + Lucky Box are server-authoritative.
         // VIP gameplay remains disabled until separate VIP room routing is completed.
         // ============================================================
+        // FREE_10K_PHASE2C1_CLIENT
+        // Free Server client now connects directly to the 10x10 ZoneRoom mesh,
+        // performs secure one-time handoffs and consumes B2 ghost snapshots.
         const SECURE_WORKER_HTTP_BASE = 'https://voxel-run-v2-demo.hjinffv5426.workers.dev';
-        const SECURE_WORKER_WS_URL = SECURE_WORKER_HTTP_BASE.replace(/^http/, 'ws') + '/play';
+        const SECURE_WORKER_WS_BASE = SECURE_WORKER_HTTP_BASE.replace(/^http/, 'ws') + '/play';
         const SECURE_PAYMENT_PROMPTPAY_TARGET = '0999999999'; // MUST match PAYMENT_RECEIVER_ACCOUNT before public launch.
+        const SECURE_ZONE_GRID_SIZE = 10;
+        const SECURE_ZONE_SIZE = MAP_SIZE / SECURE_ZONE_GRID_SIZE;
 
         let secureGameSocket = null;
         let secureGameReady = false;
-        let secureGameIntentionalClose = false;
-        let secureWelcomeResolve = null;
-        let secureWelcomeReject = null;
-        let secureWelcomeTimer = null;
         let secureLastMoveSentAt = 0;
         let secureServerTimeOffset = 0;
         let secureEntitlementRefreshTimer = null;
+        let secureCurrentZoneId = null;
+        let secureHandoffInProgress = false;
+        let secureLastStablePosition = { x: 0, y: 0, z: 0, r: 0 };
+        const secureIntentionalSockets = new WeakSet();
+        const secureRemoteSources = new Map();
+        const secureGhostMembersByZone = new Map();
 
         function secureNow() {
             return Date.now() + secureServerTimeOffset;
@@ -2830,6 +2837,106 @@
             };
         }
 
+        function secureNormalizeZoneId(value) {
+            const match = /^(\d{1,2}),(\d{1,2})$/.exec(String(value || ''));
+            if (!match) return null;
+            const zx = Number(match[1]);
+            const zz = Number(match[2]);
+            if (!Number.isInteger(zx) || !Number.isInteger(zz) ||
+                zx < 0 || zz < 0 || zx >= SECURE_ZONE_GRID_SIZE || zz >= SECURE_ZONE_GRID_SIZE) {
+                return null;
+            }
+            return `${zx},${zz}`;
+        }
+
+        function secureZoneFromPosition(x, z) {
+            x = Number(x);
+            z = Number(z);
+            if (!Number.isFinite(x) || !Number.isFinite(z)) return null;
+            const half = MAP_SIZE / 2;
+            if (x < -half || x >= half || z < -half || z >= half) return null;
+            const zx = Math.min(SECURE_ZONE_GRID_SIZE - 1, Math.max(0, Math.floor((x + half) / SECURE_ZONE_SIZE)));
+            const zz = Math.min(SECURE_ZONE_GRID_SIZE - 1, Math.max(0, Math.floor((z + half) / SECURE_ZONE_SIZE)));
+            return `${zx},${zz}`;
+        }
+
+        function secureZoneSocketUrl(zoneId) {
+            const normalized = secureNormalizeZoneId(zoneId);
+            if (!normalized) throw new Error('Zone ไม่ถูกต้อง');
+            return `${SECURE_WORKER_WS_BASE}?zone=${encodeURIComponent(normalized)}`;
+        }
+
+        function secureRememberStablePosition() {
+            secureLastStablePosition = {
+                x: Number(playerPos.x) || 0,
+                y: Number(playerPos.y) || 0,
+                z: Number(playerPos.z) || 0,
+                r: Number(playerRotation) || 0
+            };
+        }
+
+        function secureClearRemoteState() {
+            secureRemoteSources.clear();
+            secureGhostMembersByZone.clear();
+            removeAllOtherPlayers();
+        }
+
+        function secureTrackRemotePlayer(id, sourceKey, rawPlayer) {
+            id = String(id || '');
+            if (!id || id === state.serverPlayerId) return;
+            const p = secureNormalizePlayer(rawPlayer);
+            if (!p.id) p.id = id;
+
+            let sources = secureRemoteSources.get(id);
+            if (!sources) {
+                sources = new Set();
+                secureRemoteSources.set(id, sources);
+            }
+            sources.add(sourceKey);
+
+            if (!otherPlayers[id]) addOtherPlayer(id, p);
+            else updateOtherPlayer(id, p);
+        }
+
+        function secureUntrackRemotePlayer(id, sourceKey) {
+            id = String(id || '');
+            const sources = secureRemoteSources.get(id);
+            if (!sources) return;
+            sources.delete(sourceKey);
+            if (sources.size === 0) {
+                secureRemoteSources.delete(id);
+                removeOtherPlayer(id);
+            }
+        }
+
+        function secureReplaceGhostSnapshot(message) {
+            const zoneId = secureNormalizeZoneId(message?.zone);
+            if (!zoneId) return;
+            if (message?.serverNow) secureSetServerNow(message.serverNow);
+
+            const sourceKey = `ghost:${zoneId}`;
+            const previous = secureGhostMembersByZone.get(zoneId) || new Set();
+            const next = new Set();
+
+            (Array.isArray(message?.players) ? message.players : []).forEach(raw => {
+                const p = secureNormalizePlayer(raw);
+                if (!p.id || p.id === state.serverPlayerId) return;
+                next.add(p.id);
+                secureTrackRemotePlayer(p.id, sourceKey, p);
+            });
+
+            previous.forEach(id => {
+                if (!next.has(id)) secureUntrackRemotePlayer(id, sourceKey);
+            });
+            secureGhostMembersByZone.set(zoneId, next);
+        }
+
+        function secureCloseSocket(ws, code = 1000, reason = 'Bye') {
+            if (!ws) return;
+            secureIntentionalSockets.add(ws);
+            try { ws.close(code, reason); } catch (_) {}
+        }
+
         function secureNormalizeLeaderboard(top = []) {
             return Array.isArray(top) ? top.map(row => ({
                 name: String(row?.name || row?.nickname || 'Player'),
@@ -2887,6 +2994,7 @@
             switch (message.type) {
                 case 'welcome': {
                     if (message.serverNow) secureSetServerNow(message.serverNow);
+                    secureCurrentZoneId = secureNormalizeZoneId(message.zone) || secureCurrentZoneId;
                     state.serverPlayerId = String(message.id || '');
                     state.score = Number(message.score) || 0;
                     updateScoreDisplay();
@@ -2897,41 +3005,51 @@
                             Number(message.spawn.y) || 0,
                             Number(message.spawn.z) || 0
                         );
-                        if (playerGroup) playerGroup.position.copy(playerPos);
+                        if (Number.isFinite(Number(message.spawn.r))) {
+                            playerRotation = Number(message.spawn.r);
+                        }
+                        if (playerGroup) {
+                            playerGroup.position.copy(playerPos);
+                            playerGroup.rotation.y = playerRotation;
+                        }
+                        playerVel.x = 0;
+                        playerVel.z = 0;
+                        secureRememberStablePosition();
                     }
 
-                    removeAllOtherPlayers();
+                    secureClearRemoteState();
                     (Array.isArray(message.players) ? message.players : []).forEach(raw => {
                         const p = secureNormalizePlayer(raw);
-                        if (p.id && p.id !== state.serverPlayerId) addOtherPlayer(p.id, p);
+                        if (p.id && p.id !== state.serverPlayerId) {
+                            secureTrackRemotePlayer(p.id, 'local', p);
+                        }
                     });
 
                     secureApplyCoinSnapshot(message.coins, message.serverNow);
                     secureApplyLuckyBoxState(message.luckyBox, message.serverNow);
                     updateLeaderboardUI(secureNormalizeLeaderboard(message.leaderboard));
                     secureGameReady = true;
-
-                    if (secureWelcomeTimer) clearTimeout(secureWelcomeTimer);
-                    secureWelcomeTimer = null;
-                    if (secureWelcomeResolve) secureWelcomeResolve(message);
-                    secureWelcomeResolve = null;
-                    secureWelcomeReject = null;
                     break;
                 }
                 case 'join': {
                     const p = secureNormalizePlayer(message.player);
-                    if (p.id && p.id !== state.serverPlayerId) addOtherPlayer(p.id, p);
+                    if (p.id && p.id !== state.serverPlayerId) secureTrackRemotePlayer(p.id, 'local', p);
                     break;
                 }
                 case 'move': {
                     const p = secureNormalizePlayer(message.player);
                     if (!p.id || p.id === state.serverPlayerId) break;
-                    if (!otherPlayers[p.id]) addOtherPlayer(p.id, p);
-                    else updateOtherPlayer(p.id, p);
+                    secureTrackRemotePlayer(p.id, 'local', p);
                     break;
                 }
                 case 'leave':
-                    if (message.id) removeOtherPlayer(String(message.id));
+                    if (message.id) secureUntrackRemotePlayer(String(message.id), 'local');
+                    break;
+                case 'ghost_snapshot':
+                    secureReplaceGhostSnapshot(message);
+                    break;
+                case 'zone_change':
+                    void secureBeginZoneHandoff(message);
                     break;
                 case 'score':
                     state.score = Number(message.score) || 0;
@@ -2962,8 +3080,11 @@
                 case 'box_error':
                     console.warn('Lucky Box:', message.message || message);
                     break;
+                case 'handoff_error':
+                    console.warn('Zone handoff:', message.message || message);
+                    break;
                 case 'auth_error':
-                    if (secureWelcomeReject) secureWelcomeReject(new Error(message.message || 'เข้าสู่ Game Server ไม่สำเร็จ'));
+                    console.warn('Game auth:', message.message || message);
                     break;
                 case 'server_error':
                     console.error('Game server error:', message.message || message);
@@ -2971,63 +3092,90 @@
             }
         }
 
-        async function secureConnectGameSocket() {
+        async function secureOpenZoneSocket(zoneId, handoffToken = '', forceTokenRefresh = false) {
             if (!auth.currentUser) throw new Error('ต้องล็อกอิน Google ก่อนเข้าเล่น');
-            if (state.selectedServerId !== 'free1') throw new Error('Security Test เปิดเฉพาะ Free Server จนกว่า VIP room routing จะเสร็จ');
+            const normalizedZone = secureNormalizeZoneId(zoneId);
+            if (!normalizedZone) throw new Error('Zone ไม่ถูกต้อง');
 
-            if (secureGameSocket) {
-                try { secureGameIntentionalClose = true; secureGameSocket.close(1000, 'Reconnect'); } catch (_) {}
-                secureGameSocket = null;
-            }
-
-            secureGameReady = false;
-            secureGameIntentionalClose = false;
-            const token = await auth.currentUser.getIdToken(true);
+            const token = await auth.currentUser.getIdToken(forceTokenRefresh);
 
             return new Promise((resolve, reject) => {
-                secureWelcomeResolve = resolve;
-                secureWelcomeReject = reject;
-                secureWelcomeTimer = setTimeout(() => {
-                    secureWelcomeTimer = null;
-                    secureWelcomeResolve = null;
-                    secureWelcomeReject = null;
-                    try { secureGameSocket?.close(); } catch (_) {}
-                    reject(new Error('เชื่อมต่อ Game Server ไม่สำเร็จภายในเวลาที่กำหนด'));
+                const ws = new WebSocket(secureZoneSocketUrl(normalizedZone));
+                let welcomed = false;
+                let settled = false;
+
+                const timer = setTimeout(() => {
+                    if (settled) return;
+                    settled = true;
+                    secureCloseSocket(ws, 1000, 'Welcome timeout');
+                    reject(new Error('เชื่อมต่อ Zone Server ไม่สำเร็จภายในเวลาที่กำหนด'));
                 }, 10_000);
 
-                const ws = new WebSocket(SECURE_WORKER_WS_URL);
-                secureGameSocket = ws;
+                const failBeforeWelcome = (message) => {
+                    if (settled || welcomed) return;
+                    settled = true;
+                    clearTimeout(timer);
+                    secureCloseSocket(ws, 1000, 'Auth failed');
+                    reject(new Error(message));
+                };
 
                 ws.onopen = () => {
-                    ws.send(JSON.stringify({ type: 'auth', token }));
+                    const authMessage = { type: 'auth', token };
+                    if (handoffToken) authMessage.handoffToken = String(handoffToken);
+                    ws.send(JSON.stringify(authMessage));
                 };
 
                 ws.onmessage = event => {
+                    let message;
                     try {
-                        secureHandleSocketMessage(JSON.parse(event.data));
+                        message = JSON.parse(event.data);
                     } catch (err) {
                         console.warn('Invalid game socket message:', err);
+                        return;
                     }
+
+                    if (!welcomed) {
+                        if (message?.type === 'welcome') {
+                            welcomed = true;
+                            settled = true;
+                            clearTimeout(timer);
+                            secureGameSocket = ws;
+                            secureGameReady = true;
+                            secureCurrentZoneId = secureNormalizeZoneId(message.zone) || normalizedZone;
+                            secureHandleSocketMessage(message);
+                            resolve({ ws, welcome: message });
+                            return;
+                        }
+                        if (message?.type === 'auth_error' || message?.type === 'handoff_error' || message?.type === 'server_error') {
+                            failBeforeWelcome(message.message || 'Game Server ปฏิเสธการเชื่อมต่อ');
+                            return;
+                        }
+                        return;
+                    }
+
+                    if (ws === secureGameSocket) secureHandleSocketMessage(message);
                 };
 
                 ws.onerror = () => {
-                    if (!secureGameReady && secureWelcomeReject) {
-                        secureWelcomeReject(new Error('WebSocket Game Server มีปัญหา'));
-                        secureWelcomeReject = null;
-                    }
+                    if (!welcomed) failBeforeWelcome('WebSocket Zone Server มีปัญหา');
                 };
 
                 ws.onclose = event => {
-                    const wasReady = secureGameReady;
+                    clearTimeout(timer);
+                    if (!welcomed && !settled) {
+                        settled = true;
+                        reject(new Error(`Zone Server ปิดการเชื่อมต่อ (${event.code})`));
+                        return;
+                    }
+
+                    // Old sockets are intentionally left alive until a handoff target is ready.
+                    // Once a new socket becomes active, closing the old one must not tear down the game.
+                    if (ws !== secureGameSocket) return;
+
                     secureGameReady = false;
                     secureGameSocket = null;
-                    if (secureWelcomeTimer) clearTimeout(secureWelcomeTimer);
-                    secureWelcomeTimer = null;
-                    if (!wasReady && secureWelcomeReject) {
-                        secureWelcomeReject(new Error(`Game Server ปิดการเชื่อมต่อ (${event.code})`));
-                        secureWelcomeReject = null;
-                    }
-                    if (wasReady && !secureGameIntentionalClose && state.isPlaying) {
+                    const intentional = secureIntentionalSockets.has(ws);
+                    if (!intentional && state.isPlaying && !secureHandoffInProgress) {
                         alert('การเชื่อมต่อ Game Server หลุด กรุณาเข้าเกมใหม่');
                         secureReturnToMenu();
                     }
@@ -3035,11 +3183,109 @@
             });
         }
 
+        async function secureBeginZoneHandoff(message) {
+            if (secureHandoffInProgress || !state.isPlaying) return;
+
+            const fromZone = secureNormalizeZoneId(message?.from) || secureCurrentZoneId;
+            const targetZone = secureNormalizeZoneId(message?.zone);
+            const handoffToken = String(message?.handoffToken || '');
+            const expiresAt = Number(message?.expiresAt || 0);
+            if (!targetZone || !handoffToken || (expiresAt && expiresAt <= secureNow())) {
+                console.warn('Ignored invalid/expired zone handoff', message);
+                return;
+            }
+
+            const oldSocket = secureGameSocket;
+            const fallback = { ...secureLastStablePosition };
+            const wasPaused = state.isPaused;
+            secureHandoffInProgress = true;
+            state.isPaused = true;
+
+            if (message?.position) {
+                const px = Number(message.position.x);
+                const py = Number(message.position.y);
+                const pz = Number(message.position.z);
+                const pr = Number(message.position.r);
+                if ([px, py, pz, pr].every(Number.isFinite)) {
+                    playerPos.set(px, py, pz);
+                    playerRotation = pr;
+                    playerVel.x = 0;
+                    playerVel.z = 0;
+                    if (playerGroup) {
+                        playerGroup.position.copy(playerPos);
+                        playerGroup.rotation.y = playerRotation;
+                    }
+                }
+            }
+
+            try {
+                const result = await secureOpenZoneSocket(targetZone, handoffToken, false);
+                if (!result?.welcome?.handoff) {
+                    throw new Error('Target Zone ไม่ยืนยัน handoff');
+                }
+
+                if (oldSocket && oldSocket !== secureGameSocket) {
+                    secureCloseSocket(oldSocket, 1000, 'Zone handoff complete');
+                }
+
+                secureLastMoveSentAt = 0;
+                secureRememberStablePosition();
+                secureHandoffInProgress = false;
+                state.isPaused = wasPaused;
+                if (state.isPlaying && !state.isPaused) syncMyPlayerData(true);
+            } catch (err) {
+                console.error('Zone handoff failed:', err);
+                secureHandoffInProgress = false;
+                state.isPaused = wasPaused;
+
+                // If the source socket is still alive, roll the local avatar back to the
+                // last position that was definitely inside the old authoritative zone.
+                if (oldSocket && oldSocket.readyState === WebSocket.OPEN) {
+                    secureGameSocket = oldSocket;
+                    secureGameReady = true;
+                    secureCurrentZoneId = fromZone;
+                    playerPos.set(fallback.x, fallback.y, fallback.z);
+                    playerRotation = fallback.r;
+                    playerVel.x = 0;
+                    playerVel.z = 0;
+                    if (playerGroup) {
+                        playerGroup.position.copy(playerPos);
+                        playerGroup.rotation.y = playerRotation;
+                    }
+                    alert('ย้าย Zone ไม่สำเร็จ ระบบพากลับตำแหน่งเดิม กรุณาลองเดินข้ามเขตอีกครั้ง');
+                } else {
+                    alert('ย้าย Zone ไม่สำเร็จและการเชื่อมต่อเดิมหลุด กรุณาเข้าเกมใหม่');
+                    secureReturnToMenu();
+                }
+            }
+        }
+
+        async function secureConnectGameSocket() {
+            if (!auth.currentUser) throw new Error('ต้องล็อกอิน Google ก่อนเข้าเล่น');
+            if (state.selectedServerId !== 'free1') throw new Error('Security Test เปิดเฉพาะ Free Server จนกว่า VIP room routing จะเสร็จ');
+
+            const existing = secureGameSocket;
+            if (existing) {
+                secureCloseSocket(existing, 1000, 'Reconnect');
+                if (secureGameSocket === existing) secureGameSocket = null;
+            }
+
+            secureGameReady = false;
+            secureHandoffInProgress = false;
+            secureCurrentZoneId = secureZoneFromPosition(playerPos.x, playerPos.z) || '5,5';
+            secureClearRemoteState();
+            const result = await secureOpenZoneSocket(secureCurrentZoneId, '', true);
+            secureRememberStablePosition();
+            return result.welcome;
+        }
+
         function secureReturnToMenu() {
             state.isPlaying = false;
             state.isPaused = false;
             secureGameReady = false;
-            removeAllOtherPlayers();
+            secureHandoffInProgress = false;
+            secureCurrentZoneId = null;
+            secureClearRemoteState();
             document.getElementById('exit-modal').classList.add('hidden');
             document.getElementById('game-hud').classList.add('hidden');
             document.getElementById('player-nametag').classList.add('hidden');
@@ -3047,7 +3293,7 @@
         }
 
         removeAllAOIListeners = function() {
-            removeAllOtherPlayers();
+            secureClearRemoteState();
             currentZonePlayerRef = null;
             currentPlayerZoneId = null;
         };
@@ -3066,7 +3312,7 @@
         };
 
         collectCoin = function(coin) {
-            if (!coin || !coin.active || !secureGameReady || !secureGameSocket || secureGameSocket.readyState !== WebSocket.OPEN) return;
+            if (secureHandoffInProgress || !coin || !coin.active || !secureGameReady || !secureGameSocket || secureGameSocket.readyState !== WebSocket.OPEN) return;
             const id = Number(coin.serverId);
             if (!Number.isInteger(id)) return;
             const now = Date.now();
@@ -3076,10 +3322,16 @@
         };
 
         syncMyPlayerData = function(force = false) {
-            if (!state.isPlaying || !secureGameReady || !secureGameSocket || secureGameSocket.readyState !== WebSocket.OPEN) return;
+            if (!state.isPlaying || secureHandoffInProgress || !secureGameReady || !secureGameSocket || secureGameSocket.readyState !== WebSocket.OPEN) return;
             const now = Date.now();
             if (!force && now - secureLastMoveSentAt < 200) return; // FREE_10K_PHASE1_CLIENT: 5Hz
             secureLastMoveSentAt = now;
+
+            const positionZone = secureZoneFromPosition(playerPos.x, playerPos.z);
+            if (positionZone && positionZone === secureCurrentZoneId) {
+                secureRememberStablePosition();
+            }
+
             secureGameSocket.send(JSON.stringify({
                 type: 'move',
                 x: Math.round(playerPos.x * 100) / 100,
@@ -3164,7 +3416,7 @@
         }
 
         function secureRequestLuckyBoxCollect() {
-            if (!luckyBox || !luckyBox.active || luckyBox.collecting) return;
+            if (secureHandoffInProgress || !luckyBox || !luckyBox.active || luckyBox.collecting) return;
             if (!secureGameReady || !secureGameSocket || secureGameSocket.readyState !== WebSocket.OPEN) return;
             luckyBox.collecting = true;
             setTimeout(() => { if (luckyBox) luckyBox.collecting = false; }, 1200);
@@ -3206,7 +3458,7 @@
         };
 
         spinWheel = function() {
-            if (state.wheelSpinning) return;
+            if (state.wheelSpinning || secureHandoffInProgress) return;
             if (!secureGameReady || !secureGameSocket || secureGameSocket.readyState !== WebSocket.OPEN) {
                 alert('Game Server หลุด กรุณาเข้าเกมใหม่');
                 return;
@@ -3311,7 +3563,7 @@
                 syncMyPlayerData(true);
             } catch (err) {
                 console.error('Start secure game failed:', err);
-                try { secureGameIntentionalClose = true; secureGameSocket?.close(); } catch (_) {}
+                if (secureGameSocket) secureCloseSocket(secureGameSocket, 1000, 'Start failed');
                 secureGameSocket = null;
                 secureGameReady = false;
                 alert('เข้าเกมไม่สำเร็จ: ' + (err?.message || 'Game Server error'));
@@ -3324,14 +3576,14 @@
         };
 
         confirmExitGame = function() {
-            secureGameIntentionalClose = true;
-            try { secureGameSocket?.close(1000, 'Bye'); } catch (_) {}
+            const ws = secureGameSocket;
             secureGameSocket = null;
             secureGameReady = false;
+            secureHandoffInProgress = false;
+            if (ws) secureCloseSocket(ws, 1000, 'Bye');
             if (luckyBoxServerRef) {
                 try { luckyBoxServerRef.off(); } catch (_) {}
             }
-            removeAllOtherPlayers();
             secureReturnToMenu();
         };
 
