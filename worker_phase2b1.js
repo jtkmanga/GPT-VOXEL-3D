@@ -20,9 +20,6 @@ const ZONE_SIZE = SERVER_MAP_SIZE / ZONE_GRID_SIZE;
 const ZONE_SOFT_CAP = 120;              // temporary per-zone soft cap
 // FREE_10K_PHASE2B1
 // B1: secure zone handoff tickets + global coin/Lucky Box actions.
-// FREE_10K_PHASE2B2
-// B2: cross-zone border visibility via throttled zone snapshots.
-const BORDER_SNAPSHOT_INTERVAL_MS = 500; // max 2 snapshot flushes/sec/active zone
 
 function normalizeZoneId(value) {
   const m = /^(\d{1,2}),(\d{1,2})$/.exec(String(value || ''));
@@ -91,23 +88,6 @@ function zonesAreAdjacent(a,b) {
   const [ax,az]=aa.split(',').map(Number);
   const [bx,bz]=bb.split(',').map(Number);
   return Math.abs(ax-bx)<=1 && Math.abs(az-bz)<=1;
-}
-
-
-function adjacentZoneIds(zoneId) {
-  const normalized=normalizeZoneId(zoneId);
-  if(!normalized) return [];
-  const [zx,zz]=normalized.split(',').map(Number);
-  const out=[];
-  for(let dz=-1;dz<=1;dz++) {
-    for(let dx=-1;dx<=1;dx++) {
-      if(dx===0 && dz===0) continue;
-      const nx=zx+dx, nz=zz+dz;
-      if(nx<0 || nz<0 || nx>=ZONE_GRID_SIZE || nz>=ZONE_GRID_SIZE) continue;
-      out.push(`${nx},${nz}`);
-    }
-  }
-  return out;
 }
 
 
@@ -1618,7 +1598,6 @@ export class ZoneRoom {
     this.ctx=ctx;
     this.env=env;
     this.projectId=env.FIREBASE_PROJECT_ID;
-    this.lastBorderFlushAt=0;
   }
 
   player(ws) { return ws.deserializeAttachment(); }
@@ -1659,141 +1638,8 @@ export class ZoneRoom {
     return p?.uid && {id:p.id,x:p.x,y:p.y,z:p.z,r:p.r};
   }
 
-  currentZoneId() {
-    const objectName=String(this.ctx.id?.name||'');
-    return normalizeZoneId(
-      objectName.startsWith('free-zone-')
-        ? objectName.slice('free-zone-'.length)
-        : ''
-    );
-  }
-
-  borderPlayers(exceptWs=null) {
-    return this.sockets()
-      .filter(ws=>ws!==exceptWs && this.player(ws)?.uid)
-      .map(ws=>this.publicPlayer(this.player(ws)))
-      .filter(Boolean);
-  }
-
-  async flushBorderSnapshot(force=false, exceptWs=null) {
-    const now=Date.now();
-    if (!force && now-this.lastBorderFlushAt<BORDER_SNAPSHOT_INTERVAL_MS) return;
-    this.lastBorderFlushAt=now;
-
-    const sourceZone=this.currentZoneId();
-    if (!sourceZone) return;
-
-    const players=this.borderPlayers(exceptWs);
-    const payload=JSON.stringify({
-      sourceZone,
-      players,
-      serverNow:now
-    });
-
-    await Promise.allSettled(
-      adjacentZoneIds(sourceZone).map(zoneId=>
-        this.env.ZONE.getByName(`free-zone-${zoneId}`).fetch(
-          new Request('https://zone.internal/_internal/border-snapshot',{
-            method:'POST',
-            headers:{'content-type':'application/json'},
-            body:payload
-          })
-        )
-      )
-    );
-  }
-
-  async sendInitialGhostSnapshots(ws,p) {
-    const currentZone=this.currentZoneId();
-    if (!currentZone || !p?.uid) return;
-
-    await Promise.allSettled(
-      adjacentZoneIds(currentZone).map(async zoneId=>{
-        const response=await this.env.ZONE.getByName(`free-zone-${zoneId}`).fetch(
-          new Request('https://zone.internal/_internal/border-state',{method:'GET'})
-        );
-        if (!response.ok) return;
-        const state=await response.json();
-        const players=Array.isArray(state?.players) ? state.players : [];
-        const maxD2=PLAYER_VISIBILITY_RADIUS*PLAYER_VISIBILITY_RADIUS;
-        const visible=players.filter(other=>{
-          if (!other || typeof other.id!=='string' || other.id===p.id) return false;
-          const x=Number(other.x), z=Number(other.z);
-          if (!Number.isFinite(x) || !Number.isFinite(z)) return false;
-          const dx=x-Number(p.x||0), dz=z-Number(p.z||0);
-          return dx*dx+dz*dz<=maxD2;
-        });
-        this.send(ws,{
-          type:'ghost_snapshot',
-          zone:zoneId,
-          players:visible,
-          serverNow:Number(state?.serverNow)||Date.now()
-        });
-      })
-    );
-  }
-
   async fetch(request) {
     const url=new URL(request.url);
-
-    if (url.pathname==='/_internal/border-state' && request.method==='GET') {
-      return Response.json({
-        ok:true,
-        zone:this.currentZoneId(),
-        players:this.borderPlayers(),
-        serverNow:Date.now()
-      });
-    }
-
-    if (url.pathname==='/_internal/border-snapshot' && request.method==='POST') {
-      let body;
-      try { body=await request.json(); }
-      catch (_) { return new Response('Bad JSON',{status:400}); }
-
-      const currentZone=this.currentZoneId();
-      const sourceZone=normalizeZoneId(body?.sourceZone);
-      if (!currentZone || !sourceZone || !zonesAreAdjacent(currentZone,sourceZone)) {
-        return new Response('Invalid source zone',{status:403});
-      }
-
-      const rawPlayers=Array.isArray(body?.players) ? body.players : [];
-      if (rawPlayers.length>ZONE_SOFT_CAP+20) {
-        return new Response('Snapshot too large',{status:413});
-      }
-
-      const players=[];
-      for (const item of rawPlayers) {
-        const id=String(item?.id||'');
-        const x=Number(item?.x), y=Number(item?.y), z=Number(item?.z), r=Number(item?.r);
-        if (!id || id.length>128 || ![x,y,z,r].every(Number.isFinite)) continue;
-        if (Math.abs(x)>748 || Math.abs(z)>748 || y<-.25 || y>8 || Math.abs(r)>10000) continue;
-        players.push({id,x,y,z,r});
-      }
-
-      const maxD2=PLAYER_VISIBILITY_RADIUS*PLAYER_VISIBILITY_RADIUS;
-      const serverNow=Number(body?.serverNow)||Date.now();
-
-      for (const ws of this.sockets()) {
-        const p=this.player(ws);
-        if (!p?.uid) continue;
-
-        const visible=players.filter(other=>{
-          if (other.id===p.id) return false;
-          const dx=other.x-Number(p.x||0);
-          const dz=other.z-Number(p.z||0);
-          return dx*dx+dz*dz<=maxD2;
-        });
-
-        this.send(ws,{
-          type:'ghost_snapshot',
-          zone:sourceZone,
-          players:visible,
-          serverNow
-        });
-      }
-
-      return new Response('OK');
-    }
 
     if (url.pathname==='/_internal/world-event' && request.method==='POST') {
       let event;
@@ -1806,7 +1652,12 @@ export class ZoneRoom {
     if (request.headers.get('Upgrade')?.toLowerCase()!=='websocket')
       return new Response('WebSocket required',{status:426});
 
-    const zoneId=this.currentZoneId();
+    const objectName = String(this.ctx.id?.name || '');
+    const zoneId = normalizeZoneId(
+      objectName.startsWith('free-zone-')
+        ? objectName.slice('free-zone-'.length)
+        : ''
+    );
     if (!zoneId) return new Response('Invalid zone',{status:400});
 
     if (this.sockets().length>=ZONE_SOFT_CAP)
@@ -1984,9 +1835,6 @@ export class ZoneRoom {
       player:this.publicPlayer(p),
       count:this.count()
     },p,ws);
-
-    this.ctx.waitUntil(this.sendInitialGhostSnapshots(ws,p));
-    this.ctx.waitUntil(this.flushBorderSnapshot(true));
   }
 
   async handleMove(ws,p,m) {
@@ -2089,8 +1937,6 @@ export class ZoneRoom {
       type:'move',
       player:this.publicPlayer(p)
     },p,ws);
-
-    this.ctx.waitUntil(this.flushBorderSnapshot(false));
   }
 
   async handleCollect(ws,p,m) {
@@ -2202,7 +2048,6 @@ export class ZoneRoom {
         id:p.id,
         count:Math.max(0,this.count()-1)
       },p,ws);
-      this.ctx.waitUntil(this.flushBorderSnapshot(true,ws));
     }
     try { ws.close(1000,'Bye'); } catch (_) {}
   }
@@ -2215,7 +2060,6 @@ export class ZoneRoom {
         id:p.id,
         count:Math.max(0,this.count()-1)
       },p,ws);
-      this.ctx.waitUntil(this.flushBorderSnapshot(true,ws));
     }
     try { ws.close(1011,'Connection error'); } catch (_) {}
   }
