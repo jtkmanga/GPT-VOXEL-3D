@@ -2578,6 +2578,9 @@
         // FREE_10K_PHASE2C1_CLIENT
         // Free Server client now connects directly to the 10x10 ZoneRoom mesh,
         // performs secure one-time handoffs and consumes B2 ghost snapshots.
+        // FREE_10K_PHASE2C1_1_SMOOTH_HANDOFF
+        // Handoff no longer pauses the whole game loop. The target Zone validates
+        // one server-authoritative handoff_resume before the source socket closes.
         const SECURE_WORKER_HTTP_BASE = 'https://voxel-run-v2-demo.hjinffv5426.workers.dev';
         const SECURE_WORKER_WS_BASE = SECURE_WORKER_HTTP_BASE.replace(/^http/, 'ws') + '/play';
         const SECURE_PAYMENT_PROMPTPAY_TARGET = '0999999999'; // MUST match PAYMENT_RECEIVER_ACCOUNT before public launch.
@@ -2591,6 +2594,9 @@
         let secureEntitlementRefreshTimer = null;
         let secureCurrentZoneId = null;
         let secureHandoffInProgress = false;
+        let secureHandoffResumeResolve = null;
+        let secureHandoffResumeReject = null;
+        let secureHandoffResumeTimer = null;
         let secureLastStablePosition = { x: 0, y: 0, z: 0, r: 0 };
         const secureIntentionalSockets = new WeakSet();
         const secureRemoteSources = new Map();
@@ -2881,6 +2887,12 @@
             removeAllOtherPlayers();
         }
 
+        function secureDropRemoteSource(sourceKey) {
+            [...secureRemoteSources.keys()].forEach(id => {
+                secureUntrackRemotePlayer(id, sourceKey);
+            });
+        }
+
         function secureTrackRemotePlayer(id, sourceKey, rawPlayer) {
             id = String(id || '');
             if (!id || id === state.serverPlayerId) return;
@@ -2994,12 +3006,16 @@
             switch (message.type) {
                 case 'welcome': {
                     if (message.serverNow) secureSetServerNow(message.serverNow);
+                    const isSmoothHandoffWelcome = Boolean(message.handoff) && secureHandoffInProgress;
                     secureCurrentZoneId = secureNormalizeZoneId(message.zone) || secureCurrentZoneId;
                     state.serverPlayerId = String(message.id || '');
                     state.score = Number(message.score) || 0;
                     updateScoreDisplay();
 
-                    if (message.spawn) {
+                    // Initial login uses the server spawn normally. During a Zone handoff,
+                    // keep the locally rendered position/velocity moving smoothly; the
+                    // target Zone validates that current position with handoff_resume.
+                    if (message.spawn && !isSmoothHandoffWelcome) {
                         playerPos.set(
                             Number(message.spawn.x) || 0,
                             Number(message.spawn.y) || 0,
@@ -3017,7 +3033,12 @@
                         secureRememberStablePosition();
                     }
 
-                    secureClearRemoteState();
+                    if (isSmoothHandoffWelcome) {
+                        secureDropRemoteSource('local');
+                    } else {
+                        secureClearRemoteState();
+                    }
+
                     (Array.isArray(message.players) ? message.players : []).forEach(raw => {
                         const p = secureNormalizePlayer(raw);
                         if (p.id && p.id !== state.serverPlayerId) {
@@ -3025,9 +3046,20 @@
                         }
                     });
 
-                    secureApplyCoinSnapshot(message.coins, message.serverNow);
-                    secureApplyLuckyBoxState(message.luckyBox, message.serverNow);
-                    updateLeaderboardUI(secureNormalizeLeaderboard(message.leaderboard));
+                    if (isSmoothHandoffWelcome) {
+                        // Refresh global world UI outside the critical handoff path so
+                        // 200 coin mesh updates cannot create a visible boundary hitch.
+                        requestAnimationFrame(() => {
+                            secureApplyCoinSnapshot(message.coins, message.serverNow);
+                            secureApplyLuckyBoxState(message.luckyBox, message.serverNow);
+                            updateLeaderboardUI(secureNormalizeLeaderboard(message.leaderboard));
+                        });
+                    } else {
+                        secureApplyCoinSnapshot(message.coins, message.serverNow);
+                        secureApplyLuckyBoxState(message.luckyBox, message.serverNow);
+                        updateLeaderboardUI(secureNormalizeLeaderboard(message.leaderboard));
+                    }
+
                     secureGameReady = true;
                     break;
                 }
@@ -3080,6 +3112,24 @@
                 case 'box_error':
                     console.warn('Lucky Box:', message.message || message);
                     break;
+                case 'handoff_resumed':
+                    if (message.serverNow) secureSetServerNow(message.serverNow);
+                    if (secureHandoffResumeTimer) clearTimeout(secureHandoffResumeTimer);
+                    secureHandoffResumeTimer = null;
+                    if (secureHandoffResumeResolve) secureHandoffResumeResolve(message);
+                    secureHandoffResumeResolve = null;
+                    secureHandoffResumeReject = null;
+                    break;
+                case 'handoff_resume_error': {
+                    if (secureHandoffResumeTimer) clearTimeout(secureHandoffResumeTimer);
+                    secureHandoffResumeTimer = null;
+                    const err = new Error(message.message || 'Target Zone ปฏิเสธตำแหน่งต่อเนื่อง');
+                    err.retryable = Boolean(message.retryable);
+                    if (secureHandoffResumeReject) secureHandoffResumeReject(err);
+                    secureHandoffResumeResolve = null;
+                    secureHandoffResumeReject = null;
+                    break;
+                }
                 case 'handoff_error':
                     console.warn('Zone handoff:', message.message || message);
                     break;
@@ -3183,6 +3233,50 @@
             });
         }
 
+        function secureWaitForHandoffResumeAck(timeoutMs = 2500) {
+            if (secureHandoffResumeTimer) clearTimeout(secureHandoffResumeTimer);
+            secureHandoffResumeResolve = null;
+            secureHandoffResumeReject = null;
+
+            return new Promise((resolve, reject) => {
+                secureHandoffResumeResolve = resolve;
+                secureHandoffResumeReject = reject;
+                secureHandoffResumeTimer = setTimeout(() => {
+                    secureHandoffResumeTimer = null;
+                    secureHandoffResumeResolve = null;
+                    secureHandoffResumeReject = null;
+                    reject(new Error('Target Zone ไม่ยืนยันตำแหน่งต่อเนื่องภายในเวลาที่กำหนด'));
+                }, timeoutMs);
+            });
+        }
+
+        async function secureResumeHandoffOnTarget(ws) {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                throw new Error('Target Zone socket ยังไม่พร้อม');
+            }
+
+            let lastError = null;
+            for (let attempt = 0; attempt < 3; attempt++) {
+                const ackPromise = secureWaitForHandoffResumeAck(2500);
+                ws.send(JSON.stringify({
+                    type: 'handoff_resume',
+                    x: Math.round(playerPos.x * 100) / 100,
+                    y: Math.round(playerPos.y * 100) / 100,
+                    z: Math.round(playerPos.z * 100) / 100,
+                    r: Math.round(playerRotation * 1000) / 1000
+                }));
+
+                try {
+                    return await ackPromise;
+                } catch (err) {
+                    lastError = err;
+                    if (!err?.retryable || attempt >= 2) throw err;
+                    await new Promise(resolve => setTimeout(resolve, 120));
+                }
+            }
+            throw lastError || new Error('Handoff resume failed');
+        }
+
         async function secureBeginZoneHandoff(message) {
             if (secureHandoffInProgress || !state.isPlaying) return;
 
@@ -3197,49 +3291,52 @@
 
             const oldSocket = secureGameSocket;
             const fallback = { ...secureLastStablePosition };
-            const wasPaused = state.isPaused;
+            let targetSocket = null;
             secureHandoffInProgress = true;
-            state.isPaused = true;
 
-            if (message?.position) {
-                const px = Number(message.position.x);
-                const py = Number(message.position.y);
-                const pz = Number(message.position.z);
-                const pr = Number(message.position.r);
-                if ([px, py, pz, pr].every(Number.isFinite)) {
-                    playerPos.set(px, py, pz);
-                    playerRotation = pr;
-                    playerVel.x = 0;
-                    playerVel.z = 0;
-                    if (playerGroup) {
-                        playerGroup.position.copy(playerPos);
-                        playerGroup.rotation.y = playerRotation;
-                    }
-                }
-            }
-
+            // IMPORTANT: do not pause state.isPaused here. The local movement/camera
+            // keeps rendering while the target Zone opens. Network-authoritative
+            // position is reconciled by one validated handoff_resume message.
             try {
                 const result = await secureOpenZoneSocket(targetZone, handoffToken, false);
+                targetSocket = result?.ws || secureGameSocket;
+
                 if (!result?.welcome?.handoff) {
                     throw new Error('Target Zone ไม่ยืนยัน handoff');
                 }
 
-                if (oldSocket && oldSocket !== secureGameSocket) {
+                await secureResumeHandoffOnTarget(targetSocket);
+
+                if (oldSocket && oldSocket !== targetSocket) {
                     secureCloseSocket(oldSocket, 1000, 'Zone handoff complete');
                 }
 
+                secureGameSocket = targetSocket;
+                secureGameReady = true;
+                secureCurrentZoneId = targetZone;
                 secureLastMoveSentAt = 0;
                 secureRememberStablePosition();
                 secureHandoffInProgress = false;
-                state.isPaused = wasPaused;
-                if (state.isPlaying && !state.isPaused) syncMyPlayerData(true);
-            } catch (err) {
-                console.error('Zone handoff failed:', err);
-                secureHandoffInProgress = false;
-                state.isPaused = wasPaused;
 
-                // If the source socket is still alive, roll the local avatar back to the
-                // last position that was definitely inside the old authoritative zone.
+                if (state.isPlaying && !state.isPaused) {
+                    syncMyPlayerData(true);
+                }
+            } catch (err) {
+                console.error('Smooth zone handoff failed:', err);
+
+                if (secureHandoffResumeTimer) clearTimeout(secureHandoffResumeTimer);
+                secureHandoffResumeTimer = null;
+                secureHandoffResumeResolve = null;
+                secureHandoffResumeReject = null;
+
+                if (targetSocket && targetSocket !== oldSocket) {
+                    secureCloseSocket(targetSocket, 1000, 'Handoff rollback');
+                }
+
+                secureHandoffInProgress = false;
+
+                // Rollback only happens on a genuine handoff failure. Normal successful
+                // crossings never freeze or snap back.
                 if (oldSocket && oldSocket.readyState === WebSocket.OPEN) {
                     secureGameSocket = oldSocket;
                     secureGameReady = true;
@@ -3252,7 +3349,9 @@
                         playerGroup.position.copy(playerPos);
                         playerGroup.rotation.y = playerRotation;
                     }
-                    alert('ย้าย Zone ไม่สำเร็จ ระบบพากลับตำแหน่งเดิม กรุณาลองเดินข้ามเขตอีกครั้ง');
+                    secureLastMoveSentAt = 0;
+                    syncMyPlayerData(true);
+                    alert('ย้าย Zone ไม่สำเร็จ ระบบพากลับตำแหน่งเดิม กรุณาลองอีกครั้ง');
                 } else {
                     alert('ย้าย Zone ไม่สำเร็จและการเชื่อมต่อเดิมหลุด กรุณาเข้าเกมใหม่');
                     secureReturnToMenu();
@@ -3284,6 +3383,10 @@
             state.isPaused = false;
             secureGameReady = false;
             secureHandoffInProgress = false;
+            if (secureHandoffResumeTimer) clearTimeout(secureHandoffResumeTimer);
+            secureHandoffResumeTimer = null;
+            secureHandoffResumeResolve = null;
+            secureHandoffResumeReject = null;
             secureCurrentZoneId = null;
             secureClearRemoteState();
             document.getElementById('exit-modal').classList.add('hidden');
@@ -3580,6 +3683,10 @@
             secureGameSocket = null;
             secureGameReady = false;
             secureHandoffInProgress = false;
+            if (secureHandoffResumeTimer) clearTimeout(secureHandoffResumeTimer);
+            secureHandoffResumeTimer = null;
+            secureHandoffResumeResolve = null;
+            secureHandoffResumeReject = null;
             if (ws) secureCloseSocket(ws, 1000, 'Bye');
             if (luckyBoxServerRef) {
                 try { luckyBoxServerRef.off(); } catch (_) {}

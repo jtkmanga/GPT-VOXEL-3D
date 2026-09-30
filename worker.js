@@ -22,6 +22,9 @@ const ZONE_SOFT_CAP = 120;              // temporary per-zone soft cap
 // B1: secure zone handoff tickets + global coin/Lucky Box actions.
 // FREE_10K_PHASE2B2
 // B2: cross-zone border visibility via throttled zone snapshots.
+// FREE_10K_PHASE2C1_1_SMOOTH_HANDOFF
+// Smooth handoff: client may keep moving locally while target Zone connects;
+// target validates one authoritative handoff_resume before normal movement resumes.
 const BORDER_SNAPSHOT_INTERVAL_MS = 500; // max 2 snapshot flushes/sec/active zone
 
 function normalizeZoneId(value) {
@@ -1070,7 +1073,7 @@ export class GameRoom {
 
       const result=this.ctx.storage.transactionSync(()=>{
         const row=this.sql.exec(
-          `SELECT token,uid,player_id,from_zone,to_zone,x,y,z,r,expires_at
+          `SELECT token,uid,player_id,from_zone,to_zone,x,y,z,r,expires_at,created_at
            FROM voxel_zone_handoffs WHERE token=?`,
           token
         ).toArray()[0];
@@ -1084,7 +1087,8 @@ export class GameRoom {
           playerId:String(row.player_id),
           fromZone:String(row.from_zone),
           toZone:String(row.to_zone),
-          x:Number(row.x),y:Number(row.y),z:Number(row.z),r:Number(row.r)
+          x:Number(row.x),y:Number(row.y),z:Number(row.z),r:Number(row.r),
+          createdAt:Number(row.created_at)||now
         };
       });
 
@@ -1844,6 +1848,7 @@ export class ZoneRoom {
 
     if (message.length>256) return;
 
+    if (m?.type==='handoff_resume') return this.handleHandoffResume(ws,p,m);
     if (m?.type==='move') return this.handleMove(ws,p,m);
     if (m?.type==='collect') return this.handleCollect(ws,p,m);
     if (m?.type==='collect_box') return this.handleCollectBox(ws,p,m);
@@ -1954,6 +1959,13 @@ export class ZoneRoom {
       last:0,
       lastCollect:0,
       handoffPending:null,
+      handoffResume: handoff ? {
+        anchorX:spawnX,
+        anchorY:spawnY,
+        anchorZ:spawnZ,
+        createdAt:Number(handoff.createdAt)||now,
+        deadline:now+4000
+      } : null,
       speedExpires:Number(bootstrap.entitlements?.speedExpires)||0
     });
 
@@ -1987,6 +1999,68 @@ export class ZoneRoom {
 
     this.ctx.waitUntil(this.sendInitialGhostSnapshots(ws,p));
     this.ctx.waitUntil(this.flushBorderSnapshot(true));
+  }
+
+  async handleHandoffResume(ws,p,m) {
+    const now=Date.now();
+    const resume=p?.handoffResume;
+    if (!resume || now>Number(resume.deadline||0)) {
+      if (p?.uid) {
+        p.handoffResume=null;
+        ws.serializeAttachment(p);
+      }
+      this.send(ws,{type:'handoff_resume_error',message:'Handoff resume window expired'});
+      return;
+    }
+
+    const x=Number(m?.x), y=Number(m?.y), z=Number(m?.z), r=Number(m?.r);
+    if (![x,y,z,r].every(Number.isFinite) ||
+        Math.abs(x)>748 || Math.abs(z)>748 || y<-.25 || y>8 || Math.abs(r)>10000 ||
+        zoneFromPosition(x,z)!==p.zoneId) {
+      this.send(ws,{type:'handoff_resume_error',message:'Invalid handoff resume position'});
+      return;
+    }
+
+    const elapsed=Math.min(4,Math.max(0,(now-Number(resume.createdAt||now))/1000));
+    const speedActive=Number(p.speedExpires||0)>now;
+    const maxHorizontalSpeed=speedActive ? 50 : 26;
+    const maxHorizontalDistance=maxHorizontalSpeed*elapsed+1.75;
+    const maxVerticalDistance=9*elapsed+1.0;
+
+    if (
+      Math.hypot(x-Number(resume.anchorX||0),z-Number(resume.anchorZ||0))>maxHorizontalDistance ||
+      Math.abs(y-Number(resume.anchorY||0))>maxVerticalDistance
+    ) {
+      this.send(ws,{
+        type:'handoff_resume_error',
+        message:'Handoff resume movement exceeded server limit',
+        retryable:true,
+        serverNow:now
+      });
+      return;
+    }
+
+    Object.assign(p,{
+      x,y,z,r,
+      at:now,
+      last:now,
+      handoffPending:null,
+      handoffResume:null
+    });
+    ws.serializeAttachment(p);
+
+    this.broadcastNearby({
+      type:'move',
+      player:this.publicPlayer(p)
+    },p,ws);
+    this.ctx.waitUntil(this.flushBorderSnapshot(true));
+
+    this.send(ws,{
+      type:'handoff_resumed',
+      x,y,z,r,
+      zone:p.zoneId,
+      serverNow:now
+    });
   }
 
   async handleMove(ws,p,m) {
@@ -2082,7 +2156,7 @@ export class ZoneRoom {
       return;
     }
 
-    Object.assign(p,{x,y,z,r,at:now,last:now,handoffPending:null});
+    Object.assign(p,{x,y,z,r,at:now,last:now,handoffPending:null,handoffResume:null});
     ws.serializeAttachment(p);
 
     this.broadcastNearby({
