@@ -2581,6 +2581,10 @@
         // FREE_10K_PHASE2C1_1_SMOOTH_HANDOFF
         // Handoff no longer pauses the whole game loop. The target Zone validates
         // one server-authoritative handoff_resume before the source socket closes.
+        // FREE_10K_PHASE2C2_MULTIPLAYER_FIX
+        // Player-selected names now travel through the Worker, leaderboard updates
+        // are global, handoff can cancel safely if the player steps back across the
+        // border, and coin pickup uses instant visual prediction + fast server ACK.
         const SECURE_WORKER_HTTP_BASE = 'https://voxel-run-v2-demo.hjinffv5426.workers.dev';
         const SECURE_WORKER_WS_BASE = SECURE_WORKER_HTTP_BASE.replace(/^http/, 'ws') + '/play';
         const SECURE_PAYMENT_PROMPTPAY_TARGET = '0999999999'; // MUST match PAYMENT_RECEIVER_ACCOUNT before public launch.
@@ -3090,6 +3094,27 @@
                 case 'leaderboard':
                     updateLeaderboardUI(secureNormalizeLeaderboard(message.top));
                     break;
+                case 'coin_collect_result': {
+                    const id = Number(message?.id);
+                    if (Number.isInteger(id) && id >= 0 && id < coins.length) {
+                        const coin = coins[id];
+                        coin._collectPendingUntil = 0;
+                        if (message.collected) {
+                            if (Number.isFinite(Number(message.score))) {
+                                state.score = Number(message.score);
+                                updateScoreDisplay();
+                            }
+                            if (message.event) secureUpdateCoinState(message.event);
+                        } else {
+                            if (message.serverNow) secureSetServerNow(message.serverNow);
+                            const activeAfter = Number(message.activeAfter) || 0;
+                            coin.respawnTime = activeAfter;
+                            coin.active = activeAfter <= secureNow();
+                            coin.mesh.visible = coin.active;
+                        }
+                    }
+                    break;
+                }
                 case 'coin_collected':
                 case 'coin_state':
                     secureUpdateCoinState(message);
@@ -3170,7 +3195,11 @@
                 };
 
                 ws.onopen = () => {
-                    const authMessage = { type: 'auth', token };
+                    const authMessage = {
+                        type: 'auth',
+                        token,
+                        name: String(state.playerName || 'Player').trim().slice(0, 12)
+                    };
                     if (handoffToken) authMessage.handoffToken = String(handoffToken);
                     ws.send(JSON.stringify(authMessage));
                 };
@@ -3250,14 +3279,26 @@
             });
         }
 
-        async function secureResumeHandoffOnTarget(ws) {
+        async function secureResumeHandoffOnTarget(ws, targetZone, fromZone) {
             if (!ws || ws.readyState !== WebSocket.OPEN) {
                 throw new Error('Target Zone socket ยังไม่พร้อม');
             }
 
             let lastError = null;
             for (let attempt = 0; attempt < 3; attempt++) {
-                const ackPromise = secureWaitForHandoffResumeAck(2500);
+                const liveZone = secureZoneFromPosition(playerPos.x, playerPos.z);
+                if (liveZone === fromZone) {
+                    const cancelled = new Error('ผู้เล่นกลับเข้า Zone เดิมระหว่าง handoff');
+                    cancelled.cancelledToSource = true;
+                    throw cancelled;
+                }
+                if (liveZone && liveZone !== targetZone) {
+                    const movedTooFar = new Error('ผู้เล่นเคลื่อนผ่าน Zone เป้าหมายระหว่าง handoff');
+                    movedTooFar.retryable = false;
+                    throw movedTooFar;
+                }
+
+                const ackPromise = secureWaitForHandoffResumeAck(3200);
                 ws.send(JSON.stringify({
                     type: 'handoff_resume',
                     x: Math.round(playerPos.x * 100) / 100,
@@ -3305,7 +3346,7 @@
                     throw new Error('Target Zone ไม่ยืนยัน handoff');
                 }
 
-                await secureResumeHandoffOnTarget(targetSocket);
+                await secureResumeHandoffOnTarget(targetSocket, targetZone, fromZone);
 
                 if (oldSocket && oldSocket !== targetSocket) {
                     secureCloseSocket(oldSocket, 1000, 'Zone handoff complete');
@@ -3322,6 +3363,25 @@
                     syncMyPlayerData(true);
                 }
             } catch (err) {
+                console.warn('Smooth zone handoff interrupted:', err);
+
+                if (err?.cancelledToSource && oldSocket && oldSocket.readyState === WebSocket.OPEN) {
+                    if (targetSocket && targetSocket !== oldSocket) {
+                        secureCloseSocket(targetSocket, 1000, 'Player returned to source zone');
+                    }
+                    try {
+                        oldSocket.send(JSON.stringify({ type: 'handoff_cancel' }));
+                    } catch (_) {}
+                    secureGameSocket = oldSocket;
+                    secureGameReady = true;
+                    secureCurrentZoneId = fromZone;
+                    secureHandoffInProgress = false;
+                    secureLastMoveSentAt = 0;
+                    secureRememberStablePosition();
+                    syncMyPlayerData(true);
+                    return;
+                }
+
                 console.error('Smooth zone handoff failed:', err);
 
                 if (secureHandoffResumeTimer) clearTimeout(secureHandoffResumeTimer);
@@ -3418,10 +3478,44 @@
             if (secureHandoffInProgress || !coin || !coin.active || !secureGameReady || !secureGameSocket || secureGameSocket.readyState !== WebSocket.OPEN) return;
             const id = Number(coin.serverId);
             if (!Number.isInteger(id)) return;
+
             const now = Date.now();
             if (Number(coin._collectPendingUntil || 0) > now) return;
-            coin._collectPendingUntil = now + 600;
-            secureGameSocket.send(JSON.stringify({ type: 'collect', id }));
+
+            // Immediate visual prediction: hide on contact, but score remains
+            // server-authoritative. If the server rejects/times out, restore it.
+            const requestId = Number(coin._collectRequestId || 0) + 1;
+            coin._collectRequestId = requestId;
+            coin._collectPendingUntil = now + 2500;
+            coin.active = false;
+            coin.mesh.visible = false;
+
+            try {
+                secureGameSocket.send(JSON.stringify({
+                    type: 'collect',
+                    id,
+                    x: Math.round(playerPos.x * 100) / 100,
+                    y: Math.round(playerPos.y * 100) / 100,
+                    z: Math.round(playerPos.z * 100) / 100,
+                    r: Math.round(playerRotation * 1000) / 1000
+                }));
+            } catch (_) {
+                coin._collectPendingUntil = 0;
+                coin.active = true;
+                coin.mesh.visible = true;
+                return;
+            }
+
+            setTimeout(() => {
+                if (
+                    coin._collectRequestId === requestId &&
+                    Number(coin._collectPendingUntil || 0) > 0
+                ) {
+                    coin._collectPendingUntil = 0;
+                    coin.active = true;
+                    coin.mesh.visible = true;
+                }
+            }, 2700);
         };
 
         syncMyPlayerData = function(force = false) {

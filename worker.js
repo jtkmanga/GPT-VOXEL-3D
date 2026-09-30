@@ -25,7 +25,19 @@ const ZONE_SOFT_CAP = 120;              // temporary per-zone soft cap
 // FREE_10K_PHASE2C1_1_SMOOTH_HANDOFF
 // Smooth handoff: client may keep moving locally while target Zone connects;
 // target validates one authoritative handoff_resume before normal movement resumes.
+// FREE_10K_PHASE2C2_MULTIPLAYER_FIX
+// Fixes: chosen player names + global leaderboard, more reliable multiplayer handoff,
+// and low-latency server-authoritative coin collection.
 const BORDER_SNAPSHOT_INTERVAL_MS = 500; // max 2 snapshot flushes/sec/active zone
+
+function normalizePlayerName(value, fallback='Player') {
+  let name=String(value ?? '')
+    .replace(/[\u0000-\u001f\u007f]/g,'')
+    .replace(/\s+/g,' ')
+    .trim();
+  if (!name) name=String(fallback || 'Player').trim() || 'Player';
+  return [...name].slice(0,12).join('');
+}
 
 function normalizeZoneId(value) {
   const m = /^(\d{1,2}),(\d{1,2})$/.exec(String(value || ''));
@@ -792,7 +804,7 @@ export class GameRoom {
       try { ws.send(data); } catch (_) {}
     }
   }
-  publicPlayer(p) { return p?.uid && {id:p.id,x:p.x,y:p.y,z:p.z,r:p.r}; }
+  publicPlayer(p) { return p?.uid && {id:p.id,x:p.x,y:p.y,z:p.z,r:p.r,name:normalizePlayerName(p.nickname,'Player')}; }
   coinSnapshot() {
     const rows = new Map(
       this.sql.exec('SELECT id, respawn_at, cycle FROM voxel_coins').toArray()
@@ -1176,11 +1188,17 @@ export class GameRoom {
         ...zoneIdsNearPosition(oldPos.x,oldPos.z),
         ...zoneIdsNearPosition(nextPos.x,nextPos.z)
       ];
-      await this.sendZoneEvent(affected,event);
+      const leaderboard=this.top();
+
+      // Do not hold the collector's response open while multiple Zone Durable Objects
+      // receive fan-out updates. The collector gets an immediate authoritative ACK;
+      // world/leaderboard propagation continues in waitUntil().
+      this.ctx.waitUntil(this.sendZoneEvent(affected,event));
+      this.ctx.waitUntil(this.sendAllZones({type:'leaderboard',top:leaderboard}));
 
       return Response.json({
         ok:true,collected:true,event,score:result.score,reward:result.reward,
-        leaderboard:this.top(),serverNow:now
+        leaderboard,serverNow:now
       });
     }
 
@@ -1304,16 +1322,27 @@ export class GameRoom {
       }
 
       const now = Date.now();
-      const nickname = 'Player-' + uid.slice(-6);
+      const fallbackName = 'Player-' + uid.slice(-6);
+      const nickname = normalizePlayerName(body?.name, fallbackName);
+      const previous = this.sql.exec(
+        'SELECT nickname FROM voxel_scores WHERE uid=?',uid
+      ).toArray()[0];
 
       this.sql.exec(
-        'INSERT INTO voxel_scores(uid,nickname,score,updated_at) VALUES (?, ?, 0, ?) ON CONFLICT(uid) DO NOTHING',
+        `INSERT INTO voxel_scores(uid,nickname,score,updated_at)
+         VALUES (?, ?, 0, ?)
+         ON CONFLICT(uid) DO UPDATE SET nickname=excluded.nickname`,
         uid, nickname, now
       );
 
       const score = Number(
         this.sql.exec('SELECT score FROM voxel_scores WHERE uid=?',uid).toArray()[0]?.score || 0
       );
+
+      if (!previous || String(previous.nickname || '') !== nickname) {
+        const leaderboardNow=this.top();
+        this.ctx.waitUntil(this.sendAllZones({type:'leaderboard',top:leaderboardNow}));
+      }
 
       const ent = this.sql.exec(
         `SELECT speed_expires, coin_expires, vip1_expires
@@ -1324,6 +1353,7 @@ export class GameRoom {
       return Response.json({
         ok:true,
         serverNow:now,
+        nickname,
         score,
         leaderboard:this.top(),
         coins:this.coinSnapshot(),
@@ -1409,7 +1439,7 @@ export class GameRoom {
     this.sql.exec('INSERT INTO voxel_scores(uid,nickname,score,updated_at) VALUES (?, ?, 0, ?) ON CONFLICT(uid) DO NOTHING',uid,nickname,now);
     const score=this.sql.exec('SELECT score FROM voxel_scores WHERE uid=?',uid).toArray()[0]?.score||0;
     const n=this.count();
-    Object.assign(p,{uid,exp:verified.exp,id,x:(n%5)*2-4,y:0,z:Math.floor(n/5)*2,r:0,at:now,last:0,lastCollect:0});
+    Object.assign(p,{uid,exp:verified.exp,id,nickname:normalizePlayerName(m?.name,nickname),x:(n%5)*2-4,y:0,z:Math.floor(n/5)*2,r:0,at:now,last:0,lastCollect:0});
     ws.serializeAttachment(p);
     this.send(ws,{type:'welcome',protocol:4,id,spawn:{x:p.x,y:p.y,z:p.z},
       players:this.nearbySockets(p,ws).map(other=>this.publicPlayer(this.player(other))).filter(Boolean),
@@ -1660,7 +1690,10 @@ export class ZoneRoom {
   }
 
   publicPlayer(p) {
-    return p?.uid && {id:p.id,x:p.x,y:p.y,z:p.z,r:p.r};
+    return p?.uid && {
+      id:p.id,x:p.x,y:p.y,z:p.z,r:p.r,
+      name:normalizePlayerName(p.nickname,'Player')
+    };
   }
 
   currentZoneId() {
@@ -1771,7 +1804,7 @@ export class ZoneRoom {
         const x=Number(item?.x), y=Number(item?.y), z=Number(item?.z), r=Number(item?.r);
         if (!id || id.length>128 || ![x,y,z,r].every(Number.isFinite)) continue;
         if (Math.abs(x)>748 || Math.abs(z)>748 || y<-.25 || y>8 || Math.abs(r)>10000) continue;
-        players.push({id,x,y,z,r});
+        players.push({id,x,y,z,r,name:normalizePlayerName(item?.name,'Player')});
       }
 
       const maxD2=PLAYER_VISIBILITY_RADIUS*PLAYER_VISIBILITY_RADIUS;
@@ -1849,6 +1882,13 @@ export class ZoneRoom {
     if (message.length>256) return;
 
     if (m?.type==='handoff_resume') return this.handleHandoffResume(ws,p,m);
+    if (m?.type==='handoff_cancel') {
+      p.handoffPending=null;
+      p.handoffResume=null;
+      ws.serializeAttachment(p);
+      this.send(ws,{type:'handoff_cancelled',zone:p.zoneId,serverNow:Date.now()});
+      return;
+    }
     if (m?.type==='move') return this.handleMove(ws,p,m);
     if (m?.type==='collect') return this.handleCollect(ws,p,m);
     if (m?.type==='collect_box') return this.handleCollectBox(ws,p,m);
@@ -1892,7 +1932,7 @@ export class ZoneRoom {
         new Request('https://internal/_internal/zone-bootstrap',{
           method:'POST',
           headers:{'content-type':'application/json'},
-          body:JSON.stringify({uid:verified.uid})
+          body:JSON.stringify({uid:verified.uid,name:normalizePlayerName(m?.name,'Player')})
         })
       );
       bootstrap=await response.json();
@@ -1964,8 +2004,9 @@ export class ZoneRoom {
         anchorY:spawnY,
         anchorZ:spawnZ,
         createdAt:Number(handoff.createdAt)||now,
-        deadline:now+4000
+        deadline:now+9000
       } : null,
+      nickname:normalizePlayerName(bootstrap.nickname,m?.name || ('Player-'+verified.uid.slice(-6))),
       speedExpires:Number(bootstrap.entitlements?.speedExpires)||0
     });
 
@@ -2021,7 +2062,7 @@ export class ZoneRoom {
       return;
     }
 
-    const elapsed=Math.min(4,Math.max(0,(now-Number(resume.createdAt||now))/1000));
+    const elapsed=Math.min(9,Math.max(0,(now-Number(resume.createdAt||now))/1000));
     const speedActive=Number(p.speedExpires||0)>now;
     const maxHorizontalSpeed=speedActive ? 50 : 26;
     const maxHorizontalDistance=maxHorizontalSpeed*elapsed+1.75;
@@ -2171,6 +2212,23 @@ export class ZoneRoom {
     const now=Date.now();
     const id=Number(m?.id);
     if (!Number.isInteger(id) || id<0 || id>=COINS.length || now-Number(p.lastCollect||0)<150) return;
+
+    // A collect can happen between 5Hz movement packets. Accept a fresh client
+    // contact position only when it passes the same server movement limits.
+    const cx=Number(m?.x), cy=Number(m?.y), cz=Number(m?.z), cr=Number(m?.r);
+    if ([cx,cy,cz,cr].every(Number.isFinite) && zoneFromPosition(cx,cz)===p.zoneId) {
+      const dt=Math.min(1.5,Math.max(0,(now-Number(p.at||now))/1000));
+      const speedActive=Number(p.speedExpires||0)>now;
+      const maxHorizontalSpeed=speedActive ? 50 : 26;
+      if (
+        Math.hypot(cx-Number(p.x||0),cz-Number(p.z||0))<=maxHorizontalSpeed*dt+1.25 &&
+        Math.abs(cy-Number(p.y||0))<=9*dt+.75 &&
+        Math.abs(cx)<=748 && Math.abs(cz)<=748 && cy>=-.25 && cy<=8 && Math.abs(cr)<=10000
+      ) {
+        Object.assign(p,{x:cx,y:cy,z:cz,r:cr,at:now});
+      }
+    }
+
     p.lastCollect=now;
     ws.serializeAttachment(p);
 
@@ -2191,15 +2249,25 @@ export class ZoneRoom {
 
       if (!result.collected) {
         this.send(ws,{
-          type:'coin_state',
+          type:'coin_collect_result',
           id,
-          respawnAt:Number(result.activeAfter)||0,
+          collected:false,
+          activeAfter:Number(result.activeAfter)||0,
           serverNow:Number(result.serverNow)||now
         });
         return;
       }
 
-      this.send(ws,{type:'score',score:Number(result.score)||0});
+      this.send(ws,{
+        type:'coin_collect_result',
+        id,
+        collected:true,
+        event:result.event||null,
+        score:Number(result.score)||0,
+        reward:Number(result.reward)||0,
+        serverNow:Number(result.serverNow)||now
+      });
+      // Local Zone gets the board immediately; GameRoom also fans it out globally.
       if (Array.isArray(result.leaderboard)) {
         this.broadcastAll({type:'leaderboard',top:result.leaderboard});
       }
