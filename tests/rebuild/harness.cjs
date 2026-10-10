@@ -1,12 +1,13 @@
 'use strict';
 
-// Local-only runtime adapter. The worker source is evaluated unchanged except for
-// its ESM export declarations. No fetch reaches the network and no key is stored.
-const fs = require('node:fs');
+// Local-only runtime adapter. Bundle the actual ESM graph with native import
+// resolution, including the production entrypoint. No network fetch or saved key.
 const path = require('node:path');
 const vm = require('node:vm');
 const { DatabaseSync } = require('node:sqlite');
 const { generateKeyPairSync, sign, webcrypto } = require('node:crypto');
+const { buildSync } = require('esbuild');
+const workerBundles = new Map();
 
 const PROJECT_ID = 'rebuild-synthetic-project';
 const CERTS_URL = 'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com';
@@ -226,10 +227,13 @@ function createHarness(options = {}) {
     console: Object.fromEntries(['log', 'warn', 'error', 'info', 'debug'].map(level => [level, (...args) => records.logs.push({ level, args })]))
   });
   const workerPath = options.workerPath ?? path.resolve(__dirname, '../../worker.js');
-  const source = fs.readFileSync(workerPath, 'utf8')
-    .replace(/^export default /m, 'const worker = ')
-    .replace(/^export (async function|class) /gm, '$1 ');
-  vm.runInContext(`${source}\n;globalThis.__runtime = {worker, GameRoom, ZoneRoom, verifyFirebaseIdToken};`, context, { filename: workerPath });
+  if (!workerBundles.has(workerPath)) {
+    workerBundles.set(workerPath, buildSync({ entryPoints: [workerPath], bundle: true,
+      write: false, format: 'iife', globalName: '__workerModule', platform: 'neutral',
+      banner: { js: '"use strict";' } }).outputFiles[0].text);
+  }
+  const source = workerBundles.get(workerPath);
+  vm.runInContext(`${source}\n;globalThis.__runtime = {worker: __workerModule.default, GameRoom: __workerModule.GameRoom, ZoneRoom: __workerModule.ZoneRoom, verifyFirebaseIdToken: __workerModule.verifyFirebaseIdToken};`, context, { filename: workerPath });
   const runtime = context.__runtime;
   const rooms = new Map();
   const zones = new Map();

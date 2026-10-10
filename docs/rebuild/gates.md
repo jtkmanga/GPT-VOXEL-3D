@@ -23,7 +23,9 @@ may be disabled, no phase skipped, and no reset/force push may conceal a problem
 their first failed command. Test runner never invokes archived load generators.
 The two original WebSocket smoke scripts execute unchanged through a local test
 transport with synthetic auth and actual active Worker handlers. The three
-original static suites receive the active `index.html`/`worker.js` explicitly.
+original static suites receive active source explicitly. After P1 extraction,
+the Worker argument is a transparent expanded view of the active import graph,
+while runtime regressions execute the actual production entrypoint bundle.
 The smooth-handoff suite's brittle one-argument resume-call regex is replaced by
 observable client lifecycle tests using the actual open/resume/ACK/error handlers
 and secure movement override. They assert close ordering, single client gameplay

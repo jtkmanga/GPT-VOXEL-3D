@@ -2,6 +2,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const acorn = require('acorn');
+const { moduleGraph } = require('./source-view.cjs');
 // Active configuration is JSON-compatible JSONC at this checkpoint.
 const config = JSON.parse(fs.readFileSync('wrangler.jsonc', 'utf8'));
 assert.equal(config.main, 'worker.js');
@@ -14,9 +15,15 @@ assert.deepEqual(config.migrations.slice(0, 2), [
   { tag: 'v2-zone-room', new_sqlite_classes: ['ZoneRoom'] }
 ]);
 const ast = acorn.parse(fs.readFileSync(config.main, 'utf8'), { ecmaVersion: 'latest', sourceType: 'module' });
-const exportedNames = ast.body.filter(n => n.type === 'ExportNamedDeclaration').map(n => n.declaration?.id?.name).filter(Boolean);
+const exportedNames = ast.body.filter(n => n.type === 'ExportNamedDeclaration').flatMap(n =>
+  n.declaration?.id?.name ? [n.declaration.id.name] : n.specifiers.map(s => s.exported.name));
 assert.ok(exportedNames.includes('GameRoom') && exportedNames.includes('ZoneRoom'));
 assert.ok(ast.body.some(n => n.type === 'ExportDefaultDeclaration'));
+const graph = moduleGraph();
+for (const name of ['GameRoom', 'ZoneRoom']) {
+  assert.equal(graph.flatMap(m => m.ast.body).filter(n =>
+    n.type === 'ExportNamedDeclaration' && n.declaration?.type === 'ClassDeclaration' && n.declaration.id.name === name).length, 1);
+}
 const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
 assert.match(pkg.scripts['bundle:dry-run'], /--dry-run/);
 assert.ok(!Object.keys(config.vars || {}).some(k => /SECRET|TOKEN|PRIVATE_KEY|PASSWORD/.test(k)));

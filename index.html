@@ -607,9 +607,9 @@
 
         // ฟังก์ชันบวกคะแนนและบันทึกลงหน่วยความจำ (localStorage) แยกตาม userId ของบัญชีนั้น ๆ
         function addScore(points) {
-            state.score += points; 
+            state.score += points;
             const key = getScoreStorageKey();
-            localStorage.setItem(key, state.score); 
+            localStorage.setItem(key, state.score);
             updateScoreDisplay();
             syncMyPlayerData(true);
         }
@@ -618,7 +618,7 @@
         function resetHighScore() {
             state.score = 0;
             const key = getScoreStorageKey();
-            localStorage.setItem(key, 0); 
+            localStorage.setItem(key, 0);
             updateScoreDisplay();
             syncMyPlayerData(true);
         }
@@ -687,7 +687,7 @@
             document.getElementById('pay-item-title').innerText = title;
             document.getElementById('pay-item-price').innerText = price + " บาท";
 
-            const promptpayTarget = "0999999999"; 
+            const promptpayTarget = "0999999999";
             document.getElementById('promptpay-qr-img').src = `https://promptpay.io/${promptpayTarget}/${price}.png`;
 
             document.getElementById('slip-file-input').value = "";
@@ -738,7 +738,7 @@
             const actionFree1 = document.getElementById('action-free1');
 
             if (cardFree1) {
-                cardFree1.className = isSelectedFree1 
+                cardFree1.className = isSelectedFree1
                     ? "bg-blue-500/20 border-2 border-blue-400 rounded-xl p-2.5 flex items-center justify-between transition shadow-md shadow-blue-500/10"
                     : "bg-slate-800/80 border border-slate-700 rounded-xl p-2.5 flex items-center justify-between transition";
             }
@@ -796,7 +796,7 @@
                 }
 
                 if (cardEl) {
-                    cardEl.className = isSelected 
+                    cardEl.className = isSelected
                         ? "bg-amber-500/20 border-2 border-amber-400 rounded-xl p-2.5 flex items-center justify-between transition shadow-md shadow-amber-500/10"
                         : "bg-slate-800/80 border border-slate-700 rounded-xl p-2.5 flex items-center justify-between transition";
                 }
@@ -806,7 +806,7 @@
 
                     if (isVipActive) {
                         const btnSelect = document.createElement('button');
-                        btnSelect.className = isSelected 
+                        btnSelect.className = isSelected
                             ? "bg-amber-500 text-slate-950 font-extrabold text-[11px] px-3 py-1 rounded-lg"
                             : "bg-slate-700 hover:bg-slate-600 text-amber-400 font-bold text-[11px] px-2.5 py-1 rounded-lg border border-amber-500/30 transition active:scale-95";
                         btnSelect.innerText = isSelected ? "กำลังเลือก" : "เลือกเซิร์ฟ";
@@ -845,7 +845,6 @@
                 }
             }
         }
-
         // Web Audio Synthesizer
         const audio = {
             ctx: null,
@@ -922,7 +921,6 @@
                 });
             }
         };
-
         // FIREBASE REALTIME DATABASE LEADERBOARD & MULTIPLAYER SYSTEM
         let currentLeaderboardRef = null;
 
@@ -1031,13 +1029,13 @@
 
         function listenToRealtimeLeaderboard(serverId) {
             if (!serverId) return;
-            
+
             if (currentLeaderboardRef) {
                 currentLeaderboardRef.off();
             }
 
             currentLeaderboardRef = database.ref(`servers/${serverId}/leaderboard`).orderByChild('score').limitToLast(20);
-            
+
             currentLeaderboardRef.on('value', (snapshot) => {
                 const board = [];
                 snapshot.forEach((child) => {
@@ -1117,7 +1115,7 @@
 
             const pGroup = new THREE.Group();
             const skinMat = new THREE.MeshLambertMaterial({ color: 0xffdbac });
-            const shirtMat = new THREE.MeshLambertMaterial({ color: 0xe53e3e }); 
+            const shirtMat = new THREE.MeshLambertMaterial({ color: 0xe53e3e });
             const pantsMat = new THREE.MeshLambertMaterial({ color: 0x742a2a });
 
             const head = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.9, 0.9), skinMat);
@@ -1221,7 +1219,7 @@
         function updateLeaderboardUI(board = []) {
             const miniList = document.getElementById('mini-leaderboard-list');
             miniList.innerHTML = '';
-            
+
             if (board.length === 0) {
                 miniList.innerHTML = '<div class="text-center text-slate-400 py-1">ยังไม่มีข้อมูล</div>';
             }
@@ -1264,7 +1262,6 @@
                 fullList.appendChild(div);
             });
         }
-
         // SHOP LOGIC FUNCTIONS
         function loadSavedBuffs() {
             const savedSpeed = localStorage.getItem('voxel_shop_speed_expire');
@@ -1353,7 +1350,7 @@
             // AOI starts from the player's current position; Zone is invisible to players.
             listenToRemotePlayers(state.selectedServerId, true);
             state.isPaused = false;
-            
+
             // โหลดคะแนนเฉพาะไอดีปัจจุบันทันทีเมื่อเริ่มเล่น
             loadScoreForCurrentId();
             syncMyPlayerData(true);
@@ -1419,14 +1416,13 @@
         function closeFullLeaderboard() {
             document.getElementById('leaderboard-modal').classList.add('hidden');
         }
-
         // Three.js Scene Setup
         let scene, camera, renderer;
         let playerGroup, playerBody, leftArm, rightArm, leftLeg, rightLeg;
         const MAP_SIZE = 1500;
         const MAX_COINS_PER_MAP = 200;
-        const COIN_RESPAWN_MS = 60 * 1000;
-        const LUCKY_BOX_RESPAWN_MS = 4 * 60 * 60 * 1000;
+        const COIN_RESPAWN_MS = 60000;
+        const LUCKY_BOX_RESPAWN_MS = 14400000;
 
         const buildings = [];
         const trees = [];
@@ -1958,7 +1954,6 @@
                 }
             });
         }
-
         function setupControls() {
             window.addEventListener('keydown', (e) => {
                 const code = e.code;
@@ -2153,14 +2148,7 @@
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
         }
-
-        const WHEEL_ITEMS = [
-            { label: "100 เหรียญ", value: 100, weight: 50, color: "#3b82f6" },
-            { label: "500 เหรียญ", value: 500, weight: 30, color: "#10b981" },
-            { label: "1,000 เหรียญ", value: 1000, weight: 19, color: "#8b5cf6" },
-            { label: "5,000 เหรียญ", value: 5000, weight: 0.9, color: "#f59e0b" },
-            { label: "9,999 เหรียญ", value: 9999, weight: 0.1, color: "#ef4444" }
-        ];
+        const WHEEL_ITEMS = ([{"label":"100 เหรียญ","value":100,"weight":50,"color":"#3b82f6"},{"label":"500 เหรียญ","value":500,"weight":30,"color":"#10b981"},{"label":"1,000 เหรียญ","value":1000,"weight":19,"color":"#8b5cf6"},{"label":"5,000 เหรียญ","value":5000,"weight":0.9,"color":"#f59e0b"},{"label":"9,999 เหรียญ","value":9999,"weight":0.1,"color":"#ef4444"}]);
 
         let currentWheelAngle = 0;
 
@@ -2409,7 +2397,7 @@
                     const normX = moveX / Math.max(1, inputLen);
                     const normZ = moveZ / Math.max(1, inputLen);
 
-                    const forwardAmount = -normZ; 
+                    const forwardAmount = -normZ;
                     const rightAmount = normX;
 
                     const worldMoveX = rightAmount * Math.cos(cameraYaw) - forwardAmount * Math.sin(cameraYaw);
@@ -2543,7 +2531,7 @@
                         return;
                     }
                     op.mesh.position.lerp(op.targetPos, 0.15);
-                    
+
                     let diffRot = op.targetRot - op.mesh.rotation.y;
                     while (diffRot < -Math.PI) diffRot += Math.PI * 2;
                     while (diffRot > Math.PI) diffRot -= Math.PI * 2;
@@ -2568,8 +2556,6 @@
 
             renderer.render(scene, camera);
         }
-
-
         // ============================================================
         // SECURE WORKER CLIENT OVERRIDES (2026-09-28)
         // Payment/entitlements + Free Server multiplayer + Coin + Lucky Box are server-authoritative.
@@ -2589,7 +2575,7 @@
         const SECURE_WORKER_WS_BASE = SECURE_WORKER_HTTP_BASE.replace(/^http/, 'ws') + '/play';
         const SECURE_PAYMENT_PROMPTPAY_TARGET = '0999999999'; // MUST match PAYMENT_RECEIVER_ACCOUNT before public launch.
         const SECURE_ZONE_GRID_SIZE = 10;
-        const SECURE_ZONE_SIZE = MAP_SIZE / SECURE_ZONE_GRID_SIZE;
+        const SECURE_ZONE_SIZE = 150;
 
         let secureGameSocket = null;
         let secureGameReady = false;
@@ -2716,11 +2702,7 @@
             }, 60_000);
         };
 
-        const SECURE_PAYMENT_ITEMS = {
-            speed: { price: 10, title: 'เพิ่มความเร็วเคลื่อนที่ x2 (24 ช.ม.)' },
-            coin: { price: 20, title: 'เหรียญตามแมพ x2 (24 ช.ม.)' },
-            vip1: { price: 50, title: 'สิทธิ์ VIP Server 1 (30 วัน)' }
-        };
+        const SECURE_PAYMENT_ITEMS = ({"speed":{"price":10,"title":"เพิ่มความเร็วเคลื่อนที่ x2 (24 ช.ม.)"},"coin":{"price":20,"title":"เหรียญตามแมพ x2 (24 ช.ม.)"},"vip1":{"price":50,"title":"สิทธิ์ VIP Server 1 (30 วัน)"}});
 
         openPaymentModal = function(type, _price, title) {
             if (!state.isLoggedIn || !auth.currentUser) {
@@ -2830,7 +2812,6 @@
 
             alert('สิทธิ์ VIP ของคุณถูกยืนยันจาก Server แล้ว แต่ Security Test นี้ยังไม่เปิดห้อง VIP เพราะ Worker ปัจจุบัน route /play ไปห้อง Free เดียวกัน การเข้า VIP จะเปิดหลังแยกห้องฝั่ง Server เสร็จ');
         };
-
         function securePlayerNameFromId(id) {
             const text = String(id || 'player');
             return 'Player-' + text.slice(-6);
@@ -3003,12 +2984,11 @@
             coin.active = coin.respawnTime <= secureNow();
             coin.mesh.visible = coin.active;
         }
-
         function secureHandleSocketMessage(message) {
             if (!message || typeof message !== 'object') return;
 
             switch (message.type) {
-                case 'welcome': {
+                case "welcome": {
                     if (message.serverNow) secureSetServerNow(message.serverNow);
                     const isSmoothHandoffWelcome = Boolean(message.handoff) && secureHandoffInProgress;
                     secureCurrentZoneId = secureNormalizeZoneId(message.zone) || secureCurrentZoneId;
@@ -3067,34 +3047,34 @@
                     secureGameReady = true;
                     break;
                 }
-                case 'join': {
+                case "join": {
                     const p = secureNormalizePlayer(message.player);
                     if (p.id && p.id !== state.serverPlayerId) secureTrackRemotePlayer(p.id, 'local', p);
                     break;
                 }
-                case 'move': {
+                case "move": {
                     const p = secureNormalizePlayer(message.player);
                     if (!p.id || p.id === state.serverPlayerId) break;
                     secureTrackRemotePlayer(p.id, 'local', p);
                     break;
                 }
-                case 'leave':
+                case "leave":
                     if (message.id) secureUntrackRemotePlayer(String(message.id), 'local');
                     break;
-                case 'ghost_snapshot':
+                case "ghost_snapshot":
                     secureReplaceGhostSnapshot(message);
                     break;
-                case 'zone_change':
+                case "zone_change":
                     void secureBeginZoneHandoff(message);
                     break;
-                case 'score':
+                case "score":
                     state.score = Number(message.score) || 0;
                     updateScoreDisplay();
                     break;
-                case 'leaderboard':
+                case "leaderboard":
                     updateLeaderboardUI(secureNormalizeLeaderboard(message.top));
                     break;
-                case 'coin_collect_result': {
+                case "coin_collect_result": {
                     const id = Number(message?.id);
                     if (Number.isInteger(id) && id >= 0 && id < coins.length) {
                         const coin = coins[id];
@@ -3115,18 +3095,18 @@
                     }
                     break;
                 }
-                case 'coin_collected':
-                case 'coin_state':
+                case "coin_collected":
+                case "coin_state":
                     secureUpdateCoinState(message);
                     break;
-                case 'box_state':
+                case "box_state":
                     secureApplyLuckyBoxState(message.box || message.luckyBox || message, message.serverNow);
                     break;
-                case 'box_spin_ready':
+                case "box_spin_ready":
                     secureApplyLuckyBoxState(message.box || message.luckyBox || null, message.serverNow);
                     triggerLuckyBoxModal();
                     break;
-                case 'box_reward':
+                case "box_reward":
                     if (message.serverNow) secureSetServerNow(message.serverNow);
                     if (Number.isFinite(Number(message.score))) {
                         state.score = Number(message.score);
@@ -3134,10 +3114,10 @@
                     }
                     secureAnimateWheelToReward(Number(message.reward) || 0);
                     break;
-                case 'box_error':
+                case "box_error":
                     console.warn('Lucky Box:', message.message || message);
                     break;
-                case 'handoff_resumed':
+                case "handoff_resumed":
                     if (message.serverNow) secureSetServerNow(message.serverNow);
                     if (secureHandoffResumeTimer) clearTimeout(secureHandoffResumeTimer);
                     secureHandoffResumeTimer = null;
@@ -3145,7 +3125,7 @@
                     secureHandoffResumeResolve = null;
                     secureHandoffResumeReject = null;
                     break;
-                case 'handoff_resume_error': {
+                case "handoff_resume_error": {
                     if (secureHandoffResumeTimer) clearTimeout(secureHandoffResumeTimer);
                     secureHandoffResumeTimer = null;
                     const err = new Error(message.message || 'Target Zone ปฏิเสธตำแหน่งต่อเนื่อง');
@@ -3155,13 +3135,13 @@
                     secureHandoffResumeReject = null;
                     break;
                 }
-                case 'handoff_error':
+                case "handoff_error":
                     console.warn('Zone handoff:', message.message || message);
                     break;
-                case 'auth_error':
+                case "auth_error":
                     console.warn('Game auth:', message.message || message);
                     break;
-                case 'server_error':
+                case "server_error":
                     console.error('Game server error:', message.message || message);
                     break;
             }
@@ -3196,7 +3176,7 @@
 
                 ws.onopen = () => {
                     const authMessage = {
-                        type: 'auth',
+                        type: "auth",
                         token,
                         name: String(state.playerName || 'Player').trim().slice(0, 12)
                     };
@@ -3214,7 +3194,7 @@
                     }
 
                     if (!welcomed) {
-                        if (message?.type === 'welcome') {
+                        if (message?.type === "welcome") {
                             welcomed = true;
                             settled = true;
                             clearTimeout(timer);
@@ -3225,7 +3205,7 @@
                             resolve({ ws, welcome: message });
                             return;
                         }
-                        if (message?.type === 'auth_error' || message?.type === 'handoff_error' || message?.type === 'server_error') {
+                        if (message?.type === "auth_error" || message?.type === "handoff_error" || message?.type === "server_error") {
                             failBeforeWelcome(message.message || 'Game Server ปฏิเสธการเชื่อมต่อ');
                             return;
                         }
@@ -3300,7 +3280,7 @@
 
                 const ackPromise = secureWaitForHandoffResumeAck(3200);
                 ws.send(JSON.stringify({
-                    type: 'handoff_resume',
+                    type: "handoff_resume",
                     x: Math.round(playerPos.x * 100) / 100,
                     y: Math.round(playerPos.y * 100) / 100,
                     z: Math.round(playerPos.z * 100) / 100,
@@ -3370,7 +3350,7 @@
                         secureCloseSocket(targetSocket, 1000, 'Player returned to source zone');
                     }
                     try {
-                        oldSocket.send(JSON.stringify({ type: 'handoff_cancel' }));
+                        oldSocket.send(JSON.stringify({ type: "handoff_cancel" }));
                     } catch (_) {}
                     secureGameSocket = oldSocket;
                     secureGameReady = true;
@@ -3437,7 +3417,6 @@
             secureRememberStablePosition();
             return result.welcome;
         }
-
         function secureReturnToMenu() {
             state.isPlaying = false;
             state.isPaused = false;
@@ -3492,7 +3471,7 @@
 
             try {
                 secureGameSocket.send(JSON.stringify({
-                    type: 'collect',
+                    type: "collect",
                     id,
                     x: Math.round(playerPos.x * 100) / 100,
                     y: Math.round(playerPos.y * 100) / 100,
@@ -3530,7 +3509,7 @@
             }
 
             secureGameSocket.send(JSON.stringify({
-                type: 'move',
+                type: "move",
                 x: Math.round(playerPos.x * 100) / 100,
                 y: Math.round(playerPos.y * 100) / 100,
                 z: Math.round(playerPos.z * 100) / 100,
@@ -3617,7 +3596,7 @@
             if (!secureGameReady || !secureGameSocket || secureGameSocket.readyState !== WebSocket.OPEN) return;
             luckyBox.collecting = true;
             setTimeout(() => { if (luckyBox) luckyBox.collecting = false; }, 1200);
-            secureGameSocket.send(JSON.stringify({ type: 'collect_box' }));
+            secureGameSocket.send(JSON.stringify({ type: "collect_box" }));
         }
 
         spawnLuckyBoxes = function() {
@@ -3663,9 +3642,8 @@
             state.wheelSpinning = true;
             document.getElementById('btn-spin-wheel').classList.add('hidden');
             document.getElementById('wheel-result-msg').innerText = 'กำลังขอผลสุ่มจาก Server...';
-            secureGameSocket.send(JSON.stringify({ type: 'spin_box' }));
+            secureGameSocket.send(JSON.stringify({ type: "spin_box" }));
         };
-
         function secureAnimateWheelToReward(rewardValue) {
             const selectedIdx = WHEEL_ITEMS.findIndex(item => item.value === rewardValue);
             if (selectedIdx < 0) {
@@ -3793,6 +3771,6 @@
         loadSavedBuffs();
         listenToVipServersRealtime();
         gameLoop();
-    </script>
+</script>
 </body>
 </html>
