@@ -1,0 +1,16 @@
+{
+  "name": "gpt-voxel-3d-rebuild",
+  "private": true,
+  "description": "New rebuild track from verified main f98aa9a; no recovered source claims",
+  "scripts": {
+    "test": "node scripts/rebuild/run-tests.cjs",
+    "check:syntax": "node scripts/rebuild/check-syntax.cjs",
+    "check:static": "node scripts/rebuild/check-static.cjs",
+    "bundle:dry-run": "WRANGLER_SEND_METRICS=false wrangler deploy --dry-run --outdir work/bundle",
+    "gate:test": "npm test && npm run check:static && npm run check:syntax && git diff --check && npm run bundle:dry-run"
+  },
+  "devDependencies": {
+    "acorn": "8.15.0",
+    "wrangler": "4.149.0"
+  }
+}

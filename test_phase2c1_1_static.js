@@ -2,9 +2,11 @@
 'use strict';
 
 const fs = require('fs');
+const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 
-const htmlPath = process.argv[2] || 'index_phase2c1_1_smooth.html';
-const workerPath = process.argv[3] || 'worker_phase2c1_1_smooth.js';
+const htmlPath = process.argv[2] || 'index.html';
+const workerPath = process.argv[3] || 'worker.js';
 
 const html = fs.readFileSync(htmlPath, 'utf8');
 const worker = fs.readFileSync(workerPath, 'utf8');
@@ -38,8 +40,16 @@ check('success path does not pause whole game',
   !/const wasPaused/.test(handoff) &&
   !/secureHandoffInProgress\s*=\s*true;\s*state\.isPaused\s*=\s*true/.test(handoff)
 );
+// Execute the actual client lifecycle with controlled welcome/ACK/timeout events.
+// Additional helper arguments or formatting cannot stand in for its behavior.
+const semantic = spawnSync(process.execPath, [
+  path.join(__dirname, 'tests/rebuild/handoff-invariant.cjs'), path.resolve(htmlPath)
+], { encoding: 'utf8', timeout: 15000, maxBuffer: 1024 * 1024 });
+if (semantic.stdout) process.stdout.write(semantic.stdout);
+if (semantic.stderr) process.stderr.write(semantic.stderr);
+if (semantic.error) console.error(semantic.error.message);
 check('old socket closes after target resume',
-  /await secureResumeHandoffOnTarget\(targetSocket\)[\s\S]*secureCloseSocket\(oldSocket/.test(handoff)
+  !semantic.error && semantic.status === 0 && !semantic.signal
 );
 
 const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/gi)];
