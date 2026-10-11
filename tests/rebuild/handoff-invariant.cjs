@@ -19,16 +19,32 @@ function declaration(name) {
   assert.ok(node, `Actual client function ${name} exists`);
   return source.slice(node.start, node.end);
 }
-const movement = ast.body.find(n => n.type === 'ExpressionStatement' &&
+const movementOverride = ast.body.find(n => n.type === 'ExpressionStatement' &&
   n.expression.type === 'AssignmentExpression' && n.expression.left.type === 'Identifier' &&
   n.expression.left.name === 'syncMyPlayerData');
-assert.ok(movement, 'Actual secure movement override exists');
-const executable = [
+assert.ok(movementOverride, 'Actual secure movement override exists');
+const kernel = ast.body.find(n => n.type === 'VariableDeclaration' &&
+  n.declarations.some(d => d.id.type === 'Identifier' && d.id.name === 'movement'));
+assert.ok(kernel, 'The actual generated shared movement kernel exists');
+const predictionNames = new Set([
+  'secureInputSequence', 'secureLastAcknowledgedSequence', 'secureJumpIntent',
+  'secureJumpGeneration', 'secureJumpHeld', 'securePendingFrames',
+  'securePendingInputs', 'securePredictionCorrection'
+]);
+const predictionGlobals = ast.body.filter(n => n.type === 'VariableDeclaration' &&
+  n.declarations.every(d => d.id.type === 'Identifier' && predictionNames.has(d.id.name)));
+assert.deepEqual(new Set(predictionGlobals.flatMap(n => n.declarations.map(d => d.id.name))),
+  predictionNames, 'The active prediction state is loaded without synthetic replacements');
+const executable = source.slice(kernel.start, kernel.end) + '\n' +
+  predictionGlobals.map(node => source.slice(node.start, node.end)).join('\n') + '\n' + [
+  'secureQueueJump', 'secureMovementIntent', 'secureMovementState',
+  'secureApplyMovementState', 'secureMovementOptions', 'securePredictMovement',
+  'secureResetPrediction', 'secureReconcileMovement',
   'secureNormalizeZoneId', 'secureZoneFromPosition', 'secureZoneSocketUrl',
   'secureRememberStablePosition', 'secureCloseSocket', 'secureNormalizeLeaderboard',
   'secureHandleSocketMessage', 'secureOpenZoneSocket', 'secureWaitForHandoffResumeAck',
   'secureResumeHandoffOnTarget', 'secureBeginZoneHandoff', 'secureReturnToMenu'
-].map(declaration).join('\n') + '\n' + source.slice(movement.start, movement.end);
+].map(declaration).join('\n') + '\n' + source.slice(movementOverride.start, movementOverride.end);
 
 async function flush() { for (let i = 0; i < 16; i++) await Promise.resolve(); }
 function fixture() {
@@ -54,7 +70,9 @@ function fixture() {
     setTimeout(callback, delay) { const id = ++timerId; timers.set(id, { callback, due: now + delay }); return id; },
     clearTimeout(id) { timers.delete(id); }, requestAnimationFrame(callback) { callback(); },
     auth: { currentUser: { async getIdToken() { return 'synthetic-client-handoff-token'; } } },
-    state: { isPlaying: true, isPaused: false, playerName: 'Baseline' },
+    state: { isPlaying: true, isPaused: false, playerName: 'Baseline', shop: { speedBuffExpires: 0 } },
+    keys: { w: false, s: false, a: false, d: false }, joystickVec: { x: 0, y: 0 }, cameraYaw: 0,
+    buildings: [], trees: [], playerVelocityY: 0, isGrounded: true,
     MAP_SIZE: 1500, SECURE_ZONE_GRID_SIZE: 10, SECURE_ZONE_SIZE: 150,
     SECURE_WORKER_WS_BASE: 'ws://127.0.0.1/play', secureNow: () => now,
     secureGameSocket: old, secureGameReady: true, secureCurrentZoneId: '4,4',

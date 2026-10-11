@@ -48,6 +48,33 @@ async function install() {
   const sockets = new Set();
   const syntheticUsers = new Set();
 
+  function normalMovementIntent(connection, packet) {
+    // These unchanged historical smoke programs express normal control targets
+    // using the old XYZ transport. Encode only their small finite steps as
+    // actual P3 intent. Never mutate server state or repair malformed attacks.
+    if (packet?.type !== 'move' || !['x', 'y', 'z', 'r'].every(key => Number.isFinite(packet[key])) ||
+        Object.keys(packet).some(key => !['type', 'x', 'y', 'z', 'r'].includes(key))) return null;
+    const player = connection.attachment();
+    const { MOVEMENT, integrateMovement } = require('../../src/shared/movement.mjs');
+    const motion = player.motion || { vx: 0, vz: 0, vy: 0, grounded: !(player.y > 0), seq: -1, clock: harness.now() };
+    const displacement = Math.hypot(packet.x - player.x, packet.z - player.z);
+    if (displacement > MOVEMENT.speed * MOVEMENT.maxElapsedSeconds || Math.abs(packet.y - player.y) > .25 ||
+        Math.abs(packet.x) > MOVEMENT.bounds || Math.abs(packet.z) > MOVEMENT.bounds) return null;
+    const elapsed = Math.min(MOVEMENT.maxElapsedSeconds, Math.max(0, harness.now() - motion.clock) / 1000);
+    const state = { ...player, ...motion };
+    const neutral = { x: 0, z: 0, jump: false };
+    const coast = integrateMovement(state, neutral, elapsed);
+    const fullX = integrateMovement(state, { ...neutral, x: 1 }, elapsed);
+    const fullZ = integrateMovement(state, { ...neutral, z: 1 }, elapsed);
+    let x = fullX.x === coast.x ? packet.x - player.x : (packet.x - coast.x) / (fullX.x - coast.x);
+    let z = fullZ.z === coast.z ? packet.z - player.z : (packet.z - coast.z) / (fullZ.z - coast.z);
+    const scale = Math.max(1, Math.hypot(x, z));
+    x /= scale;
+    z /= scale;
+    return { type: 'move', input: { x, z, jump: false },
+      seq: Math.max(motion.seq, player.lastSequence ?? -1) + 1 };
+  }
+
   function schedulePump() {
     if (stopped || pumpScheduled || pumping || timers.size === 0) return;
     pumpScheduled = true;
@@ -178,6 +205,8 @@ async function install() {
           packet.token = harness.token(this.syntheticUid);
           frame = JSON.stringify(packet);
         }
+        const intent = normalMovementIntent(this.connection, packet);
+        if (intent) frame = JSON.stringify(intent);
         await this.connection.send(frame);
         await harness.settle();
       }).catch(error => this.emit('error', error));

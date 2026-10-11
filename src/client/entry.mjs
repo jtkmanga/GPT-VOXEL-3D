@@ -5,8 +5,9 @@
 import * as config from '../shared/config.mjs';
 import * as protocol from '../shared/protocol.mjs';
 import * as catalog from '../shared/catalog.mjs';
+import * as movement from '../shared/movement.mjs';
 
-export { config, protocol, catalog };
+export { config, protocol, catalog, movement };
 export const CLIENT_SOURCES = [
   "./auth-state.js",
   "./audio.js",

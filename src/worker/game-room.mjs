@@ -1,4 +1,5 @@
 import { PLAYER_VISIBILITY_RADIUS, RESPAWN_MS, LUCKY_BOX_CLAIM_MS, LUCKY_BOX_RESPAWN_MS, ROOM_SOFT_CAP, MOVE_TICK_MS, VIP_ENTITLEMENT_CAP } from '../shared/config.mjs';
+import { MOVEMENT } from '../shared/movement.mjs';
 import { PAYMENT_CONFIG } from '../shared/catalog.mjs';
 import { WS_MESSAGE, PROTOCOL_VERSION } from '../shared/protocol.mjs';
 import { normalizePlayerName, normalizeZoneId, allZoneIds, zonesAreAdjacent, zoneFromPosition, zoneIdsNearPosition } from './spatial.mjs';
@@ -7,6 +8,7 @@ import { verifyFirebaseIdToken } from './firebase-auth.mjs';
 import { SessionStore } from './sessions.mjs';
 import { SECURITY, clearAuthDeadline, scheduleAuthDeadline } from './security.mjs';
 import { enqueueFrame, sessionMetadata } from './room-security.mjs';
+import { initializeMotion, applyMovementIntent, publicMovement } from './movement.mjs';
 
 export class GameRoom {
   constructor(ctx,env) {
@@ -62,6 +64,17 @@ export class GameRoom {
     )`);
     try { this.sql.exec('ALTER TABLE voxel_zone_handoffs ADD COLUMN session_id TEXT'); } catch (_) {}
     this.sql.exec('CREATE INDEX IF NOT EXISTS voxel_zone_handoffs_exp_idx ON voxel_zone_handoffs(expires_at)');
+    // Consumption preserves a durable fence until ownership commits. A
+    // source cancellation can invalidate a target that already has its ticket.
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS voxel_handoff_grants (
+      token TEXT PRIMARY KEY,
+      uid TEXT NOT NULL,
+      session_id TEXT NOT NULL,
+      from_owner TEXT NOT NULL,
+      to_owner TEXT NOT NULL,
+      expires_at INTEGER NOT NULL,
+      status TEXT NOT NULL
+    )`);
 
     this.ready=ctx.blockConcurrencyWhile(async()=>{
       // Preserve the existing v3 coin cooldowns when the room upgrades.
@@ -85,7 +98,16 @@ export class GameRoom {
     if (action==='revoke') return this.revokeOwner(payload);
     if (!['acquire','validate','checkpoint','release','transfer'].includes(action))
       throw Error('Invalid session action');
-    const result=this.sessions[action](payload);
+    const result=action==='transfer' ? this.ctx.storage.transactionSync(()=>{
+      const grant=this.sql.exec('SELECT * FROM voxel_handoff_grants WHERE token=?',payload?.handoffToken||'').toArray()[0];
+      if (!grant || grant.status!=='pending' || Number(grant.expires_at)<=Date.now() ||
+          grant.uid!==payload.uid || grant.session_id!==payload.sessionId ||
+          grant.from_owner!==payload.fromOwner || grant.to_owner!==payload.toOwner)
+        return {ok:false,error:'Handoff grant unavailable'};
+      const transfer=this.sessions.transfer(payload);
+      if (transfer.ok) this.sql.exec("UPDATE voxel_handoff_grants SET status='complete' WHERE token=? AND status='pending'",grant.token);
+      return transfer;
+    }) : this.sessions[action](payload);
     if (action==='acquire' && result.ok && result.previousOwner && result.previousSessionId) {
       const revoked=await this.revokeOwner({uid:payload.uid,owner:result.previousOwner,sessionId:result.previousSessionId});
       if (!revoked?.ok) throw Error('Session revocation unavailable');
@@ -429,6 +451,7 @@ export class GameRoom {
       const expiresAt=now+12000;
       const token=crypto.randomUUID();
       this.sql.exec('DELETE FROM voxel_zone_handoffs WHERE expires_at<=?',now);
+      this.sql.exec('DELETE FROM voxel_handoff_grants WHERE expires_at<=?',now);
       this.sql.exec(
         `INSERT INTO voxel_zone_handoffs
          (token,uid,player_id,from_zone,to_zone,x,y,z,r,expires_at,created_at,session_id)
@@ -468,6 +491,10 @@ export class GameRoom {
           return null;
         }
 
+        this.sql.exec(`INSERT INTO voxel_handoff_grants
+          (token,uid,session_id,from_owner,to_owner,expires_at,status)
+          VALUES (?,?,?,?,?,?,'pending')`,token,uid,row.session_id,
+          `zone:${row.from_zone}`,`zone:${row.to_zone}`,Number(row.expires_at));
         this.sql.exec('DELETE FROM voxel_zone_handoffs WHERE token=?',token);
         return {
           playerId:String(row.player_id),
@@ -482,6 +509,25 @@ export class GameRoom {
 
       if (!result) return Response.json({ok:false,error:'Handoff expired or invalid'},{status:409});
       return Response.json({ok:true,...result,serverNow:now});
+    }
+
+    if (url.pathname==='/_internal/cancel-zone-handoff' && request.method==='POST') {
+      let body;
+      try { body=await request.json(); }
+      catch (_) { return Response.json({ok:false,error:'Invalid JSON'},{status:400}); }
+      const token=body?.token;
+      if (typeof token!=='string' || !token || token.length>128 || !this.ownsZoneSession(body,body?.uid))
+        return Response.json({ok:false,error:'Source session not owned'},{status:409});
+      const cancelled=this.ctx.storage.transactionSync(()=>{
+        const issued=this.sql.exec('SELECT uid,session_id,from_zone FROM voxel_zone_handoffs WHERE token=?',token).toArray()[0];
+        const grant=this.sql.exec('SELECT * FROM voxel_handoff_grants WHERE token=?',token).toArray()[0];
+        if (issued && (issued.uid!==body.uid || issued.session_id!==body.sessionId || `zone:${issued.from_zone}`!==body.owner)) return false;
+        if (grant && (grant.uid!==body.uid || grant.session_id!==body.sessionId || grant.from_owner!==body.owner || grant.status==='complete')) return false;
+        this.sql.exec('DELETE FROM voxel_zone_handoffs WHERE token=?',token);
+        this.sql.exec("UPDATE voxel_handoff_grants SET status='cancelled' WHERE token=? AND status='pending'",token);
+        return true;
+      });
+      return Response.json({ok:cancelled},{status:cancelled ? 200 : 409});
     }
 
     // Global coin collection for zoned players.
@@ -865,12 +911,13 @@ export class GameRoom {
       ...session.position,sessionId:session.sessionId,resumeToken:session.resumeToken,
       resumeExpiresAt:session.resumeExpiresAt,at:now,last:0,lastCollect:0,
       entitlements:this.entitlementSnapshot(uid)});
+    initializeMotion(p,now);
     ws.serializeAttachment(p);
     clearAuthDeadline(ws);
     this.send(ws,{type:WS_MESSAGE.WELCOME,protocol:PROTOCOL_VERSION.LEGACY_ROOM,id,spawn:{x:p.x,y:p.y,z:p.z},
       players:this.nearbySockets(p,ws).map(other=>this.publicPlayer(this.player(other))).filter(Boolean),
       coins:this.coinSnapshot(),luckyBox:this.boxSnapshot(now),score,leaderboard:this.top(),serverNow:now,count:this.count(),
-      session:sessionMetadata(p),resumed:session.resumed,entitlements:p.entitlements});
+      session:sessionMetadata(p),resumed:session.resumed,entitlements:p.entitlements,movement:publicMovement(p)});
     this.broadcastNearby({type:WS_MESSAGE.JOIN,player:this.publicPlayer(p),count:this.count()},p,ws);
     this.broadcast({type:WS_MESSAGE.LEADERBOARD,top:this.top()});
   }
@@ -988,12 +1035,12 @@ export class GameRoom {
   handleMove(ws,p,m) {
     if (!this.ownsSession(ws,p)) return;
     const now=Date.now();
-    if (now-p.last<MOVE_TICK_MS) return;
-    const {x,y,z,r}=m;
-    if (![x,y,z,r].every(Number.isFinite)) return;
-    if (Math.abs(x)>748 || Math.abs(z)>748 || y<-.25 || y>8 || Math.abs(r)>10000) return;
-    const dt=Math.min(1.5,Math.max(0,(now-p.at)/1000));
-
+    if (now-p.last<MOVE_TICK_MS) {
+      this.send(ws,{type:WS_MESSAGE.MOVE,player:this.publicPlayer(p),ack:m.seq,applied:false,
+        movement:publicMovement(p),velocity:{x:p.motion.vx,y:p.motion.vy,z:p.motion.vz},
+        grounded:p.motion.grounded,serverNow:now});
+      return;
+    }
     const speedEntitlement = this.sql.exec(
       'SELECT speed_expires FROM voxel_entitlements WHERE uid=?',
       p.uid
@@ -1002,14 +1049,11 @@ export class GameRoom {
     const speedActive =
       Number(speedEntitlement?.speed_expires || 0) > now;
 
-    const maxHorizontalSpeed = speedActive ? 50 : 26;
-
-    if (
-      Math.hypot(x-p.x,z-p.z) > maxHorizontalSpeed*dt+.65 ||
-      Math.abs(y-p.y) > 9*dt+.5
-    ) return;
-    Object.assign(p,{x,y,z,r,at:now,last:now});
+    if (!applyMovementIntent(p,m,speedActive ? MOVEMENT.entitledSpeed : MOVEMENT.speed,now)) return;
     ws.serializeAttachment(p);
+    this.send(ws,{type:WS_MESSAGE.MOVE,player:this.publicPlayer(p),ack:m.seq,applied:true,
+      movement:publicMovement(p),velocity:{x:p.motion.vx,y:p.motion.vy,z:p.motion.vz},
+      grounded:p.motion.grounded,serverNow:now});
     this.broadcastNearby({type:WS_MESSAGE.MOVE,player:this.publicPlayer(p)},p,ws);
   }
 

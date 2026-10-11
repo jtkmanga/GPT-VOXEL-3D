@@ -66,7 +66,7 @@ test('P0 socket rejects invalid auth, unauthenticated movement, expired token an
   assert.equal(last(invalid, 'auth_error').message, 'Firebase sign-in failed');
   assert.equal(invalid.client.closeInfo.code, 1008);
   const unauthenticated = await h.connect({ auth: false });
-  await unauthenticated.send({ type: 'move', x: 0, y: 0, z: 0, r: 0 });
+  await unauthenticated.send({ type: 'move', input: { x: 0, z: 0, jump: false }, seq: 0 });
   assert.equal(unauthenticated.client.closeInfo.code, 1008);
   const refreshed = await h.connect({ uid: 'synthetic-refresh' });
   const initialId = refreshed.attachment().id;
@@ -78,7 +78,7 @@ test('P0 socket rejects invalid auth, unauthenticated movement, expired token an
   assert.equal(refreshed.client.closeInfo.code, 1008);
   const expired = await h.connect({ uid: 'synthetic-expiring', token: h.token('synthetic-expiring', { exp: Math.floor(h.now() / 1000) + 1 }) });
   await h.advance(1000);
-  await expired.send({ type: 'move', x: 0, y: 0, z: 0, r: 0 });
+  await expired.send({ type: 'move', input: { x: 0, z: 0, jump: false }, seq: 0 });
   assert.equal(expired.client.closeInfo.code, 1008);
 });
 
@@ -95,22 +95,24 @@ test('P0 multiplayer movement reaches nearby peers, preserves direction control 
   near.clear(); distant.clear();
   for (const position of [{ x: 1, z: 0 }, { x: 1, z: 1 }, { x: 0, z: 1 }, { x: 0, z: 0 }]) {
     await h.advance(200);
-    await mover.send({ type: 'move', ...position, y: 0, r: 0 });
-    assert.equal(mover.attachment().x, position.x);
-    assert.equal(mover.attachment().z, position.z);
+    await h.moveTo(mover, position);
+    // The unchanged physical targets now come from integrated analog intent;
+    // permit only machine-precision rounding, never a gameplay-sized tolerance.
+    assert.ok(Math.abs(mover.attachment().x - position.x) < 1e-9);
+    assert.ok(Math.abs(mover.attachment().z - position.z) < 1e-9);
   }
   assert.equal(near.messages('move').length, 4);
   assert.equal(distant.messages('move').length, 0);
   await h.advance(199);
-  await mover.send({ type: 'move', x: 1, y: 0, z: 0, r: 0 });
-  assert.equal(mover.attachment().x, 0);
+  await h.moveTo(mover, { x: 1, z: 0 });
+  assert.ok(Math.abs(mover.attachment().x) < 1e-9);
   await h.advance(1);
-  await mover.send({ type: 'move', x: 1, y: 0, z: 0, r: 0 });
-  assert.equal(mover.attachment().x, 1);
+  await h.moveTo(mover, { x: 1, z: 0 });
+  assert.ok(Math.abs(mover.attachment().x - 1) < 1e-9);
   await h.advance(200);
   await mover.send({ type: 'move', x: 500, y: 0, z: 0, r: 0 });
   await mover.send({ type: 'move', x: 749, y: 0, z: 0, r: 0 });
-  assert.equal(mover.attachment().x, 1);
+  assert.ok(Math.abs(mover.attachment().x - 1) < 1e-9);
   await mover.close();
   assert.equal(last(near, 'leave').id, mover.attachment().id);
 });
@@ -255,7 +257,7 @@ test('P0 zone crossing uses one-use expiring ticket, preserves player identity a
   const source = await h.connect({ zone: '4,4', uid });
   h.place(source, { x: -1, y: 0, z: -75, r: 0 });
   await h.advance(200);
-  await source.send({ type: 'move', x: 1, y: 0, z: -75, r: 0 });
+  await h.moveTo(source, { x: 1, z: -75 });
   const change = last(source, 'zone_change');
   assert.equal(change.from, '4,4');
   assert.equal(change.zone, '5,4');
@@ -265,11 +267,21 @@ test('P0 zone crossing uses one-use expiring ticket, preserves player identity a
   const welcome = last(target, 'welcome');
   assert.equal(welcome.handoff, true);
   assert.equal(welcome.id, source.attachment().id);
-  assert.equal(welcome.spawn.x, 1);
+  assert.ok(Math.abs(welcome.spawn.x - 1) < 1e-9);
   await h.advance(200);
+  // P0 accepted this client-authored displacement. P3 explicitly supersedes
+  // that authority: reject it, keep the source owner, then resume the anchor.
   await target.send({ type: 'handoff_resume', x: 2, y: 0, z: -75, r: 0 });
-  assert.equal(last(target, 'handoff_resumed').x, 2);
+  assert.equal(target.messages('handoff_resumed').length, 0);
+  assert.ok(last(target, 'handoff_resume_error'));
+  assert.equal(source.client.closed, false);
+  assert.equal(h.room().sql.exec('SELECT owner FROM voxel_sessions WHERE uid=?', uid).toArray()[0].owner, 'zone:4,4');
+  await target.send({ type: 'handoff_resume', ...welcome.spawn });
+  assert.equal(last(target, 'handoff_resumed').x, welcome.spawn.x);
+  for (const axis of ['x', 'y', 'z', 'r']) assert.equal(target.attachment()[axis], welcome.spawn[axis]);
   assert.equal(target.attachment().handoffResume, null);
+  assert.equal(source.client.closed, true);
+  assert.equal(h.room().sql.exec('SELECT owner FROM voxel_sessions WHERE uid=?', uid).toArray()[0].owner, 'zone:5,4');
   await source.close();
   const replay = await h.connect({ zone: '5,4', uid, handoffToken: change.handoffToken });
   assert.equal(replay.client.closeInfo.code, 1008);
@@ -277,7 +289,7 @@ test('P0 zone crossing uses one-use expiring ticket, preserves player identity a
   const expiringSource = await h.connect({ zone: '4,4', uid: 'synthetic-ticket-expiry' });
   h.place(expiringSource, { x: -1, y: 0, z: -75, r: 0 });
   await h.advance(200);
-  await expiringSource.send({ type: 'move', x: 1, y: 0, z: -75, r: 0 });
+  await h.moveTo(expiringSource, { x: 1, z: -75 });
   const expiring = last(expiringSource, 'zone_change');
   await h.advance(12_001);
   const expired = await h.connect({ zone: '5,4', uid: 'synthetic-ticket-expiry', handoffToken: expiring.handoffToken });

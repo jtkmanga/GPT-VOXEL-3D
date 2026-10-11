@@ -7,7 +7,6 @@ const assert = require('node:assert/strict');
 const { createHarness } = require('./harness.cjs');
 
 const last = (connection, type) => connection.messages(type).at(-1);
-const position = { x: 2, y: 0, z: -75, r: 0 };
 
 async function transfer(t, uid, delay = 0) {
   const h = createHarness();
@@ -16,7 +15,7 @@ async function transfer(t, uid, delay = 0) {
   assert.ok(last(source, 'welcome'), 'The actual source authenticated');
   h.place(source, { x: -1, y: 0, z: -75, r: 0 });
   await h.advance(200);
-  await source.send({ type: 'move', x: 1, y: 0, z: -75, r: 0 });
+  await h.moveTo(source, { x: 1, y: 0, z: -75, r: 0 });
   const ticket = last(source, 'zone_change');
   assert.ok(ticket?.handoffToken, 'The actual source issued a handoff ticket');
   assert.equal(ticket.expiresAt, h.now() + 12_000);
@@ -27,7 +26,7 @@ async function transfer(t, uid, delay = 0) {
   assert.equal(row().session_id, sessionId);
   await h.advance(delay);
   const target = await h.connect({ uid, zone: '5,4', handoffToken: ticket.handoffToken });
-  return { h, uid, source, target, ticket, issuedAt, sessionId, row };
+  return { h, uid, source, target, ticket, issuedAt, sessionId, row, anchor: ticket.position };
 }
 
 function assertSourceOwner(f) {
@@ -41,7 +40,7 @@ function assertSourceOwner(f) {
   assert.equal(f.h.room().sql.exec('SELECT COUNT(*) AS count FROM voxel_sessions WHERE uid=?', f.uid).toArray()[0].count, 1);
 }
 
-function assertTargetOwner(f, expectedPosition = position) {
+function assertTargetOwner(f, expectedPosition = f.anchor) {
   assert.equal(f.target.messages('handoff_resumed').length, 1, 'Successful resume emits exactly one ACK');
   assert.equal(f.target.client.readyState, 1);
   assert.equal(f.source.client.readyState, 3, 'Successful target resume closes the source');
@@ -69,7 +68,7 @@ test('fresh target has a full nine-second window; ACK commits one owner before s
     events.push({ kind: 'source-close', owner: f.row().owner, sourceReadyState: f.source.client.readyState });
   });
   await f.h.advance(8999);
-  await f.target.send({ type: 'handoff_resume', ...position });
+  await f.target.send({ type: 'handoff_resume', ...f.anchor });
   assertTargetOwner(f);
   // Assert after observation: Worker send/close intentionally catch transport
   // errors, so an assertion thrown inside a socket callback could be swallowed.
@@ -84,11 +83,11 @@ test('fresh target has a full nine-second window; ACK commits one owner before s
 test('fresh target fails closed at the exact nine-second boundary and ignores a late frame', async t => {
   const f = await transfer(t, 'synthetic-window-nine-second-expiry');
   await f.h.advance(9000);
-  await f.target.send({ type: 'handoff_resume', ...position });
+  await f.target.send({ type: 'handoff_resume', ...f.anchor });
   assert.equal(f.target.client.closeInfo?.code, 1008);
   assert.equal(last(f.target, 'handoff_resume_error')?.message, 'Handoff resume window expired');
   assertSourceOwner(f);
-  await f.target.instance.webSocketMessage(f.target.server, JSON.stringify({ type: 'handoff_resume', ...position }));
+  await f.target.instance.webSocketMessage(f.target.server, JSON.stringify({ type: 'handoff_resume', ...f.anchor }));
   await f.h.settle();
   assertSourceOwner(f);
 });
@@ -100,7 +99,7 @@ test('delayed target is bounded by the original ticket expiry and fails closed a
   assert.ok(f.ticket.expiresAt < f.h.now() + 9000, 'Authentication does not extend the original transfer ticket');
   assertSourceOwner(f);
   await f.h.setTime(f.ticket.expiresAt);
-  await f.target.send({ type: 'handoff_resume', ...position });
+  await f.target.send({ type: 'handoff_resume', ...f.anchor });
   assert.equal(f.target.client.closeInfo?.code, 1008);
   assert.equal(last(f.target, 'handoff_resume_error')?.message, 'Handoff resume window expired');
   assertSourceOwner(f);
@@ -110,25 +109,25 @@ test('delayed target may resume before its ticket expires, after nine seconds el
   const f = await transfer(t, 'synthetic-window-delayed-valid', 4000);
   await f.h.setTime(f.ticket.expiresAt - 1);
   assert.ok(f.h.now() - f.issuedAt > 9000);
-  await f.target.send({ type: 'handoff_resume', ...position });
+  await f.target.send({ type: 'handoff_resume', ...f.anchor });
   assertTargetOwner(f);
 });
 
-test('actual resume validates server-elapsed horizontal and vertical speed envelopes before ownership', async t => {
+test('actual resume rejects client position authority and preserves the server anchor', async t => {
   const f = await transfer(t, 'synthetic-window-speed-envelope');
   await f.h.advance(100);
-  // At 100ms: horizontal allowance = 26 * 0.1 + 1.75 = 4.35;
-  // vertical allowance = 9 * 0.1 + 1 = 1.9, measured from the ticket anchor.
-  await f.target.send({ type: 'handoff_resume', x: 5.36, y: 0, z: -75, r: 0 });
-  assert.equal(last(f.target, 'handoff_resume_error')?.retryable, true);
+  await f.target.send({ type: 'handoff_resume', ...f.anchor, x: f.anchor.x + 4.36 });
+  assert.equal(last(f.target, 'handoff_resume_error')?.message, 'Invalid handoff resume position');
   assertSourceOwner(f);
-  await f.target.send({ type: 'handoff_resume', x: 2, y: 1.91, z: -75, r: 0 });
-  assert.equal(last(f.target, 'handoff_resume_error')?.retryable, true);
+  await f.target.send({ type: 'handoff_resume', ...f.anchor, y: f.anchor.y + 1.91 });
+  assert.equal(last(f.target, 'handoff_resume_error')?.message, 'Invalid handoff resume position');
   assert.equal(f.target.messages('handoff_resume_error').length, 2);
   assertSourceOwner(f);
-  const allowed = { x: 5.25, y: 1.8, z: -75, r: 0 };
-  await f.target.send({ type: 'handoff_resume', ...allowed });
-  assertTargetOwner(f, allowed);
+  // Compatible nearby hints may be received, but neither coordinates nor
+  // rotation may override the position recorded by the source server.
+  await f.target.send({ type: 'handoff_resume', ...f.anchor, x: f.anchor.x + 0.2, y: f.anchor.y + 0.2, r: 1000 });
+  assertTargetOwner(f);
+  assert.notEqual(f.row().r, 1000);
 });
 
 test('ticket expired before target authentication never creates another owner or resume ACK', async t => {

@@ -503,7 +503,114 @@
         </div>
     </div>
 
-    <script>
+    <script>const movement = (() => {
+// Shared deterministic prediction kernel. The Worker selects elapsed time,
+// speed entitlement and world geometry; packets contain intent only.
+const MOVEMENT = {
+  speed: 22,
+  entitledSpeed: 44,
+  groundAcceleration: 18,
+  airAcceleration: 10,
+  gravity: 42,
+  jumpVelocity: 16,
+  bounds: 748,
+  maxElapsedSeconds: .5,
+  stepSeconds: 1 / 60
+};
+
+function validMovementInput(input) {
+  return Boolean(input && typeof input === 'object' && !Array.isArray(input) &&
+    Object.keys(input).length === 3 && Object.hasOwn(input, 'x') &&
+    Object.hasOwn(input, 'z') && Object.hasOwn(input, 'jump') &&
+    Number.isFinite(input.x) && Number.isFinite(input.z) &&
+    Math.abs(input.x) <= 1 && Math.abs(input.z) <= 1 &&
+    Math.hypot(input.x, input.z) <= 1 + 1e-9 && typeof input.jump === 'boolean');
+}
+
+function sweepAxis(start, end, other, axis, obstacles) {
+  const min = axis === 'x' ? 'minX' : 'minZ';
+  const max = axis === 'x' ? 'maxX' : 'maxZ';
+  const otherMin = axis === 'x' ? 'minZ' : 'minX';
+  const otherMax = axis === 'x' ? 'maxZ' : 'maxX';
+  let result = end;
+  for (const box of obstacles) {
+    if (other <= box[otherMin] || other >= box[otherMax]) continue;
+    // Continuous segment intersection also catches thin obstacles. Contacts
+    // stop just outside the inflated geometry, permitting sliding on walls.
+    if (end > start && start <= box[min] && result >= box[min]) {
+      result = Math.min(result, box[min] - 1e-7);
+    } else if (end < start && start >= box[max] && result <= box[max]) {
+      result = Math.max(result, box[max] + 1e-7);
+    } else if (start > box[min] && start < box[max] && end > box[min] && end < box[max]) {
+      // An upgraded/spawned state inside geometry may leave, never move deeper.
+      const midpoint = (box[min] + box[max]) / 2;
+      if ((start <= midpoint && end > start) || (start > midpoint && end < start)) result = start;
+    }
+  }
+  return result;
+}
+
+function integrateMovement(state, input, elapsedSeconds, options = {}) {
+  if (!validMovementInput(input)) throw new TypeError('Invalid movement intent');
+  const result = {
+    x: Number.isFinite(state?.x) ? state.x : 0,
+    y: Number.isFinite(state?.y) ? Math.max(0, state.y) : 0,
+    z: Number.isFinite(state?.z) ? state.z : 0,
+    r: Number.isFinite(state?.r) ? state.r : 0,
+    vx: Number.isFinite(state?.vx) ? state.vx : 0,
+    vz: Number.isFinite(state?.vz) ? state.vz : 0,
+    vy: Number.isFinite(state?.vy) ? state.vy : 0,
+    jumpHeld: state?.jumpHeld === true,
+    grounded: typeof state?.grounded === 'boolean' ? state.grounded : !(state?.y > 0)
+  };
+  const elapsed = Math.min(MOVEMENT.maxElapsedSeconds,
+    Math.max(0, Number.isFinite(elapsedSeconds) ? elapsedSeconds : 0));
+  const speed = Number.isFinite(options.speed) && options.speed >= 0 ? options.speed : MOVEMENT.speed;
+  const bounds = Number.isFinite(options.bounds) && options.bounds > 0 ? options.bounds : MOVEMENT.bounds;
+  const obstacles = Array.isArray(options.obstacles) ? options.obstacles : [];
+  if (input.jump && !result.jumpHeld && result.grounded) {
+    result.vy = MOVEMENT.jumpVelocity;
+    result.grounded = false;
+  }
+  result.jumpHeld = input.jump;
+  if (!elapsed) return result;
+  const steps = Math.max(1, Math.ceil(elapsed / MOVEMENT.stepSeconds));
+  const delta = elapsed / steps;
+  for (let step = 0; step < steps; step++) {
+    const acceleration = result.grounded ? MOVEMENT.groundAcceleration : MOVEMENT.airAcceleration;
+    const damping = Math.min(1, acceleration * delta);
+    result.vx += (input.x * speed - result.vx) * damping;
+    result.vz += (input.z * speed - result.vz) * damping;
+    const candidateX = Math.min(bounds, Math.max(-bounds, result.x + result.vx * delta));
+    const x = sweepAxis(result.x, candidateX, result.z, 'x', obstacles);
+    if (Math.abs(x - (result.x + result.vx * delta)) > 1e-9) result.vx = 0;
+    result.x = x;
+    const candidateZ = Math.min(bounds, Math.max(-bounds, result.z + result.vz * delta));
+    const z = sweepAxis(result.z, candidateZ, result.x, 'z', obstacles);
+    if (Math.abs(z - (result.z + result.vz * delta)) > 1e-9) result.vz = 0;
+    result.z = z;
+    if (Math.hypot(result.vx, result.vz) > .5) {
+      let difference = Math.atan2(result.vx, result.vz) - result.r;
+      while (difference < -Math.PI) difference += Math.PI * 2;
+      while (difference > Math.PI) difference -= Math.PI * 2;
+      result.r += difference * Math.min(1, MOVEMENT.groundAcceleration * delta);
+    }
+    if (!result.grounded) {
+      result.y += result.vy * delta;
+      result.vy -= MOVEMENT.gravity * delta;
+      if (result.y <= 0) {
+        result.y = 0;
+        result.vy = 0;
+        result.grounded = true;
+      }
+    }
+  }
+  return result;
+}
+
+return { MOVEMENT, validMovementInput, integrateMovement };
+})();
+
         // --- FIREBASE REAL GOOGLE AUTHENTICATION & DATABASE CONFIGURATION ---
         const firebaseConfig = {
             apiKey: "AIzaSyCwn4rJ48I_bsVI2Ez59szQJubShvhO1SE",
@@ -2138,6 +2245,7 @@
 
         function triggerJump() {
             if (isGrounded && state.isPlaying && !state.isPaused) {
+                if (typeof secureQueueJump === 'function') secureQueueJump();
                 playerVelocityY = 16.0;
                 isGrounded = false;
                 audio.playJump();
@@ -2373,71 +2481,9 @@
             const nowMs = Date.now();
 
             if (state.isPlaying && !state.isPaused) {
-                let moveX = 0;
-                let moveZ = 0;
-
-                if (keys.w) moveZ -= 1;
-                if (keys.s) moveZ += 1;
-                if (keys.a) moveX -= 1;
-                if (keys.d) moveX += 1;
-
-                if (Math.abs(joystickVec.x) > 0.05) moveX = joystickVec.x;
-                if (Math.abs(joystickVec.y) > 0.05) moveZ = joystickVec.y;
-
-                const inputLen = Math.sqrt(moveX * moveX + moveZ * moveZ);
-
-                let moveSpeed = 22.0;
-                if (state.shop.speedBuffExpires > nowMs) {
-                    moveSpeed *= 2;
-                }
-
-                let targetVelX = 0;
-                let targetVelZ = 0;
-
-                if (inputLen > 0.05) {
-                    const normX = moveX / Math.max(1, inputLen);
-                    const normZ = moveZ / Math.max(1, inputLen);
-
-                    const forwardAmount = -normZ;
-                    const rightAmount = normX;
-
-                    const worldMoveX = rightAmount * Math.cos(cameraYaw) - forwardAmount * Math.sin(cameraYaw);
-                    const worldMoveZ = -rightAmount * Math.sin(cameraYaw) - forwardAmount * Math.cos(cameraYaw);
-                    const inputMag = Math.min(inputLen, 1);
-
-                    targetVelX = worldMoveX * moveSpeed * inputMag;
-                    targetVelZ = worldMoveZ * moveSpeed * inputMag;
-                }
-
-                const accelDamp = Math.min(1, (isGrounded ? 18 : 10) * delta);
-                playerVel.x += (targetVelX - playerVel.x) * accelDamp;
-                playerVel.z += (targetVelZ - playerVel.z) * accelDamp;
-
-                const nextX = playerPos.x + playerVel.x * delta;
-                const nextZ = playerPos.z + playerVel.z * delta;
-
-                const limit = MAP_SIZE / 2 - 2;
-                const isObstacle = (x, z) => {
-                    return buildings.some(b => x >= b.minX && x <= b.maxX && z >= b.minZ && z <= b.maxZ) ||
-                           trees.some(t => x >= t.minX && x <= t.maxX && z >= t.minZ && z <= t.maxZ);
-                };
-
-                let collideX = isObstacle(nextX, playerPos.z);
-                let collideZ = isObstacle(playerPos.x, nextZ);
-
-                if (!collideX && Math.abs(nextX) < limit) playerPos.x = nextX; else playerVel.x = 0;
-                if (!collideZ && Math.abs(nextZ) < limit) playerPos.z = nextZ; else playerVel.z = 0;
-
+                securePredictMovement(delta);
                 const currentSpeed = Math.sqrt(playerVel.x * playerVel.x + playerVel.z * playerVel.z);
-
-                if (currentSpeed > 0.5) {
-                    const targetRotation = Math.atan2(playerVel.x, playerVel.z);
-                    let diff = targetRotation - playerRotation;
-                    while (diff < -Math.PI) diff += Math.PI * 2;
-                    while (diff > Math.PI) diff -= Math.PI * 2;
-                    playerRotation += diff * Math.min(1, 18 * delta);
-                    playerGroup.rotation.y = playerRotation;
-                }
+                playerGroup.rotation.y = playerRotation;
 
                 if (currentSpeed > 0.5) {
                     walkCycle += delta * 12;
@@ -2454,20 +2500,17 @@
                     rightLeg.rotation.x += (0 - rightLeg.rotation.x) * limbDamp;
                 }
 
-                if (!isGrounded) {
-                    playerPos.y += playerVelocityY * delta;
-                    playerVelocityY -= 42.0 * delta;
+                const correctionDamp = Math.min(1, 12 * delta);
+                securePredictionCorrection.x *= 1 - correctionDamp;
+                securePredictionCorrection.y *= 1 - correctionDamp;
+                securePredictionCorrection.z *= 1 - correctionDamp;
+                playerGroup.position.set(
+                    playerPos.x + securePredictionCorrection.x,
+                    playerPos.y + securePredictionCorrection.y,
+                    playerPos.z + securePredictionCorrection.z
+                );
 
-                    if (playerPos.y <= 0) {
-                        playerPos.y = 0;
-                        playerVelocityY = 0;
-                        isGrounded = true;
-                    }
-                }
-
-                playerGroup.position.copy(playerPos);
-
-                // Broadcast local position & score to multiplayer server
+                // Send intent and an ordered sequence; position remains server-owned.
                 syncMyPlayerData();
 
                 const camDx = Math.sin(cameraYaw) * Math.cos(cameraPitch) * cameraDistance;
@@ -2475,12 +2518,12 @@
                 const camDz = Math.cos(cameraYaw) * Math.cos(cameraPitch) * cameraDistance;
 
                 const targetCamPos = new THREE.Vector3(
-                    playerPos.x + camDx,
-                    playerPos.y + camDy,
-                    playerPos.z + camDz
+                    playerGroup.position.x + camDx,
+                    playerGroup.position.y + camDy,
+                    playerGroup.position.z + camDz
                 );
 
-                const rawLookAt = new THREE.Vector3(playerPos.x, playerPos.y + 1.5, playerPos.z);
+                const rawLookAt = new THREE.Vector3(playerGroup.position.x, playerGroup.position.y + 1.5, playerGroup.position.z);
                 const camDamp = Math.min(1, 12 * delta);
 
                 camera.position.lerp(targetCamPos, camDamp);
@@ -2555,6 +2598,7 @@
                 });
             }
 
+            if (state.isPlaying && state.isPaused) syncMyPlayerData();
             renderer.render(scene, camera);
         }
         // ============================================================
@@ -3017,6 +3061,151 @@
             coin.active = coin.respawnTime <= secureNow();
             coin.mesh.visible = coin.active;
         }
+        let secureInputSequence = 0;
+        let secureLastAcknowledgedSequence = -1;
+        let secureJumpIntent = false;
+        let secureJumpGeneration = 0;
+        let secureJumpHeld = false;
+        const securePendingFrames = [];
+        const securePendingInputs = [];
+        const securePredictionCorrection = { x: 0, y: 0, z: 0 };
+
+        function secureQueueJump() {
+            secureJumpGeneration++;
+            secureJumpIntent = true;
+        }
+
+        function secureMovementIntent() {
+            const directionalKeys = typeof keys === 'object' ? keys : {};
+            const joystick = typeof joystickVec === 'object' ? joystickVec : { x: 0, y: 0 };
+            const yaw = typeof cameraYaw === 'number' ? cameraYaw : 0;
+            let x = (directionalKeys.d ? 1 : 0) - (directionalKeys.a ? 1 : 0);
+            let z = (directionalKeys.s ? 1 : 0) - (directionalKeys.w ? 1 : 0);
+            if (Math.abs(joystick.x) > .05) x = joystick.x;
+            if (Math.abs(joystick.y) > .05) z = joystick.y;
+            const length = Math.hypot(x, z);
+            if (length <= .05) return { x: 0, z: 0, jump: secureJumpIntent };
+            const divisor = Math.max(1, length);
+            const magnitude = Math.min(length, 1);
+            const right = x / divisor;
+            const forward = -z / divisor;
+            // Preserve the original camera-relative controls and analog response.
+            return {
+                x: (right * Math.cos(yaw) - forward * Math.sin(yaw)) * magnitude,
+                z: (-right * Math.sin(yaw) - forward * Math.cos(yaw)) * magnitude,
+                jump: secureJumpIntent
+            };
+        }
+
+        function secureMovementState() {
+            return { x: playerPos.x, y: playerPos.y, z: playerPos.z, r: playerRotation,
+                vx: playerVel.x, vz: playerVel.z, vy: playerVelocityY, grounded: isGrounded,
+                jumpHeld: secureJumpHeld };
+        }
+
+        function secureApplyMovementState(position) {
+            playerPos.set(position.x, position.y, position.z);
+            playerRotation = position.r;
+            playerVel.x = position.vx;
+            playerVel.z = position.vz;
+            playerVelocityY = position.vy;
+            isGrounded = position.grounded;
+            secureJumpHeld = Boolean(position.jumpHeld);
+        }
+
+        function secureMovementOptions() {
+            return {
+                speed: state.shop.speedBuffExpires > secureNow()
+                    ? movement.MOVEMENT.entitledSpeed : movement.MOVEMENT.speed,
+                obstacles: [...(typeof buildings === 'undefined' ? [] : buildings),
+                    ...(typeof trees === 'undefined' ? [] : trees)],
+                bounds: movement.MOVEMENT.bounds
+            };
+        }
+
+        function securePredictMovement(delta) {
+            // Lost connections and provisional handoffs cannot advance a player.
+            // Camera and rendering continue while authority is being recovered.
+            if (!secureGameReady || secureHandoffInProgress || !secureGameSocket ||
+                secureGameSocket.readyState !== WebSocket.OPEN) return;
+            const input = secureMovementIntent();
+            input.jump = secureJumpIntent;
+            const elapsed = Math.min(.1, Math.max(0, Number.isFinite(delta) ? delta : 0));
+            const options = secureMovementOptions();
+            secureApplyMovementState(movement.integrateMovement(secureMovementState(), input, elapsed, options));
+            securePendingFrames.push({ seq: secureInputSequence, input, delta: elapsed, speed: options.speed });
+            // A long stalled connection cannot retain unbounded prediction work.
+            if (securePendingFrames.length > 256) securePendingFrames.splice(0, securePendingFrames.length - 256);
+        }
+
+        function secureResetPrediction(position, motion = {}) {
+            if (!position || !['x', 'y', 'z'].every(key => Number.isFinite(Number(position[key])))) return false;
+            const y = Math.max(0, Number(position.y));
+            secureApplyMovementState({
+                x: Number(position.x), y, z: Number(position.z),
+                r: Number.isFinite(Number(position.r)) ? Number(position.r) : 0,
+                vx: Number.isFinite(Number(motion.vx)) ? Number(motion.vx) : 0,
+                vz: Number.isFinite(Number(motion.vz)) ? Number(motion.vz) : 0,
+                vy: Number.isFinite(Number(motion.vy)) ? Number(motion.vy) : 0,
+                grounded: typeof motion.grounded === 'boolean' ? motion.grounded : y === 0,
+                jumpHeld: Boolean(motion.jumpHeld)
+            });
+            const lastSequence = Number.isSafeInteger(motion.lastSeq) && motion.lastSeq >= -1 ? motion.lastSeq : -1;
+            secureInputSequence = lastSequence + 1;
+            secureLastAcknowledgedSequence = lastSequence;
+            securePendingFrames.length = 0;
+            securePendingInputs.length = 0;
+            secureJumpIntent = false;
+            secureJumpGeneration++;
+            securePredictionCorrection.x = securePredictionCorrection.y = securePredictionCorrection.z = 0;
+            secureLastMoveSentAt = 0;
+            if (playerGroup) {
+                playerGroup.position.copy(playerPos);
+                playerGroup.rotation.y = playerRotation;
+            }
+            return true;
+        }
+
+        function secureReconcileMovement(message) {
+            const position = message?.player;
+            const ack = Number(message?.ack);
+            if (message?.applied === false || !position || !Number.isSafeInteger(ack) || ack < 0 ||
+                ack <= secureLastAcknowledgedSequence || ack >= secureInputSequence ||
+                !['x', 'y', 'z', 'r'].every(key => Number.isFinite(position[key]))) return false;
+            const before = { x: playerPos.x, y: playerPos.y, z: playerPos.z };
+            const motion = message.movement || {
+                vx: message.velocity?.x, vz: message.velocity?.z,
+                vy: message.velocity?.y, grounded: message.grounded
+            };
+            let corrected = { x: position.x, y: Math.max(0, position.y), z: position.z, r: position.r,
+                vx: Number(motion.vx) || 0, vz: Number(motion.vz) || 0, vy: Number(motion.vy) || 0,
+                grounded: typeof motion.grounded === 'boolean' ? motion.grounded : position.y <= 0,
+                jumpHeld: Boolean(motion.jumpHeld) };
+            secureLastAcknowledgedSequence = ack;
+            if (securePendingInputs.some(packet => packet.seq <= ack && packet.input.jump &&
+                packet.jumpGeneration === secureJumpGeneration)) secureJumpIntent = false;
+            while (securePendingFrames.length && securePendingFrames[0].seq <= ack) securePendingFrames.shift();
+            while (securePendingInputs.length && securePendingInputs[0].seq <= ack) securePendingInputs.shift();
+            const options = secureMovementOptions();
+            for (const frame of securePendingFrames) {
+                corrected = movement.integrateMovement(corrected, frame.input, frame.delta,
+                    { ...options, speed: frame.speed });
+            }
+            secureApplyMovementState(corrected);
+            const difference = Math.hypot(before.x - corrected.x, before.y - corrected.y, before.z - corrected.z);
+            if (difference <= 4) {
+                securePredictionCorrection.x += before.x - corrected.x;
+                securePredictionCorrection.y += before.y - corrected.y;
+                securePredictionCorrection.z += before.z - corrected.z;
+            } else {
+                securePredictionCorrection.x = securePredictionCorrection.y = securePredictionCorrection.z = 0;
+            }
+            if (secureZoneFromPosition(position.x, position.z) === secureCurrentZoneId) {
+                secureLastStablePosition = { x: position.x, y: position.y, z: position.z, r: position.r };
+            }
+            return true;
+        }
+
         // Resume capabilities stay in memory and are scoped to a verified SDK UID
         // and Zone. A capability never replaces Firebase ID-token verification.
         const secureSessionTickets = new Map();
@@ -3241,24 +3430,10 @@
                     state.score = Number(message.score) || 0;
                     updateScoreDisplay();
 
-                    // Initial login uses the server spawn normally. During a Zone handoff,
-                    // keep the locally rendered position/velocity moving smoothly; the
-                    // target Zone validates that current position with handoff_resume.
+                    // Login/resume starts from persisted authority. A provisional
+                    // target welcome keeps rendering stable until ownership ACK.
                     if (message.spawn && !isSmoothHandoffWelcome) {
-                        playerPos.set(
-                            Number(message.spawn.x) || 0,
-                            Number(message.spawn.y) || 0,
-                            Number(message.spawn.z) || 0
-                        );
-                        if (Number.isFinite(Number(message.spawn.r))) {
-                            playerRotation = Number(message.spawn.r);
-                        }
-                        if (playerGroup) {
-                            playerGroup.position.copy(playerPos);
-                            playerGroup.rotation.y = playerRotation;
-                        }
-                        playerVel.x = 0;
-                        playerVel.z = 0;
+                        secureResetPrediction(message.spawn, message.movement || message.motion);
                         secureRememberStablePosition();
                     }
 
@@ -3299,7 +3474,12 @@
                 }
                 case "move": {
                     const p = secureNormalizePlayer(message.player);
-                    if (!p.id || p.id === state.serverPlayerId) break;
+                    if (!p.id) break;
+                    if (p.id === state.serverPlayerId) {
+                        if (message.serverNow) secureSetServerNow(message.serverNow);
+                        secureReconcileMovement(message);
+                        break;
+                    }
                     secureTrackRemotePlayer(p.id, 'local', p);
                     break;
                 }
@@ -3363,7 +3543,13 @@
                     console.warn('Lucky Box:', message.message || message);
                     break;
                 case "handoff_resumed":
+                    // An ACK owns only the currently pending transfer. A late ACK
+                    // cannot revive a timed-out/cancelled provisional socket.
+                    if (!secureHandoffInProgress || !secureHandoffResumeResolve) break;
                     if (message.serverNow) secureSetServerNow(message.serverNow);
+                    if (typeof secureResetPrediction === 'function') {
+                        secureResetPrediction(message.position || message, message.movement || message.motion);
+                    }
                     if (typeof secureTrackAuthenticatedSocket === 'function' && secureGameSocket) {
                         secureTrackAuthenticatedSocket(secureGameSocket, message.zone || secureCurrentZoneId, message.session);
                     }
@@ -3383,6 +3569,17 @@
                     secureHandoffResumeReject = null;
                     break;
                 }
+                case "handoff_cancelled":
+                    if (message.serverNow) secureSetServerNow(message.serverNow);
+                    if (message.position && typeof secureResetPrediction === 'function') {
+                        const nextSequence = secureInputSequence;
+                        secureResetPrediction(message.position, message.movement || message.motion);
+                        secureInputSequence = Math.max(nextSequence, secureInputSequence,
+                            Number.isSafeInteger(message.nextSequence) && message.nextSequence >= 0
+                                ? message.nextSequence : 0);
+                        secureRememberStablePosition();
+                    }
+                    break;
                 case "handoff_error":
                     console.warn('Zone handoff:', message.message || message);
                     break;
@@ -3587,10 +3784,7 @@
                 const ackPromise = secureWaitForHandoffResumeAck(3200);
                 ws.send(JSON.stringify({
                     type: "handoff_resume",
-                    x: Math.round(playerPos.x * 100) / 100,
-                    y: Math.round(playerPos.y * 100) / 100,
-                    z: Math.round(playerPos.z * 100) / 100,
-                    r: Math.round(playerRotation * 1000) / 1000
+                    input: { x: 0, z: 0, jump: false }
                 }));
 
                 try {
@@ -3623,9 +3817,8 @@
             let targetSocket = null;
             secureHandoffInProgress = true;
 
-            // IMPORTANT: do not pause state.isPaused here. The local movement/camera
-            // keeps rendering while the target Zone opens. Network-authoritative
-            // position is reconciled by one validated handoff_resume message.
+            // Rendering continues while the target acquires ownership. Prediction
+            // pauses at the authoritative border; resume cannot supply a position.
             try {
                 const result = await secureOpenZoneSocket(targetZone, handoffToken, false);
                 if (operation) secureRequireHandoffOperation(operation);
@@ -3691,16 +3884,31 @@
 
                 secureHandoffInProgress = false;
 
-                // Rollback only happens on a genuine handoff failure. Normal successful
-                // crossings never freeze or snap back.
+                // Restore the last confirmed source state while its cancellation
+                // ACK supplies the durable rollback position and next sequence.
                 if (oldSocket && oldSocket.readyState === WebSocket.OPEN) {
                     secureGameSocket = oldSocket;
                     secureGameReady = true;
                     secureCurrentZoneId = fromZone;
+                    try {
+                        oldSocket.send(JSON.stringify({ type: "handoff_cancel" }));
+                    } catch (_) {
+                        secureCloseSocket(oldSocket, 1000, 'Handoff cancel failed');
+                        secureReturnToMenu();
+                        return;
+                    }
                     playerPos.set(fallback.x, fallback.y, fallback.z);
                     playerRotation = fallback.r;
                     playerVel.x = 0;
                     playerVel.z = 0;
+                    playerVelocityY = 0;
+                    isGrounded = playerPos.y <= 0;
+                    secureJumpHeld = false;
+                    securePendingFrames.length = 0;
+                    securePendingInputs.length = 0;
+                    secureJumpIntent = false;
+                    secureJumpGeneration++;
+                    securePredictionCorrection.x = securePredictionCorrection.y = securePredictionCorrection.z = 0;
                     if (playerGroup) {
                         playerGroup.position.copy(playerPos);
                         playerGroup.rotation.y = playerRotation;
@@ -3792,11 +4000,7 @@
             try {
                 secureGameSocket.send(JSON.stringify({
                     type: "collect",
-                    id,
-                    x: Math.round(playerPos.x * 100) / 100,
-                    y: Math.round(playerPos.y * 100) / 100,
-                    z: Math.round(playerPos.z * 100) / 100,
-                    r: Math.round(playerRotation * 1000) / 1000
+                    id
                 }));
             } catch (_) {
                 coin._collectPendingUntil = 0;
@@ -3823,17 +4027,14 @@
             if (!force && now - secureLastMoveSentAt < 200) return; // FREE_10K_PHASE1_CLIENT: 5Hz
             secureLastMoveSentAt = now;
 
-            const positionZone = secureZoneFromPosition(playerPos.x, playerPos.z);
-            if (positionZone && positionZone === secureCurrentZoneId) {
-                secureRememberStablePosition();
-            }
-
+            const input = state.isPaused ? { x: 0, z: 0, jump: false } : secureMovementIntent();
+            const seq = secureInputSequence++;
+            securePendingInputs.push({ seq, input, jumpGeneration: secureJumpGeneration });
+            if (securePendingInputs.length > 64) securePendingInputs.shift();
             secureGameSocket.send(JSON.stringify({
                 type: "move",
-                x: Math.round(playerPos.x * 100) / 100,
-                y: Math.round(playerPos.y * 100) / 100,
-                z: Math.round(playerPos.z * 100) / 100,
-                r: Math.round(playerRotation * 1000) / 1000
+                input,
+                seq
             }));
         };
 

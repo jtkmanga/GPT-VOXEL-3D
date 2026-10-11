@@ -181,6 +181,7 @@
 
         function triggerJump() {
             if (isGrounded && state.isPlaying && !state.isPaused) {
+                if (typeof secureQueueJump === 'function') secureQueueJump();
                 playerVelocityY = 16.0;
                 isGrounded = false;
                 audio.playJump();

@@ -1,16 +1,20 @@
 'use strict';
 
-// P1 proved a behavior-preserving extraction against P0. Later security phases
-// intentionally change those behaviors, so rerun that entire proof on the real
-// committed P1 tree. Active runtime/security tests still use the working tree.
+// Each source-preservation proof belongs to the phase whose allowed changes it
+// enumerates. Rerun the complete unchanged proof on that committed Git tree.
+// Active runtime/security tests still use the working tree, including every P0
+// and P2 runtime suite; no behavior regression is moved to a checkpoint here.
 // This is a Git checkpoint, never an alternate implementation or recovery file.
 const { spawnSync } = require('node:child_process');
 const { mkdirSync, mkdtempSync, rmSync } = require('node:fs');
 const path = require('node:path');
 
 const ROOT = path.resolve(__dirname, '../..');
-const P1 = '10dfaf0aff07d2896c50af06d88502166b16fe9e';
-const HISTORICAL_TESTS = ['p1-structure.test.cjs'];
+const CHECKPOINTS = [
+  { phase: 'P1', revision: '10dfaf0aff07d2896c50af06d88502166b16fe9e', tests: ['p1-structure.test.cjs'] },
+  { phase: 'P2', revision: 'e7ce2674f66f8d7c7f22efb669bd506e5359bceb', tests: ['p2-source-preservation.test.cjs'] }
+];
+const HISTORICAL_TESTS = CHECKPOINTS.flatMap(checkpoint => checkpoint.tests);
 
 function successful(result, operation) {
   if (result.error) throw result.error;
@@ -20,12 +24,12 @@ function successful(result, operation) {
   }
 }
 
-function runHistory() {
-  const archive = spawnSync('git', ['archive', '--format=tar', P1], {
+function runCheckpoint({ phase, revision, tests }) {
+  const archive = spawnSync('git', ['archive', '--format=tar', revision], {
     cwd: ROOT, maxBuffer: 64 * 1024 * 1024
   });
-  successful(archive, 'Read pinned P1 Git tree');
-  const parent = path.join(ROOT, 'work/checkpoints/p1');
+  successful(archive, `Read pinned ${phase} Git tree`);
+  const parent = path.join(ROOT, 'work/checkpoints', phase.toLowerCase());
   mkdirSync(parent, { recursive: true });
   // Every run gets a fresh Git-derived tree; cached or stray source files can
   // never change the checkpoint under test. Only this generated directory is
@@ -35,16 +39,26 @@ function runHistory() {
     const extraction = spawnSync('tar', ['-xf', '-', '-C', checkpoint], {
       input: archive.stdout, maxBuffer: 1024 * 1024
     });
-    successful(extraction, 'Extract pinned P1 Git tree');
-    const args = ['--test', ...HISTORICAL_TESTS.map(file => `tests/rebuild/${file}`)];
-    process.stdout.write(`\nRUN frozen P1 ${P1}: node ${args.join(' ')}\n`);
+    successful(extraction, `Extract pinned ${phase} Git tree`);
+    const args = ['--test', ...tests.map(file => `tests/rebuild/${file}`)];
+    process.stdout.write(`\nRUN frozen ${phase} ${revision}: node ${args.join(' ')}\n`);
     const result = spawnSync(process.execPath, args, {
-      cwd: checkpoint, stdio: 'inherit', env: process.env
+      cwd: checkpoint, stdio: 'inherit', env: {
+        ...process.env,
+        // The archived tree is itself the test worktree root. Otherwise Git
+        // discovers the enclosing live checkout and interprets `ls-tree`
+        // pathspecs relative to work/checkpoints/<phase>/run-*.
+        GIT_DIR: path.join(ROOT, '.git'), GIT_WORK_TREE: checkpoint
+      }
     });
-    successful(result, 'Complete unchanged historical P1 assertions');
+    successful(result, `Complete unchanged historical ${phase} assertions`);
   } finally {
     rmSync(checkpoint, { recursive: true, force: true });
   }
+}
+
+function runHistory() {
+  for (const checkpoint of CHECKPOINTS) runCheckpoint(checkpoint);
 }
 
 if (require.main === module) {
@@ -52,4 +66,4 @@ if (require.main === module) {
   catch (error) { console.error(error); process.exitCode = 1; }
 }
 
-module.exports = { runHistory, HISTORICAL_TESTS };
+module.exports = { runHistory, HISTORICAL_TESTS, CHECKPOINTS };

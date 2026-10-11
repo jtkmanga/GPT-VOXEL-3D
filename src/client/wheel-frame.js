@@ -222,71 +222,9 @@
             const nowMs = Date.now();
 
             if (state.isPlaying && !state.isPaused) {
-                let moveX = 0;
-                let moveZ = 0;
-
-                if (keys.w) moveZ -= 1;
-                if (keys.s) moveZ += 1;
-                if (keys.a) moveX -= 1;
-                if (keys.d) moveX += 1;
-
-                if (Math.abs(joystickVec.x) > 0.05) moveX = joystickVec.x;
-                if (Math.abs(joystickVec.y) > 0.05) moveZ = joystickVec.y;
-
-                const inputLen = Math.sqrt(moveX * moveX + moveZ * moveZ);
-
-                let moveSpeed = 22.0;
-                if (state.shop.speedBuffExpires > nowMs) {
-                    moveSpeed *= 2;
-                }
-
-                let targetVelX = 0;
-                let targetVelZ = 0;
-
-                if (inputLen > 0.05) {
-                    const normX = moveX / Math.max(1, inputLen);
-                    const normZ = moveZ / Math.max(1, inputLen);
-
-                    const forwardAmount = -normZ;
-                    const rightAmount = normX;
-
-                    const worldMoveX = rightAmount * Math.cos(cameraYaw) - forwardAmount * Math.sin(cameraYaw);
-                    const worldMoveZ = -rightAmount * Math.sin(cameraYaw) - forwardAmount * Math.cos(cameraYaw);
-                    const inputMag = Math.min(inputLen, 1);
-
-                    targetVelX = worldMoveX * moveSpeed * inputMag;
-                    targetVelZ = worldMoveZ * moveSpeed * inputMag;
-                }
-
-                const accelDamp = Math.min(1, (isGrounded ? 18 : 10) * delta);
-                playerVel.x += (targetVelX - playerVel.x) * accelDamp;
-                playerVel.z += (targetVelZ - playerVel.z) * accelDamp;
-
-                const nextX = playerPos.x + playerVel.x * delta;
-                const nextZ = playerPos.z + playerVel.z * delta;
-
-                const limit = MAP_SIZE / 2 - 2;
-                const isObstacle = (x, z) => {
-                    return buildings.some(b => x >= b.minX && x <= b.maxX && z >= b.minZ && z <= b.maxZ) ||
-                           trees.some(t => x >= t.minX && x <= t.maxX && z >= t.minZ && z <= t.maxZ);
-                };
-
-                let collideX = isObstacle(nextX, playerPos.z);
-                let collideZ = isObstacle(playerPos.x, nextZ);
-
-                if (!collideX && Math.abs(nextX) < limit) playerPos.x = nextX; else playerVel.x = 0;
-                if (!collideZ && Math.abs(nextZ) < limit) playerPos.z = nextZ; else playerVel.z = 0;
-
+                securePredictMovement(delta);
                 const currentSpeed = Math.sqrt(playerVel.x * playerVel.x + playerVel.z * playerVel.z);
-
-                if (currentSpeed > 0.5) {
-                    const targetRotation = Math.atan2(playerVel.x, playerVel.z);
-                    let diff = targetRotation - playerRotation;
-                    while (diff < -Math.PI) diff += Math.PI * 2;
-                    while (diff > Math.PI) diff -= Math.PI * 2;
-                    playerRotation += diff * Math.min(1, 18 * delta);
-                    playerGroup.rotation.y = playerRotation;
-                }
+                playerGroup.rotation.y = playerRotation;
 
                 if (currentSpeed > 0.5) {
                     walkCycle += delta * 12;
@@ -303,20 +241,17 @@
                     rightLeg.rotation.x += (0 - rightLeg.rotation.x) * limbDamp;
                 }
 
-                if (!isGrounded) {
-                    playerPos.y += playerVelocityY * delta;
-                    playerVelocityY -= 42.0 * delta;
+                const correctionDamp = Math.min(1, 12 * delta);
+                securePredictionCorrection.x *= 1 - correctionDamp;
+                securePredictionCorrection.y *= 1 - correctionDamp;
+                securePredictionCorrection.z *= 1 - correctionDamp;
+                playerGroup.position.set(
+                    playerPos.x + securePredictionCorrection.x,
+                    playerPos.y + securePredictionCorrection.y,
+                    playerPos.z + securePredictionCorrection.z
+                );
 
-                    if (playerPos.y <= 0) {
-                        playerPos.y = 0;
-                        playerVelocityY = 0;
-                        isGrounded = true;
-                    }
-                }
-
-                playerGroup.position.copy(playerPos);
-
-                // Broadcast local position & score to multiplayer server
+                // Send intent and an ordered sequence; position remains server-owned.
                 syncMyPlayerData();
 
                 const camDx = Math.sin(cameraYaw) * Math.cos(cameraPitch) * cameraDistance;
@@ -324,12 +259,12 @@
                 const camDz = Math.cos(cameraYaw) * Math.cos(cameraPitch) * cameraDistance;
 
                 const targetCamPos = new THREE.Vector3(
-                    playerPos.x + camDx,
-                    playerPos.y + camDy,
-                    playerPos.z + camDz
+                    playerGroup.position.x + camDx,
+                    playerGroup.position.y + camDy,
+                    playerGroup.position.z + camDz
                 );
 
-                const rawLookAt = new THREE.Vector3(playerPos.x, playerPos.y + 1.5, playerPos.z);
+                const rawLookAt = new THREE.Vector3(playerGroup.position.x, playerGroup.position.y + 1.5, playerGroup.position.z);
                 const camDamp = Math.min(1, 12 * delta);
 
                 camera.position.lerp(targetCamPos, camDamp);
@@ -404,5 +339,6 @@
                 });
             }
 
+            if (state.isPlaying && state.isPaused) syncMyPlayerData();
             renderer.render(scene, camera);
         }

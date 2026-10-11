@@ -40,27 +40,29 @@ check('worker handles handoff_cancel',
   /m\?\.type===['"]handoff_cancel['"]/.test(worker)
 );
 // Execute the active Worker graph to verify the nine-second window, ticket
-// expiry, real movement envelope, ACK ordering and persisted single ownership.
+// expiry, immutable server anchor, ACK ordering and persisted single ownership.
 const handoffWindow = spawnSync(process.execPath, [
   path.join(__dirname, 'tests/rebuild/handoff-window.cjs')
 ], { cwd: __dirname, encoding: 'utf8', timeout: 30000, maxBuffer: 1024 * 1024 });
 if (handoffWindow.stdout) process.stdout.write(handoffWindow.stdout);
 if (handoffWindow.stderr) process.stderr.write(handoffWindow.stderr);
 if (handoffWindow.error) console.error(handoffWindow.error.message);
-check('handoff resume window increased',
-  !handoffWindow.error && handoffWindow.status === 0 && !handoffWindow.signal &&
-  /Math\.min\(9,Math\.max/.test(worker)
+check('handoff resume window and server anchor',
+  !handoffWindow.error && handoffWindow.status === 0 && !handoffWindow.signal
 );
 
 check('client hides coin immediately on contact',
   /coin\.active\s*=\s*false;[\s\S]{0,100}coin\.mesh\.visible\s*=\s*false;/.test(html)
 );
-check('collect packet includes fresh position',
-  /type:\s*['"]collect['"][\s\S]{0,220}x:\s*Math\.round\(playerPos\.x/.test(html)
-);
-check('worker validates fresh collect position',
-  /A collect can happen between 5Hz movement packets/.test(worker)
-);
+// P3 intentionally removes client position authority. Preserve the contact and
+// reward requirements with active emitter/Worker behavior, rather than demand
+// the obsolete client-coordinate fields that P3 must reject or ignore.
+const collection = spawnSync(process.execPath, [
+  'tests/rebuild/collection-authority.cjs', htmlPath
+], { stdio: 'inherit' });
+const collectionPassed = !collection.error && collection.status === 0;
+check('collect packet uses server movement authority', collectionPassed);
+check('worker validates authoritative collect position', collectionPassed);
 check('collector receives direct authoritative result',
   /type:\s*['"]coin_collect_result['"]/.test(worker) &&
   /case\s+['"]coin_collect_result['"]/.test(html)

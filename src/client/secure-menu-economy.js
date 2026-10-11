@@ -54,11 +54,7 @@
             try {
                 secureGameSocket.send(JSON.stringify({
                     type: protocol.WS_MESSAGE.COLLECT,
-                    id,
-                    x: Math.round(playerPos.x * 100) / 100,
-                    y: Math.round(playerPos.y * 100) / 100,
-                    z: Math.round(playerPos.z * 100) / 100,
-                    r: Math.round(playerRotation * 1000) / 1000
+                    id
                 }));
             } catch (_) {
                 coin._collectPendingUntil = 0;
@@ -85,17 +81,14 @@
             if (!force && now - secureLastMoveSentAt < config.MOVE_TICK_MS) return; // FREE_10K_PHASE1_CLIENT: 5Hz
             secureLastMoveSentAt = now;
 
-            const positionZone = secureZoneFromPosition(playerPos.x, playerPos.z);
-            if (positionZone && positionZone === secureCurrentZoneId) {
-                secureRememberStablePosition();
-            }
-
+            const input = state.isPaused ? { x: 0, z: 0, jump: false } : secureMovementIntent();
+            const seq = secureInputSequence++;
+            securePendingInputs.push({ seq, input, jumpGeneration: secureJumpGeneration });
+            if (securePendingInputs.length > 64) securePendingInputs.shift();
             secureGameSocket.send(JSON.stringify({
                 type: protocol.WS_MESSAGE.MOVE,
-                x: Math.round(playerPos.x * 100) / 100,
-                y: Math.round(playerPos.y * 100) / 100,
-                z: Math.round(playerPos.z * 100) / 100,
-                r: Math.round(playerRotation * 1000) / 1000
+                input,
+                seq
             }));
         };
 

@@ -3,8 +3,8 @@ const { spawnSync } = require('node:child_process');
 const { readdirSync, mkdirSync, writeFileSync } = require('node:fs');
 const { workerSourceView } = require('./source-view.cjs');
 const { runHistory, HISTORICAL_TESTS } = require('./run-history.cjs');
-// Run all frozen P1 extraction/equivalence assertions before active regression.
-// The original test file is unchanged and executes the actual committed modules.
+// Run every phase-bound source proof in full against its actual Git checkpoint.
+// Their original files remain unchanged; all behavior suites run on active code.
 runHistory();
 // Preserve every legacy assertion against the active module graph. Runtime tests
 // independently execute the actual bundle rather than this static source view.

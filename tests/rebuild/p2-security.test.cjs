@@ -215,7 +215,9 @@ test('P2 movement packet flood and authentication refresh flood are bounded inde
   const h = harness(t);
   const mover = await authenticate(h, { uid: 'synthetic-p2-flood' });
   const before = position(mover.attachment());
-  for (let i = 0; i < 100 && !mover.client.closed; i++) await mover.send({ type: 'move', ...before });
+  for (let i = 0; i < 100 && !mover.client.closed; i++) {
+    await mover.send({ type: 'move', input: { x: 0, z: 0, jump: false }, seq: i });
+  }
   assert.equal(mover.client.closed, true);
   assert.equal(mover.client.closeInfo.code, 1008);
   assert.deepEqual(position(mover.attachment()), before);
@@ -283,8 +285,8 @@ test('P2 reconnect resume preserves server player identity and position while ro
     const original = assertAuthenticated(h, source, uid);
     await h.advance(200);
     const requested = { ...position(source.attachment()), x: source.attachment().x + 1 };
-    await source.send({ type: 'move', ...requested });
-    assert.equal(source.attachment().x, requested.x);
+    await h.moveTo(source, requested);
+    assert.ok(Math.abs(source.attachment().x - requested.x) < 1e-9);
     const authoritative = position(source.attachment());
     await source.close();
     assert.equal(session(h, uid).lease_expires, 0);
@@ -324,7 +326,7 @@ test('P2 persisted session resumes after a real GameRoom SQLite restart', async 
   const source = await authenticate(h, { uid });
   const original = assertAuthenticated(h, source, uid);
   await h.advance(200);
-  await source.send({ type: 'move', ...position(source.attachment()), x: source.attachment().x + 1 });
+  await h.moveTo(source, { x: source.attachment().x + 1, z: source.attachment().z });
   const authoritative = position(source.attachment());
   h.restartRoom();
   await h.room().ready;
@@ -464,19 +466,18 @@ test('P2 duplicate, stale and out-of-order movement sequences cannot mutate or r
   const observer = await authenticate(h, { uid: 'synthetic-p2-sequence-observer' });
   observer.clear();
   await h.advance(200);
-  const first = { ...position(mover.attachment()), x: mover.attachment().x + 1 };
-  await mover.send({ type: 'move', ...first, seq: 10 });
+  const target = { ...position(mover.attachment()), x: mover.attachment().x + 1 };
+  const { position: first } = await h.moveTo(mover, target, { seq: 10 });
   assert.deepEqual(position(mover.attachment()), first);
   assert.equal(observer.messages('move').length, 1);
   for (const seq of [10, 9, 0, 8]) {
     await h.advance(200);
-    await mover.send({ type: 'move', ...first, x: first.x + 1, seq });
+    await mover.send({ type: 'move', input: { x: 1, z: 0, jump: false }, seq });
     assert.deepEqual(position(mover.attachment()), first);
     assert.equal(observer.messages('move').length, 1);
   }
   await h.advance(200);
-  const next = { ...first, x: first.x + 1 };
-  await mover.send({ type: 'move', ...next, seq: 11 });
+  const { position: next } = await h.moveTo(mover, { x: first.x + 1, z: first.z }, { seq: 11 });
   assert.deepEqual(position(mover.attachment()), next);
   assert.equal(observer.messages('move').length, 2);
   assert.equal(mover.client.closed, false);

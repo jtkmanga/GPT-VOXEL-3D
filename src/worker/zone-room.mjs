@@ -1,10 +1,12 @@
 import { PLAYER_VISIBILITY_RADIUS, BORDER_SNAPSHOT_INTERVAL_MS, ZONE_SOFT_CAP, MOVE_TICK_MS } from '../shared/config.mjs';
+import { MOVEMENT } from '../shared/movement.mjs';
 import { WS_MESSAGE, PROTOCOL_VERSION } from '../shared/protocol.mjs';
 import { normalizePlayerName, normalizeZoneId, adjacentZoneIds, zonesAreAdjacent, zoneCenter, zoneFromPosition } from './spatial.mjs';
 import { COINS } from './world.mjs';
 import { verifyFirebaseIdToken } from './firebase-auth.mjs';
 import { SECURITY, scheduleAuthDeadline, clearAuthDeadline } from './security.mjs';
 import { enqueueFrame, sessionMetadata } from './room-security.mjs';
+import { initializeMotion, applyMovementIntent, publicMovement } from './movement.mjs';
 
 // Phase 2A movement-zone Durable Object.
 // World state, scores, payments, coins and Lucky Box remain authoritative in GameRoom.
@@ -278,10 +280,48 @@ export class ZoneRoom {
         ws.close(1008,'Handoff cancelled');
         return;
       }
+      const pending=p.handoffPending;
+      if (pending?.token) {
+        try {
+          const response=await this.env.ROOM.getByName('free-v2-demo').fetch(
+            new Request('https://internal/_internal/cancel-zone-handoff',{
+              method:'POST',headers:{'content-type':'application/json'},
+              body:JSON.stringify({uid:p.uid,sessionId:p.sessionId,owner:this.sessionOwner(),token:pending.token})
+            })
+          );
+          const result=await response.json();
+          p=this.player(ws);
+          if (!response.ok || !result?.ok || ws.readyState!==1 || p?.revoked) {
+            ws.close(1008,'Handoff cancellation rejected');
+            return;
+          }
+          const source=p.handoffPending?.source;
+          if (!source || zoneFromPosition(source.x,source.z)!==p.zoneId) {
+            ws.close(1011,'Handoff source unavailable');
+            return;
+          }
+          Object.assign(p,{x:source.x,y:source.y,z:source.z,r:source.r,
+            motion:{...source.motion,clock:Date.now()},at:Date.now(),last:Date.now()});
+          const checkpoint=await this.sessionCall('checkpoint',{
+            uid:p.uid,sessionId:p.sessionId,owner:this.sessionOwner(),
+            position:{x:p.x,y:p.y,z:p.z,r:p.r}
+          });
+          if (!checkpoint?.ok || ws.readyState!==1) {
+            ws.close(1008,'Handoff cancellation ownership rejected');
+            return;
+          }
+        } catch (_) {
+          ws.close(1011,'Handoff cancellation authority unavailable');
+          return;
+        }
+      }
       p.handoffPending=null;
       p.handoffResume=null;
       ws.serializeAttachment(p);
-      this.send(ws,{type:WS_MESSAGE.HANDOFF_CANCELLED,zone:p.zoneId,serverNow:Date.now()});
+      this.send(ws,{type:WS_MESSAGE.HANDOFF_CANCELLED,zone:p.zoneId,serverNow:Date.now(),
+        position:{x:p.x,y:p.y,z:p.z,r:p.r},movement:publicMovement(p),
+        nextSequence:Math.max(Number.isSafeInteger(p.lastSequence) ? p.lastSequence : -1,
+          Number.isSafeInteger(p.motion?.seq) ? p.motion.seq : -1)+1});
       return;
     }
     if (m?.type===WS_MESSAGE.MOVE) return this.handleMove(ws,p,m);
@@ -481,6 +521,7 @@ export class ZoneRoom {
       lastCollect:0,
       handoffPending:null,
       handoffResume: handoff ? {
+        token:handoffToken,
         anchorX:spawnX,
         anchorY:spawnY,
         anchorZ:spawnZ,
@@ -491,6 +532,7 @@ export class ZoneRoom {
       nickname:normalizePlayerName(bootstrap.nickname,m?.name || ('Player-'+verified.uid.slice(-6))),
       speedExpires:Number(bootstrap.entitlements?.speedExpires)||0
     });
+    initializeMotion(p,now);
 
     ws.serializeAttachment(p);
     clearAuthDeadline(ws);
@@ -504,6 +546,7 @@ export class ZoneRoom {
       zone:zoneId,
       id,
       session:sessionMetadata(p),
+      movement:publicMovement(p),
       entitlements:bootstrap.entitlements||{},
       spawn:{x:p.x,y:p.y,z:p.z,r:p.r},
       players:this.nearbySockets(p,ws)
@@ -541,30 +584,12 @@ export class ZoneRoom {
       return;
     }
 
-    const x=Number(m?.x), y=Number(m?.y), z=Number(m?.z), r=Number(m?.r);
-    if (![x,y,z,r].every(Number.isFinite) ||
-        Math.abs(x)>748 || Math.abs(z)>748 || y<-.25 || y>8 || Math.abs(r)>10000 ||
-        zoneFromPosition(x,z)!==p.zoneId) {
+    // The signed, one-use server ticket fixes the transfer position. Legacy
+    // coordinate fields are compatibility hints, never simulation authority.
+    const x=Number(resume.anchorX), y=Number(resume.anchorY), z=Number(resume.anchorZ), r=Number(p.r);
+    if (![x,y,z,r].every(Number.isFinite) || zoneFromPosition(x,z)!==p.zoneId ||
+        (Object.hasOwn(m,'x') && (Math.hypot(m.x-x,m.z-z)>.25 || Math.abs(m.y-y)>.25))) {
       this.send(ws,{type:WS_MESSAGE.HANDOFF_RESUME_ERROR,message:'Invalid handoff resume position'});
-      return;
-    }
-
-    const elapsed=Math.min(9,Math.max(0,(now-Number(resume.createdAt||now))/1000));
-    const speedActive=Number(p.speedExpires||0)>now;
-    const maxHorizontalSpeed=speedActive ? 50 : 26;
-    const maxHorizontalDistance=maxHorizontalSpeed*elapsed+1.75;
-    const maxVerticalDistance=9*elapsed+1.0;
-
-    if (
-      Math.hypot(x-Number(resume.anchorX||0),z-Number(resume.anchorZ||0))>maxHorizontalDistance ||
-      Math.abs(y-Number(resume.anchorY||0))>maxVerticalDistance
-    ) {
-      this.send(ws,{
-        type:WS_MESSAGE.HANDOFF_RESUME_ERROR,
-        message:'Handoff resume movement exceeded server limit',
-        retryable:true,
-        serverNow:now
-      });
       return;
     }
 
@@ -575,6 +600,7 @@ export class ZoneRoom {
         sessionId:p.sessionId,
         fromOwner:'zone:'+resume.fromZone,
         toOwner:this.sessionOwner(),
+        handoffToken:resume.token,
         playerId:p.id,
         position:{x,y,z,r}
       });
@@ -614,6 +640,8 @@ export class ZoneRoom {
       handoffPending:null,
       handoffResume:null
     });
+    initializeMotion(p,Date.now());
+    if (Number.isSafeInteger(m.seq)) p.motion.seq=m.seq;
     ws.serializeAttachment(p);
 
     this.send(ws,{
@@ -621,6 +649,8 @@ export class ZoneRoom {
       x,y,z,r,
       zone:p.zoneId,
       session:sessionMetadata(p),
+      movement:publicMovement(p),
+      ack:Number.isSafeInteger(m.seq) ? m.seq : null,
       serverNow:now
     });
 
@@ -654,20 +684,34 @@ export class ZoneRoom {
 
   async handleMove(ws,p,m) {
     const now=Date.now();
-    if (now-p.last<MOVE_TICK_MS) return;
-
-    const {x,y,z,r}=m;
-    if (![x,y,z,r].every(Number.isFinite)) return;
-    if (Math.abs(x)>748 || Math.abs(z)>748 || y<-.25 || y>8 || Math.abs(r)>10000) return;
-
-    const dt=Math.min(1.5,Math.max(0,(now-p.at)/1000));
     const speedActive=Number(p.speedExpires||0)>now;
-    const maxHorizontalSpeed=speedActive ? 50 : 26;
-
-    if (
-      Math.hypot(x-p.x,z-p.z)>maxHorizontalSpeed*dt+.65 ||
-      Math.abs(y-p.y)>9*dt+.5
-    ) return;
+    // Once a ticket is issued, freeze its authoritative anchor until transfer
+    // or cancellation. Source packets cannot invalidate an in-flight ticket.
+    if (p.handoffPending?.token) {
+      if (Number(p.handoffPending.expiresAt)<=now) {
+        this.send(ws,{type:WS_MESSAGE.HANDOFF_ERROR,message:'Zone handoff expired'});
+        ws.close(1008,'Zone handoff expired');
+        return;
+      }
+      p.motion ||= initializeMotion(p,now);
+      p.motion.seq=m.seq;
+      p.motion.clock=now;
+      ws.serializeAttachment(p);
+      this.sendMovementAck(ws,p,m.seq,now);
+      this.send(ws,{type:WS_MESSAGE.ZONE_CHANGE,from:p.zoneId,zone:p.handoffPending.zone,
+        handoffToken:p.handoffPending.token,expiresAt:p.handoffPending.expiresAt,
+        position:p.handoffPending.position});
+      return;
+    }
+    if (now-p.last<MOVE_TICK_MS) {
+      this.sendMovementAck(ws,p,m.seq,now,false);
+      return;
+    }
+    const source={x:p.x,y:p.y,z:p.z,r:p.r,motion:{...p.motion}};
+    if (!applyMovementIntent(p,m,speedActive ? MOVEMENT.entitledSpeed : MOVEMENT.speed,now)) return;
+    const {x,y,z,r}=p;
+    ws.serializeAttachment(p);
+    this.sendMovementAck(ws,p,m.seq,now);
 
     const requestedZone=zoneFromPosition(x,z);
     if (!requestedZone) return;
@@ -693,6 +737,7 @@ export class ZoneRoom {
         creating:true,
         zone:requestedZone,
         position:{x,y,z,r},
+        source,
         expiresAt:now+2000
       };
       p.last=now;
@@ -723,7 +768,8 @@ export class ZoneRoom {
           zone:requestedZone,
           token:String(result.token),
           expiresAt:Number(result.expiresAt)||0,
-          position:{x,y,z,r}
+          position:{x,y,z,r},
+          source
         };
         ws.serializeAttachment(p);
 
@@ -742,6 +788,7 @@ export class ZoneRoom {
           ws.serializeAttachment(p);
         }
         this.send(ws,{type:WS_MESSAGE.HANDOFF_ERROR,message:'Could not prepare zone handoff'});
+        ws.close(1011,'Handoff authority unavailable');
       }
       return;
     }
@@ -757,27 +804,19 @@ export class ZoneRoom {
     this.ctx.waitUntil(this.flushBorderSnapshot(false));
   }
 
+  sendMovementAck(ws,p,seq,now=Date.now(),applied=true) {
+    this.send(ws,{type:WS_MESSAGE.MOVE,player:this.publicPlayer(p),ack:seq,applied,
+      movement:publicMovement(p),velocity:{x:p.motion.vx,y:p.motion.vy,z:p.motion.vz},
+      grounded:p.motion.grounded,serverNow:now});
+  }
+
   async handleCollect(ws,p,m) {
     const now=Date.now();
     const id=Number(m?.id);
     if (!Number.isInteger(id) || id<0 || id>=COINS.length || now-Number(p.lastCollect||0)<150) return;
 
-    // A collect can happen between 5Hz movement packets. Accept a fresh client
-    // contact position only when it passes the same server movement limits.
-    const cx=Number(m?.x), cy=Number(m?.y), cz=Number(m?.z), cr=Number(m?.r);
-    if ([cx,cy,cz,cr].every(Number.isFinite) && zoneFromPosition(cx,cz)===p.zoneId) {
-      const dt=Math.min(1.5,Math.max(0,(now-Number(p.at||now))/1000));
-      const speedActive=Number(p.speedExpires||0)>now;
-      const maxHorizontalSpeed=speedActive ? 50 : 26;
-      if (
-        Math.hypot(cx-Number(p.x||0),cz-Number(p.z||0))<=maxHorizontalSpeed*dt+1.25 &&
-        Math.abs(cy-Number(p.y||0))<=9*dt+.75 &&
-        Math.abs(cx)<=748 && Math.abs(cz)<=748 && cy>=-.25 && cy<=8 && Math.abs(cr)<=10000
-      ) {
-        Object.assign(p,{x:cx,y:cy,z:cz,r:cr,at:now});
-      }
-    }
-
+    // Collection uses the latest server simulation state. Legacy contact
+    // coordinates remain accepted by the schema but cannot move a player.
     p.lastCollect=now;
     ws.serializeAttachment(p);
 

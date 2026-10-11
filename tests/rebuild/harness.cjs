@@ -319,11 +319,57 @@ function createHarness(options = {}) {
     if (input.auth !== false) await connection.send({ type: 'auth', token: input.token ?? token(input.uid), name: input.name ?? 'Test player', ...(input.handoffToken ? { handoffToken: input.handoffToken } : {}) });
     return connection;
   }
+  async function moveTo(connection, target, { seq } = {}) {
+    // Encode a physically reachable normal-control fixture into the real P3
+    // intent protocol. The target is never sent to or written into the Worker.
+    // Prediction uses the same kernel as the browser; the actual room still
+    // validates sequence, server time, bounds, collision and entitlement.
+    const { MOVEMENT, integrateMovement, validMovementInput } = require('../../src/shared/movement.mjs');
+    const { SERVER_WORLD } = require('../../src/worker/world.mjs');
+    const player = connection.attachment();
+    const motion = player.motion || { vx: 0, vz: 0, vy: 0, grounded: !(player.y > 0), seq: -1, clock: player.at };
+    const elapsed = Math.min(MOVEMENT.maxElapsedSeconds, Math.max(0, currentTime - motion.clock) / 1000);
+    const expiry = player.zoneId ? player.speedExpires : env.ROOM.object('free-v2-demo').instance.sql.exec(
+      'SELECT speed_expires FROM voxel_entitlements WHERE uid=?', player.uid
+    ).toArray()[0]?.speed_expires;
+    const speed = Number(expiry || 0) > currentTime ? MOVEMENT.entitledSpeed : MOVEMENT.speed;
+    const state = { ...player, ...motion };
+    const neutral = { x: 0, z: 0, jump: false };
+    const coast = integrateMovement(state, neutral, elapsed, { speed });
+    const alongX = integrateMovement(state, { ...neutral, x: 1 }, elapsed, { speed });
+    const alongZ = integrateMovement(state, { ...neutral, z: 1 }, elapsed, { speed });
+    const axis = (desired, baseline, full) => {
+      const gain = full - baseline;
+      if (!gain) {
+        if (Math.abs(desired - baseline) > 1e-9) throw Error('Intent fixture target needs positive server elapsed time');
+        return 0;
+      }
+      return (desired - baseline) / gain;
+    };
+    const input = {
+      x: axis(target.x ?? player.x, coast.x, alongX.x),
+      z: axis(target.z ?? player.z, coast.z, alongZ.z),
+      jump: false
+    };
+    if (!validMovementInput(input)) throw Error('Intent fixture target exceeds the actual input/speed envelope');
+    const predicted = integrateMovement(state, input, elapsed, {
+      speed, obstacles: [...SERVER_WORLD.buildings, ...SERVER_WORLD.trees]
+    });
+    for (const axis of ['x', 'z']) {
+      if (Math.abs(predicted[axis] - (target[axis] ?? player[axis])) > 1e-9)
+        throw Error(`Intent fixture target is blocked by actual world geometry on ${axis}`);
+    }
+    const packet = { type: 'move', input, seq: seq ?? Math.max(motion.seq, player.lastSequence ?? -1) + 1 };
+    const position = Object.fromEntries(['x', 'y', 'z', 'r'].map(axis => [axis, predicted[axis]]));
+    await connection.send(packet);
+    return { packet, position };
+  }
   function place(connection, position) {
     // Explicit server fixture, never a client command or a substitute for a
     // movement test. Lets economy tests start at an actual generated item.
     const player = connection.attachment();
-    Object.assign(player, position, { at: currentTime, last: 0 });
+    Object.assign(player, position, { at: currentTime, last: 0,
+      motion: { vx: 0, vz: 0, vy: 0, grounded: !(position.y > 0), seq: player.motion?.seq ?? -1, clock: currentTime } });
     connection.server.serializeAttachment(player);
     return player;
   }
@@ -337,7 +383,7 @@ function createHarness(options = {}) {
     return entry.instance;
   }
   return {
-    env, worker: runtime.worker, runtime, records, context, token, request, open, connect, place,
+    env, worker: runtime.worker, runtime, records, context, token, request, open, connect, moveTo, place,
     advance, settle, now: () => currentTime,
     setTime(value) { if (value < currentTime) throw Error('Synthetic clock cannot move backwards'); return advance(value - currentTime); },
     room: () => env.ROOM.object('free-v2-demo').instance,
