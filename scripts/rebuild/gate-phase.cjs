@@ -11,7 +11,7 @@ const checks = [
   ['static', 'npm', ['run', 'check:static']],
   ['generated-client', 'npm', ['run', 'check:client']],
   ['syntax', 'npm', ['run', 'check:syntax']],
-  ['diff', 'git', ['diff', '--check']],
+  ['diff', process.execPath, ['scripts/rebuild/check-diff.cjs']],
   ['staged-diff', 'git', ['diff', '--cached', '--check']],
   ['wrangler-dry-run', 'npm', ['run', 'bundle:dry-run']],
   ['browser', 'python', ['tests/rebuild/p1-browser.py']],

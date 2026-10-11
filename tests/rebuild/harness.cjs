@@ -243,6 +243,7 @@ function createHarness(options = {}) {
     ALLOWED_ORIGIN: options.allowedOrigin ?? 'https://rebuild.invalid',
     SLIP2GO_API_SECRET: 'synthetic-slip-secret',
     PAYMENT_RECEIVER_ACCOUNT: 'synthetic-test-receiver',
+    PAYMENT_WEBHOOK_SECRET: 'synthetic-p7-only-provider-signing-fixture',
     ...options.env
   };
   function namespace(Class, instances, binding) {
@@ -314,8 +315,10 @@ function createHarness(options = {}) {
     if (response.status !== 101) throw Error(`Local WebSocket upgrade rejected: ${response.status} ${await response.text()}`);
     const client = response.webSocket;
     const server = client.peer;
-    const zoneId = new URL(`https://rebuild-worker.invalid${pathname}`).searchParams.get('zone');
-    const instance = zoneId === null ? env.ROOM.object('free-v2-demo').instance : env.ZONE.object(`free-zone-${zoneId}`).instance;
+    const params = new URL(`https://rebuild-worker.invalid${pathname}`).searchParams;
+    const zoneId = params.get('zone');
+    const roomName = params.get('server') === 'vip1' ? 'vip1-v2-demo' : 'free-v2-demo';
+    const instance = zoneId === null ? env.ROOM.object(roomName).instance : env.ZONE.object(`free-zone-${zoneId}`).instance;
     const connection = {
       client, server, instance,
       async send(value) {
@@ -336,7 +339,7 @@ function createHarness(options = {}) {
     return connection;
   }
   async function connect(input = {}) {
-    const connection = await open(input.zone ? `/play?zone=${encodeURIComponent(input.zone)}` : '/play');
+    const connection = await open(input.server === 'vip1' ? '/play?server=vip1' : input.zone ? `/play?zone=${encodeURIComponent(input.zone)}` : '/play');
     if (input.auth !== false) await connection.send({ type: 'auth', token: input.token ?? token(input.uid), name: input.name ?? 'Test player', ...(input.handoffToken ? { handoffToken: input.handoffToken } : {}) });
     return connection;
   }
@@ -350,7 +353,7 @@ function createHarness(options = {}) {
     const player = connection.attachment();
     const motion = player.motion || { vx: 0, vz: 0, vy: 0, grounded: !(player.y > 0), seq: -1, clock: player.at };
     const elapsed = Math.min(MOVEMENT.maxElapsedSeconds, Math.max(0, currentTime - motion.clock) / 1000);
-    const expiry = player.zoneId ? player.speedExpires : env.ROOM.object('free-v2-demo').instance.sql.exec(
+    const expiry = player.zoneId ? player.speedExpires : connection.instance.sql.exec(
       'SELECT speed_expires FROM voxel_entitlements WHERE uid=?', player.uid
     ).toArray()[0]?.speed_expires;
     const speed = Number(expiry || 0) > currentTime ? MOVEMENT.entitledSpeed : MOVEMENT.speed;
@@ -394,8 +397,8 @@ function createHarness(options = {}) {
     connection.server.serializeAttachment(player);
     return player;
   }
-  function restartRoom({ keepSockets = false } = {}) {
-    const entry = env.ROOM.object('free-v2-demo');
+  function restartRoom({ keepSockets = false, server = 'free1' } = {}) {
+    const entry = env.ROOM.object(server === 'vip1' ? 'vip1-v2-demo' : 'free-v2-demo');
     if (!keepSockets) {
       entry.ctx.sockets.forEach(ws => ws.close(1012, 'Synthetic restart'));
       entry.ctx.sockets.length = 0;
@@ -407,7 +410,7 @@ function createHarness(options = {}) {
     env, worker: runtime.worker, runtime, records, context, token, request, open, connect, moveTo, place,
     advance, settle, now: () => currentTime,
     setTime(value) { if (value < currentTime) throw Error('Synthetic clock cannot move backwards'); return advance(value - currentTime); },
-    room: () => env.ROOM.object('free-v2-demo').instance,
+    room: (server = 'free1') => env.ROOM.object(server === 'vip1' ? 'vip1-v2-demo' : 'free-v2-demo').instance,
     zone: zoneId => env.ZONE.object(`free-zone-${zoneId}`).instance,
     restartRoom,
     setSlipResult(result, status = 200) { slipResult = result; slipStatus = status; },

@@ -1,9 +1,11 @@
-import { corsHeaders, jsonResponse, handleVerifySlip, handleGetEntitlements } from './http.mjs';
+import { corsHeaders, jsonResponse, handleVerifySlip, handleGetEntitlements, handlePaymentWebhook } from './http.mjs';
 import { normalizeZoneId } from './spatial.mjs';
 
 const worker = {
   async fetch(request,env) {
     const url=new URL(request.url);
+
+    if (url.pathname==='/payments/webhook') return handlePaymentWebhook(request,env);
 
     if (url.pathname==='/health')
       return new Response('VOXEL RUN v4 online',
@@ -52,6 +54,19 @@ const worker = {
       request.headers.get('Origin')!==env.ALLOWED_ORIGIN
     )
       return new Response('Origin not allowed',{status:403});
+
+    const requestedServer = url.searchParams.get('server');
+    if (requestedServer !== null && !['free1','vip1'].includes(requestedServer))
+      return new Response('Invalid server',{status:400});
+    if (requestedServer==='vip1') {
+      if (url.searchParams.has('zone')) return new Response('VIP has no zone route',{status:400});
+      const room=env.ROOM.getByName('vip1-v2-demo');
+      const configured=await room.fetch(new Request('https://internal/_internal/configure-scope',{
+        method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({scope:'vip1'})
+      }));
+      if (!configured.ok) return new Response('VIP authority unavailable',{status:503});
+      return room.fetch(request);
+    }
 
     const requestedZone = url.searchParams.get('zone');
     if (requestedZone !== null) {

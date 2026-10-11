@@ -246,13 +246,15 @@
             secureActiveHandoff = null;
         }
 
-        function secureSessionKey(zoneId, uid = auth.currentUser?.uid) {
+        function secureSessionKey(zoneId, uid = auth.currentUser?.uid, serverId = state.selectedServerId || 'free1') {
+            if (serverId === 'vip1') return typeof uid === 'string' && uid ? `${uid}:vip1` : '';
+            if (serverId !== 'free1') return '';
             const zone = secureNormalizeZoneId(zoneId);
             return typeof uid === 'string' && uid && zone ? `${uid}:${zone}` : '';
         }
 
-        function secureGetResumeTicket(zoneId, uid = auth.currentUser?.uid) {
-            const key = secureSessionKey(zoneId, uid);
+        function secureGetResumeTicket(zoneId, uid = auth.currentUser?.uid, serverId = state.selectedServerId || 'free1') {
+            const key = secureSessionKey(zoneId, uid, serverId);
             const ticket = key && secureSessionTickets.get(key);
             if (!ticket || ticket.resumeExpiresAt <= secureNow()) {
                 if (key) secureSessionTickets.delete(key);
@@ -261,8 +263,8 @@
             return ticket;
         }
 
-        function secureRememberSession(zoneId, session) {
-            const key = secureSessionKey(zoneId);
+        function secureRememberSession(zoneId, session, serverId = state.selectedServerId || 'free1') {
+            const key = secureSessionKey(zoneId, auth.currentUser?.uid, serverId);
             if (!key || !session || typeof session.resumeToken !== 'string' ||
                 !session.resumeToken || typeof session.sessionId !== 'string' ||
                 !Number.isFinite(session.resumeExpiresAt) || session.resumeExpiresAt <= secureNow()) return;
@@ -286,7 +288,8 @@
         }
 
         function secureTrackAuthenticatedSocket(ws, zoneId, session) {
-            secureRememberSession(zoneId, session);
+            const serverId = ws.secureServerId || state.selectedServerId || 'free1';
+            secureRememberSession(zoneId, session, serverId);
             // Lease notices renew the resume capability, not the Firebase token.
             // An unchanged expiry must not postpone or repeat an existing refresh.
             if (session && secureSocketRefreshExpiries.get(ws) === session.tokenExpiresAt) return;
@@ -315,7 +318,7 @@
                     ws.send(JSON.stringify({
                         type: protocol.WS_MESSAGE.AUTH,
                         token,
-                        protocol: protocol.PROTOCOL_VERSION.ZONE_ROOM
+                        protocol: serverId === 'vip1' ? protocol.PROTOCOL_VERSION.LEGACY_ROOM : protocol.PROTOCOL_VERSION.ZONE_ROOM
                     }));
                     // The server's auth_refreshed response supplies the next expiry.
                 } catch (_) {
@@ -331,8 +334,8 @@
             secureReconnectGeneration++;
         }
 
-        async function secureResumeDisconnectedSocket(zoneId, uid) {
-            if (secureReconnectInProgress || !secureGetResumeTicket(zoneId, uid)) return false;
+        async function secureResumeDisconnectedSocket(zoneId, uid, serverId = state.selectedServerId || 'free1') {
+            if (secureReconnectInProgress || !secureGetResumeTicket(zoneId, uid, serverId)) return false;
             secureReconnectInProgress = true;
             const generation = ++secureReconnectGeneration;
             try {
@@ -340,7 +343,8 @@
                     await secureClientDelay(250 * (2 ** attempt));
                     if (generation !== secureReconnectGeneration || !state.isPlaying ||
                         secureHandoffInProgress || secureGameSocket || auth.currentUser?.uid !== uid ||
-                        !secureGetResumeTicket(zoneId, uid)) return false;
+                        (state.selectedServerId || 'free1') !== serverId ||
+                        !secureGetResumeTicket(zoneId, uid, serverId)) return false;
                     try {
                         await secureOpenZoneSocket(zoneId, '', attempt > 0, true);
                         return true;
@@ -424,9 +428,11 @@
                     if (message.id) secureUntrackRemotePlayer(String(message.id), 'local');
                     break;
                 case protocol.WS_MESSAGE.GHOST_SNAPSHOT:
+                    if (state.selectedServerId === 'vip1' || secureGameSocket?.secureServerId === 'vip1') break;
                     secureReplaceGhostSnapshot(message);
                     break;
                 case protocol.WS_MESSAGE.ZONE_CHANGE:
+                    if (state.selectedServerId === 'vip1' || secureGameSocket?.secureServerId === 'vip1') break;
                     void secureBeginZoneHandoff(message);
                     break;
                 case protocol.WS_MESSAGE.SCORE:
@@ -578,6 +584,10 @@
 
         async function secureOpenZoneSocket(zoneId, handoffToken = '', forceTokenRefresh = false, requireResume = false, savedZoneRedirected = false) {
             if (!auth.currentUser) throw new Error('ต้องล็อกอิน Google ก่อนเข้าเล่น');
+            const serverId = state.selectedServerId || 'free1';
+            if (!['free1', 'vip1'].includes(serverId) || (serverId === 'vip1' && handoffToken)) {
+                throw new Error('Server หรือ handoff ไม่ถูกต้อง');
+            }
             const normalizedZone = secureNormalizeZoneId(zoneId);
             if (!normalizedZone) throw new Error('Zone ไม่ถูกต้อง');
             if (requireResume && (typeof secureGetResumeTicket !== 'function' || !secureGetResumeTicket(normalizedZone))) {
@@ -588,6 +598,7 @@
             const uid = user.uid;
             const connectionEpoch = typeof secureConnectionEpoch === 'function' ? secureConnectionEpoch() : null;
             const connectionCurrent = () => auth.currentUser === user && auth.currentUser?.uid === uid &&
+                (state.selectedServerId || 'free1') === serverId &&
                 (connectionEpoch === null || typeof secureConnectionIsCurrent !== 'function' || secureConnectionIsCurrent(connectionEpoch));
             const token = await user.getIdToken(forceTokenRefresh);
             if (!connectionCurrent()) {
@@ -595,8 +606,9 @@
             }
 
             return new Promise((resolve, reject) => {
-                const ws = new WebSocket(secureZoneSocketUrl(normalizedZone));
+                const ws = new WebSocket(secureZoneSocketUrl(normalizedZone, serverId));
                 ws.secureAuthenticatedUid = uid;
+                ws.secureServerId = serverId;
                 if (typeof secureRegisterClientSocket === 'function') secureRegisterClientSocket(ws);
                 let welcomed = false;
                 let settled = false;
@@ -626,12 +638,12 @@
                     const authMessage = {
                         type: protocol.WS_MESSAGE.AUTH,
                         token,
-                        protocol: protocol.PROTOCOL_VERSION.ZONE_ROOM,
+                        protocol: serverId === 'vip1' ? protocol.PROTOCOL_VERSION.LEGACY_ROOM : protocol.PROTOCOL_VERSION.ZONE_ROOM,
                         name: String(state.playerName || 'Player').trim().slice(0, 12)
                     };
                     if (handoffToken) authMessage.handoffToken = String(handoffToken);
                     else if (typeof secureGetResumeTicket === 'function') {
-                        const ticket = secureGetResumeTicket(normalizedZone, uid);
+                        const ticket = secureGetResumeTicket(normalizedZone, uid, serverId);
                         if (requireResume && !ticket) {
                             failBeforeWelcome('Session เดิมหมดอายุ กรุณาเข้าเกมใหม่');
                             return;
@@ -656,6 +668,10 @@
                     if (!welcomed) {
                         if (settled || ws.readyState !== WebSocket.OPEN) return;
                         if (message?.type === protocol.WS_MESSAGE.WELCOME) {
+                            if (serverId === 'vip1' && (message.server !== 'vip1' || message.protocol !== protocol.PROTOCOL_VERSION.LEGACY_ROOM || message.handoff)) {
+                                failBeforeWelcome('VIP Server ไม่ยืนยันห้องหรือ protocol');
+                                return;
+                            }
                             if (!connectionCurrent()) {
                                 failBeforeWelcome('บัญชีเปลี่ยนระหว่างเชื่อมต่อ Game Server');
                                 return;
@@ -679,7 +695,7 @@
                             // to their original Zone and never follow redirects.
                             const savedZone = message.type === protocol.WS_MESSAGE.AUTH_ERROR &&
                                 typeof message.resumeZone === 'string' && secureNormalizeZoneId(message.resumeZone);
-                            if (!savedZoneRedirected && !handoffToken && !requireResume && !resumeRequested &&
+                            if (serverId === 'free1' && !savedZoneRedirected && !handoffToken && !requireResume && !resumeRequested &&
                                 savedZone && savedZone === message.resumeZone && savedZone !== normalizedZone && connectionCurrent()) {
                                 settled = true;
                                 clearTimeout(timer);
@@ -739,7 +755,7 @@
                             typeof secureResumeDisconnectedSocket !== 'function') {
                             failClosed();
                         } else {
-                            void secureResumeDisconnectedSocket(normalizedZone, uid).then(resumed => {
+                            void secureResumeDisconnectedSocket(normalizedZone, uid, serverId).then(resumed => {
                                 if (!resumed) failClosed();
                             }, failClosed);
                         }
@@ -803,7 +819,7 @@
         }
 
         async function secureBeginZoneHandoff(message) {
-            if (secureHandoffInProgress || !state.isPlaying) return;
+            if (state.selectedServerId === 'vip1' || secureGameSocket?.secureServerId === 'vip1' || secureHandoffInProgress || !state.isPlaying) return;
 
             const fromZone = secureNormalizeZoneId(message?.from) || secureCurrentZoneId;
             const targetZone = secureNormalizeZoneId(message?.zone);
@@ -930,7 +946,7 @@
 
         async function secureConnectGameSocket() {
             if (!auth.currentUser) throw new Error('ต้องล็อกอิน Google ก่อนเข้าเล่น');
-            if (state.selectedServerId !== 'free1') throw new Error('Security Test เปิดเฉพาะ Free Server จนกว่า VIP room routing จะเสร็จ');
+            if (!['free1', 'vip1'].includes(state.selectedServerId)) throw new Error('Server ไม่ถูกต้อง');
             if (typeof secureCancelReconnect === 'function') secureCancelReconnect();
 
             const existing = secureGameSocket;

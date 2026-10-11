@@ -1,5 +1,25 @@
 import { PAYMENT_PRICES } from '../shared/catalog.mjs';
 import { verifyFirebaseIdToken } from './firebase-auth.mjs';
+import { verifyPaymentEvent, PaymentBoundaryError } from './payment-events.mjs';
+
+// Server-to-server provider adapter. A Firebase login or browser payment flag
+// cannot authorize this route; only a fresh signature over the exact bytes can.
+export async function handlePaymentWebhook(request, env) {
+  try {
+    const verified = await verifyPaymentEvent(request, env);
+    const response = await env.ROOM.getByName('free-v2-demo').fetch(new Request(
+      'https://internal/_internal/vip/apply-event', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(verified)
+      }));
+    const result = await response.json();
+    return Response.json(result, { status: response.status });
+  } catch (error) {
+    const status = error instanceof PaymentBoundaryError ? error.status : 503;
+    return Response.json({ ok: false, error: status === 503
+      ? 'Payment authority unavailable' : error.message }, { status });
+  }
+}
 
 export function corsHeaders(request, env) {
   const origin = request.headers.get('Origin') || '';

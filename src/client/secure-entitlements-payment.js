@@ -1,7 +1,7 @@
         // ============================================================
         // SECURE WORKER CLIENT OVERRIDES (2026-09-28)
         // Payment/entitlements + Free Server multiplayer + Coin + Lucky Box are server-authoritative.
-        // VIP gameplay remains disabled until separate VIP room routing is completed.
+        // VIP gameplay uses its separately admitted trusted room; purchases stay disabled in this rebuild.
         // ============================================================
         // FREE_10K_PHASE2C1_CLIENT
         // Free Server client now connects directly to the 10x10 ZoneRoom mesh,
@@ -185,7 +185,7 @@
             }
 
             if (type === 'vip1') {
-                alert('เวอร์ชัน Security Test ยังปิดการซื้อ VIP ชั่วคราว จนกว่า Worker จะแยกห้อง VIP ออกจาก Free Server เรียบร้อย เพื่อไม่ให้รับเงินจริงก่อนระบบพร้อม');
+                alert('การชำระเงิน VIP ยังไม่เปิดใช้งาน: ราคา 50 บาท/เดือน ต้องยืนยันผู้ให้บริการชำระเงินก่อน');
                 return;
             }
 
@@ -269,20 +269,24 @@
             return false;
         };
 
-        selectVipServer = async function() {
+        selectVipServer = async function(serverId = 'vip1') {
+            if (serverId !== 'vip1' || !auth.currentUser) return false;
+            const user = auth.currentUser;
+            let result;
             try {
-                await secureLoadEntitlements(true);
+                result = await secureLoadEntitlements(true);
             } catch (err) {
                 alert('ตรวจสอบสิทธิ์ VIP กับ Server ไม่สำเร็จ: ' + err.message);
-                return;
+                return false;
             }
 
-            const vipSub = state.userVipSubscriptions.vip1;
-            const expiry = Number(vipSub?.expireTime || 0);
-            if (expiry <= secureNow()) {
+            const expiry = Number(result?.entitlements?.vip1Expires ?? result?.entitlements?.vip1_expires ?? 0);
+            if (auth.currentUser !== user || !Number.isFinite(expiry) || expiry <= secureNow()) {
                 alert('คุณยังไม่มีสิทธิ์ VIP ที่ใช้งานได้');
-                return;
+                return false;
             }
 
-            alert('สิทธิ์ VIP ของคุณถูกยืนยันจาก Server แล้ว แต่ Security Test นี้ยังไม่เปิดห้อง VIP เพราะ Worker ปัจจุบัน route /play ไปห้อง Free เดียวกัน การเข้า VIP จะเปิดหลังแยกห้องฝั่ง Server เสร็จ');
+            state.selectedServerId = 'vip1';
+            renderServersUI();
+            return true;
         };

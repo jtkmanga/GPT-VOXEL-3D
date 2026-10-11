@@ -15,7 +15,8 @@ const CHECKPOINTS = [
   { phase: 'P2', revision: 'e7ce2674f66f8d7c7f22efb669bd506e5359bceb', tests: ['p2-source-preservation.test.cjs'] },
   { phase: 'P3', revision: '592c0707a746f7a55002ce5fcc7110f00cdccf66', tests: ['p3-source-preservation.test.cjs'] },
   { phase: 'P4', revision: '149ecd9f4c617dd432e3536443be7b3081827c9b', tests: ['p4-scope.test.cjs'] },
-  { phase: 'P5', revision: '0200876db8a6d26c6ce372264c37bfbdca29262c', tests: ['p5-scope.test.cjs'] }
+  { phase: 'P5', revision: '0200876db8a6d26c6ce372264c37bfbdca29262c', tests: ['p5-scope.test.cjs'] },
+  { phase: 'P6', revision: '33ace23c05875734eda909973b446a376bf307ae', tests: ['p6-scope.test.cjs'] }
 ];
 const HISTORICAL_TESTS = CHECKPOINTS.flatMap(checkpoint => checkpoint.tests);
 

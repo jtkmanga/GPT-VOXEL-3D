@@ -37,7 +37,9 @@
             return `${zx},${zz}`;
         }
 
-        function secureZoneSocketUrl(zoneId) {
+        function secureZoneSocketUrl(zoneId, serverId = state.selectedServerId || 'free1') {
+            if (serverId === 'vip1') return `${SECURE_WORKER_WS_BASE}?server=vip1`;
+            if (serverId !== 'free1') throw new Error('Server ไม่ถูกต้อง');
             const normalized = secureNormalizeZoneId(zoneId);
             if (!normalized) throw new Error('Zone ไม่ถูกต้อง');
             return `${SECURE_WORKER_WS_BASE}?zone=${encodeURIComponent(normalized)}`;

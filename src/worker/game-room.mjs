@@ -10,6 +10,8 @@ import { SECURITY, clearAuthDeadline, scheduleAuthDeadline } from './security.mj
 import { enqueueFrame, sessionMetadata, checkpointPlayer } from './room-security.mjs';
 import { initializeMotion, applyMovementIntent, publicMovement } from './movement.mjs';
 import { EconomyStore } from './economy.mjs';
+import { VipStore } from './vip-store.mjs';
+import { validVipUid, VIP_PRODUCT, normalizePaymentEvent, paymentEventFingerprint } from './payment-events.mjs';
 
 export class GameRoom {
   constructor(ctx,env) {
@@ -42,6 +44,8 @@ export class GameRoom {
       vip1_expires INTEGER NOT NULL DEFAULT 0,
       updated_at INTEGER NOT NULL
     )`);
+    this.vip=new VipStore(ctx);
+    this.serverScope='free1';
 
     // One payment transaction can only be granted once
     this.sql.exec(`CREATE TABLE IF NOT EXISTS voxel_payments (
@@ -80,6 +84,9 @@ export class GameRoom {
     )`);
 
     this.ready=ctx.blockConcurrencyWhile(async()=>{
+      const scope=await ctx.storage.get('serverScope');
+      if (scope!==undefined && scope!=='vip1') throw Error('Invalid durable server scope');
+      this.serverScope=scope||'free1';
       // Preserve the existing v3 coin cooldowns when the room upgrades.
       const old=await ctx.storage.get('coinRespawns');
       if (old && typeof old==='object') {
@@ -96,12 +103,83 @@ export class GameRoom {
   }
   player(ws) { return ws.deserializeAttachment(); }
   sockets() { return this.ctx.getWebSockets(); }
-  count() { return this.sockets().filter(ws=>{const p=this.player(ws);return p?.uid && !p.revoked && !p.sessionClosed;}).length; }
+  activePlayer(p) {
+    if (!p?.uid || p.revoked || p.sessionClosed) return false;
+    if (this.serverScope!=='vip1') return true;
+    return Number(p.exp)>Math.floor(Date.now()/1000) &&
+      this.sessions.validate({uid:p.uid,sessionId:p.sessionId,owner:this.sessionOwner()}) &&
+      Number(this.entitlementSnapshot(p.uid).vip1Expires)>Date.now();
+  }
+  count() { return this.sockets().filter(ws=>this.activePlayer(this.player(ws))).length; }
   sessionOwner() { return 'room'; }
+  async vipCall(action,payload) {
+    const response=await this.env.ROOM.getByName('free-v2-demo').fetch(
+      new Request(`https://internal/_internal/vip/${action}`,{
+        method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload)
+      }));
+    const result=await response.json();
+    if (response.status>=500 || !result || typeof result!=='object')
+      throw Error('VIP authority unavailable');
+    return result;
+  }
+  mirrorVipEntitlements(uid,entitlements) {
+    if (!entitlements || !['speedExpires','coinExpires','vip1Expires'].every(key=>
+      Number.isSafeInteger(entitlements[key]) && entitlements[key]>=0))
+      throw Error('VIP entitlement snapshot unavailable');
+    this.sql.exec(`INSERT INTO voxel_entitlements(uid,speed_expires,coin_expires,vip1_expires,updated_at)
+      VALUES (?,?,?,?,?) ON CONFLICT(uid) DO UPDATE SET speed_expires=excluded.speed_expires,
+      coin_expires=excluded.coin_expires,vip1_expires=excluded.vip1_expires,updated_at=excluded.updated_at`,
+    uid,entitlements.speedExpires,entitlements.coinExpires,entitlements.vip1Expires,Date.now());
+  }
+  async vipSessionCall(action,payload) {
+    if (action==='transfer') return {ok:false,error:'VIP room has no zone handoff'};
+    if (action==='acquire') {
+      const result=this.sessions.acquire(payload);
+      if (!result.ok) return result;
+      const identity={uid:payload.uid,sessionId:result.sessionId,owner:this.sessionOwner()};
+      try {
+        const status=await this.vipCall('status',{uid:payload.uid});
+        if (!status.ok || !this.sessions.validate(identity)) throw Error('VIP session no longer owned');
+        const admitted=await this.vipCall('admit',{uid:payload.uid,sessionId:result.sessionId,
+          exp:payload.exp,previousSessionId:status.seatSessionId||null});
+        if (!admitted.ok || !this.sessions.validate(identity)) {
+          this.sessions.release(identity);
+          try { await this.vipCall('release',identity); } catch (_) {}
+          return {ok:false,error:admitted.error||'VIP session no longer owned'};
+        }
+        this.mirrorVipEntitlements(payload.uid,admitted.entitlements);
+        this.sql.exec('UPDATE voxel_sessions SET lease_expires=MIN(lease_expires,?) WHERE uid=? AND session_id=?',
+          admitted.leaseExpiresAt,payload.uid,result.sessionId);
+        if (result.previousOwner && result.previousSessionId)
+          this.revokeSession({uid:payload.uid,sessionId:result.previousSessionId});
+        return {...result,resumeExpiresAt:Math.min(result.resumeExpiresAt,admitted.leaseExpiresAt)};
+      } catch (error) {
+        this.sessions.release(identity);
+        try { await this.vipCall('release',identity); } catch (_) {}
+        throw error;
+      }
+    }
+    if (action==='release') {
+      const local=this.sessions.release(payload);
+      if (!local.ok) return local;
+      await this.vipCall('release',payload);
+      return local;
+    }
+    if (!this.sessions.validate(payload)) return action==='validate' ? false : {ok:false,error:'Session no longer owned'};
+    const seat=await this.vipCall(action==='checkpoint' ? 'renew' : 'validate',payload);
+    if (!seat.ok || !this.sessions.validate(payload)) return action==='validate' ? false : {ok:false,error:'VIP seat no longer owned'};
+    this.mirrorVipEntitlements(payload.uid,seat.entitlements);
+    if (action==='validate') return true;
+    const checkpoint=this.sessions.checkpoint(payload);
+    if (checkpoint.ok) this.sql.exec('UPDATE voxel_sessions SET lease_expires=MIN(lease_expires,?) WHERE uid=? AND session_id=?',
+      seat.leaseExpiresAt,payload.uid,payload.sessionId);
+    return checkpoint.ok ? {...checkpoint,resumeExpiresAt:Math.min(checkpoint.resumeExpiresAt,seat.leaseExpiresAt)} : checkpoint;
+  }
   async sessionCall(action,payload) {
     if (action==='revoke') return this.revokeOwner(payload);
     if (!['acquire','validate','checkpoint','release','transfer'].includes(action))
       throw Error('Invalid session action');
+    if (this.serverScope==='vip1') return this.vipSessionCall(action,payload);
     const result=action==='transfer' ? this.ctx.storage.transactionSync(()=>{
       const grant=this.sql.exec('SELECT * FROM voxel_handoff_grants WHERE token=?',payload?.handoffToken||'').toArray()[0];
       if (!grant || grant.status!=='pending' || Number(grant.expires_at)<=Date.now() ||
@@ -152,14 +230,15 @@ export class GameRoom {
       'SELECT speed_expires,coin_expires,vip1_expires FROM voxel_entitlements WHERE uid=?',uid
     ).toArray()[0] || {};
     return {speedExpires:Number(row.speed_expires)||0,coinExpires:Number(row.coin_expires)||0,
-      vip1Expires:Number(row.vip1_expires)||0};
+      vip1Expires:this.serverScope==='vip1' ? Number(row.vip1_expires)||0 : this.vip.entitlement(uid).expiresAt};
   }
   ownsSession(ws,p) {
     const current=this.player(ws);
     const owned=current?.uid===p?.uid && current?.sessionId===p?.sessionId &&
       !current?.revoked && !current?.sessionClosed &&
       (typeof ws.readyState!=='number' || ws.readyState===1) &&
-      this.sessions.validate({uid:p?.uid,sessionId:p?.sessionId,owner:this.sessionOwner()});
+      this.sessions.validate({uid:p?.uid,sessionId:p?.sessionId,owner:this.sessionOwner()}) &&
+      (this.serverScope!=='vip1' || this.activePlayer(p));
     if (!owned) ws.close(1008,'Session no longer owned');
     return owned;
   }
@@ -172,7 +251,7 @@ export class GameRoom {
   send(ws,value) { try { ws.send(JSON.stringify(value)); } catch (_) {} }
   broadcast(value,except) {
     const data=JSON.stringify(value);
-    for(const ws of this.sockets()) if(ws!==except && this.player(ws)?.uid && !this.player(ws)?.revoked && !this.player(ws)?.sessionClosed) {
+    for(const ws of this.sockets()) if(ws!==except && this.activePlayer(this.player(ws))) {
       try { ws.send(data); } catch (_) {}
     }
   }
@@ -183,7 +262,7 @@ export class GameRoom {
     for (const ws of this.sockets()) {
       if (ws===except) continue;
       const other=this.player(ws);
-      if (!other?.uid || other.revoked || other.sessionClosed) continue;
+      if (!this.activePlayer(other)) continue;
       const dx=(Number(other.x)||0)-(Number(sourcePlayer.x)||0);
       const dz=(Number(other.z)||0)-(Number(sourcePlayer.z)||0);
       if (dx*dx+dz*dz<=maxD2) out.push(ws);
@@ -199,8 +278,12 @@ export class GameRoom {
   publicPlayer(p) { return p?.uid && {id:p.id,x:p.x,y:p.y,z:p.z,r:p.r,name:normalizePlayerName(p.nickname,'Player')}; }
   coinSnapshot() { return this.economy.coinSnapshot(); }
   economyPlayers(now=Date.now()) {
-    const persisted=this.sql.exec('SELECT x,z FROM voxel_sessions WHERE lease_expires>? AND (exp=0 OR exp>?)',now,Math.floor(now/1000)).toArray();
-    const local=this.sockets().map(ws=>this.player(ws)).filter(p=>p?.uid && !p.revoked && !p.sessionClosed && p.exp>Math.floor(now/1000));
+    const persisted=this.serverScope==='vip1'
+      ? this.sql.exec(`SELECT s.x,s.z FROM voxel_sessions s JOIN voxel_entitlements e ON e.uid=s.uid
+          WHERE s.lease_expires>? AND s.exp>? AND e.vip1_expires>?`,now,Math.floor(now/1000),now).toArray()
+      : this.sql.exec('SELECT x,z FROM voxel_sessions WHERE lease_expires>? AND (exp=0 OR exp>?)',now,Math.floor(now/1000)).toArray();
+    const local=this.sockets().map(ws=>this.player(ws)).filter(p=>this.serverScope==='vip1'
+      ? this.activePlayer(p) : p?.uid && !p.revoked && !p.sessionClosed && p.exp>Math.floor(now/1000));
     return [...persisted,...local].filter(p=>Number.isFinite(Number(p.x)) && Number.isFinite(Number(p.z)))
       .map(p=>({x:Number(p.x),z:Number(p.z)}));
   }
@@ -249,6 +332,7 @@ export class GameRoom {
   }
 
   async sendZoneEvent(zoneIds,event) {
+    if (this.serverScope==='vip1') return;
     const ids=this.activeZoneIds(zoneIds);
     if (!ids.length) return;
     const body=JSON.stringify(event);
@@ -384,6 +468,72 @@ export class GameRoom {
 
     const url = new URL(request.url);
 
+    if (url.pathname==='/_internal/configure-scope' && request.method==='POST') {
+      let body;
+      try { body=await request.json(); } catch (_) { return Response.json({ok:false,error:'Invalid JSON'},{status:400}); }
+      if (!body || Object.keys(body).length!==1 || body.scope!=='vip1')
+        return Response.json({ok:false,error:'Invalid server scope'},{status:400});
+      // Only the Worker router can reach this private path. The named VIP room
+      // durably keeps its scope across restart and never publishes Free events.
+      await this.ctx.storage.put('serverScope','vip1');
+      this.serverScope='vip1';
+      return Response.json({ok:true,scope:this.serverScope});
+    }
+    if (url.pathname==='/_internal/session-revoke' && request.method==='POST') {
+      if (this.serverScope!=='vip1') return Response.json({ok:false,error:'Not a VIP room'},{status:403});
+      let body;
+      try { body=await request.json(); } catch (_) { return Response.json({ok:false,error:'Invalid JSON'},{status:400}); }
+      if (!validVipUid(body?.uid) || typeof body.sessionId!=='string' || !body.sessionId || body.sessionId.length>256)
+        return Response.json({ok:false,error:'Invalid session revocation'},{status:400});
+      // No callback into the coordinator: its seat is already retired. Release
+      // this exact local generation before closing to fence an in-flight frame.
+      this.sessions.release({uid:body.uid,sessionId:body.sessionId,owner:this.sessionOwner()});
+      return Response.json(this.revokeSession(body));
+    }
+    if (url.pathname.startsWith('/_internal/vip/')) {
+      if (this.serverScope!=='free1') return Response.json({ok:false,error:'Not the entitlement authority'},{status:403});
+      if (request.method!=='POST') return Response.json({ok:false,error:'Method not allowed'},{status:405});
+      const action=url.pathname.slice('/_internal/vip/'.length);
+      if (!['apply-event','admit','validate','renew','release','status'].includes(action))
+        return Response.json({ok:false,error:'Unknown VIP action'},{status:404});
+      let body;
+      try { body=await request.json(); } catch (_) { return Response.json({ok:false,error:'Invalid JSON'},{status:400}); }
+      if (!body || typeof body!=='object' || Array.isArray(body))
+        return Response.json({ok:false,error:'Invalid VIP request'},{status:400});
+      try {
+        let result;
+        if (action==='apply-event') {
+          const event=normalizePaymentEvent(body.event);
+          if (body.fingerprint!==await paymentEventFingerprint(event))
+            return Response.json({ok:false,error:'Provider event integrity conflict'},{status:400});
+          result=this.vip.applyEvent({event,fingerprint:body.fingerprint});
+          if (result.ok && result.revokedSessionId) {
+            const response=await this.env.ROOM.getByName('vip1-v2-demo').fetch(
+              new Request('https://internal/_internal/session-revoke',{
+                method:'POST',headers:{'content-type':'application/json'},
+                body:JSON.stringify({uid:result.uid,sessionId:result.revokedSessionId})
+              }));
+            const revoked=await response.json();
+            if (!response.ok || !revoked?.ok) throw Error('VIP revocation unavailable');
+          }
+        } else if (action==='status') {
+          if (body.uid!==undefined && !validVipUid(body.uid))
+            return Response.json({ok:false,error:'Invalid VIP identity'},{status:400});
+          const count=this.vip.count();
+          result={ok:true,count,max:VIP_PRODUCT.capacity};
+          if (body.uid) {
+            result.entitlement=this.vip.entitlement(body.uid);
+            result.entitlements=this.entitlementSnapshot(body.uid);
+            result.seatSessionId=this.sql.exec('SELECT session_id FROM voxel_vip_seats WHERE uid=?',body.uid).toArray()[0]?.session_id||null;
+          }
+        } else {
+          result=this.vip[action](body);
+          if (result.ok && body.uid) result.entitlements=this.entitlementSnapshot(body.uid);
+        }
+        return Response.json(result,{status:result.ok ? 200 : result.status||409});
+      } catch (_) { return Response.json({ok:false,error:'VIP authority unavailable'},{status:503}); }
+    }
+
     if (url.pathname==='/_internal/active-zones' && request.method==='GET') {
       const zone=url.searchParams.has('zone') ? normalizeZoneId(url.searchParams.get('zone')) : null;
       if (url.searchParams.has('zone') && !zone)
@@ -469,14 +619,9 @@ export class GameRoom {
 
       const speedExpires = Number(row.speed_expires) || 0;
       const coinExpires = Number(row.coin_expires) || 0;
-      const vip1Expires = Number(row.vip1_expires) || 0;
+      const vip1Expires = this.vip.entitlement(uid).expiresAt;
 
-      const vip1Count = Number(
-        this.sql.exec(
-          'SELECT COUNT(*) AS count FROM voxel_entitlements WHERE vip1_expires>?',
-          now
-        ).toArray()[0]?.count || 0
-      );
+      const vip1Count = this.vip.count(now);
 
       return Response.json({
         ok:true,
@@ -771,6 +916,13 @@ export class GameRoom {
         );
       }
     }
+    if (this.serverScope==='vip1') {
+      for (const ws of this.sockets()) {
+        const player=this.player(ws);
+        if (player?.uid && !this.activePlayer(player))
+          await this.closeSession(ws,1008,'VIP session expired');
+      }
+    }
     if (this.sockets().length>=ROOM_SOFT_CAP) return new Response('Scale test room full',{status:503});
     const pair=new WebSocketPair();
     const [client,server]=Object.values(pair);
@@ -831,7 +983,7 @@ export class GameRoom {
       ...(Object.hasOwn(m,'resumeToken') ? {resumeToken:m.resumeToken} : {})
     });
     if (!session?.ok) {
-      this.send(ws,{type:WS_MESSAGE.AUTH_ERROR,message:'Session resume failed'});
+      this.send(ws,{type:WS_MESSAGE.AUTH_ERROR,message:session?.error||'Session resume failed'});
       ws.close(1008,'Invalid session resume');
       return;
     }
@@ -857,7 +1009,7 @@ export class GameRoom {
     initializeMotion(p,now);
     ws.serializeAttachment(p);
     clearAuthDeadline(ws);
-    this.send(ws,{type:WS_MESSAGE.WELCOME,protocol:PROTOCOL_VERSION.LEGACY_ROOM,id,spawn:{x:p.x,y:p.y,z:p.z},
+    this.send(ws,{type:WS_MESSAGE.WELCOME,protocol:PROTOCOL_VERSION.LEGACY_ROOM,id,...(this.serverScope==='vip1' ? {server:'vip1'} : {}),spawn:{x:p.x,y:p.y,z:p.z},
       players:this.nearbySockets(p,ws).map(other=>this.publicPlayer(this.player(other))).filter(Boolean),
       coins:this.coinSnapshot(),luckyBox:this.boxSnapshot(now),score,leaderboard:this.top(),serverNow:now,count:this.count(),
       session:sessionMetadata(p),resumed:session.resumed,entitlements:p.entitlements,movement:publicMovement(p)});

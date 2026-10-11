@@ -56,10 +56,12 @@
                 alert('Security Test ต้องล็อกอิน Google ก่อนเข้าเล่น เพื่อให้ Server ยืนยันตัวตนและคะแนน');
                 return;
             }
-            if (state.selectedServerId === 'vip1') {
-                await selectVipServer('vip1');
-                return;
-            }
+            const selectedServerId = state.selectedServerId;
+            const user = auth.currentUser;
+            if (typeof secureAbortClientConnections === 'function') secureAbortClientConnections('Starting game');
+            const connectionEpoch = typeof secureConnectionEpoch === 'function' ? secureConnectionEpoch() : null;
+            const startCurrent = () => auth.currentUser === user && state.selectedServerId === selectedServerId &&
+                (connectionEpoch === null || secureConnectionIsCurrent(connectionEpoch));
 
             const inputName = document.getElementById('input-username').value.trim();
             if (inputName) state.playerName = inputName;
@@ -72,9 +74,18 @@
             }
 
             try {
-                initServerMapData('free1');
-                await secureLoadEntitlements().catch(() => null);
+                initServerMapData(config.SERVER_WORLD_SEED);
+                const result = await secureLoadEntitlements().catch(error => {
+                    if (selectedServerId === 'vip1') throw error;
+                    return null;
+                });
+                if (selectedServerId === 'vip1') {
+                    const expiry = Number(result?.entitlements?.vip1Expires ?? result?.entitlements?.vip1_expires ?? 0);
+                    if (!Number.isFinite(expiry) || expiry <= secureNow()) throw new Error('สิทธิ์ VIP หมดอายุหรือถูกยกเลิก');
+                }
+                if (!startCurrent()) throw new Error('Session เปลี่ยนระหว่างเข้าเกม');
                 await secureConnectGameSocket();
+                if (!startCurrent()) throw new Error('Session เปลี่ยนระหว่างเข้าเกม');
 
                 if (screen.orientation && screen.orientation.lock) {
                     screen.orientation.lock('landscape').catch(() => {});
@@ -92,12 +103,13 @@
                 syncMyPlayerData(true);
             } catch (err) {
                 console.error('Start secure game failed:', err);
+                if (!startCurrent()) return;
                 if (secureGameSocket) secureCloseSocket(secureGameSocket, 1000, 'Start failed');
                 secureGameSocket = null;
                 secureGameReady = false;
                 alert('เข้าเกมไม่สำเร็จ: ' + (err?.message || 'Game Server error'));
             } finally {
-                if (btn) {
+                if (btn && startCurrent()) {
                     btn.disabled = false;
                     btn.innerHTML = oldHtml || `<i class="fa-solid fa-gamepad"></i><span>เริ่มเล่นเกม</span>`;
                 }
