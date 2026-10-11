@@ -60,14 +60,24 @@
         }
 
         function secureNow() {
+            const sample = secureSetServerNow.sample;
+            if (sample) {
+                const tick = typeof performance !== 'undefined' && typeof performance.now === 'function'
+                    ? performance.now() : Date.now();
+                return sample.server + Math.max(0, tick - sample.tick);
+            }
             return Date.now() + secureServerTimeOffset;
         }
 
         function secureSetServerNow(serverNow) {
             const n = Number(serverNow);
-            if (Number.isFinite(n) && n > 0) {
-                secureServerTimeOffset = n - Date.now();
-            }
+            if (!Number.isFinite(n) || n <= 0 || n <= (secureSetServerNow.sample?.latest || 0)) return false;
+            const server = secureSetServerNow.sample ? Math.max(n, secureNow()) : n;
+            const tick = typeof performance !== 'undefined' && typeof performance.now === 'function'
+                ? performance.now() : Date.now();
+            secureSetServerNow.sample = { latest: n, server, tick };
+            secureServerTimeOffset = server - Date.now();
+            return true;
         }
 
         function secureNormalizeEntitlements(raw = {}) {

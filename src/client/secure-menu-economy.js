@@ -131,13 +131,23 @@
 
             const cycle = Number(raw.cycle ?? raw.spawnCycle ?? 0) || 0;
             if (cycle < luckyBox.spawnCycle) return;
+            const packetAt = Number(serverNow);
+            if (cycle === luckyBox.spawnCycle && Number.isFinite(packetAt) && packetAt > 0 &&
+                packetAt < Number(luckyBox._snapshotServerNow || 0)) return;
+            const nextSpawnTimestamp = Number(raw.nextSpawnAt ?? raw.nextSpawnTimestamp ?? 0) || 0;
+            // A collection fixes one deadline for this resource cycle. Check
+            // against the current trusted clock before applying packet time:
+            // an old snapshot cannot erase or extend an ongoing cooldown.
+            if (cycle === luckyBox.spawnCycle && luckyBox.nextSpawnTimestamp > secureNow() &&
+                nextSpawnTimestamp !== luckyBox.nextSpawnTimestamp) return;
+            if (Number.isFinite(packetAt) && packetAt > 0) luckyBox._snapshotServerNow = packetAt;
             if (serverNow) secureSetServerNow(serverNow);
             if (luckyBox.claimed && !raw.claimed && raw.active && cycle === luckyBox.spawnCycle) {
                 // The server released the previous claim. Contact now is a new
                 // logical attempt, rather than a replay of its expired receipt.
                 luckyBox._actionCycle = null;
             }
-            luckyBox.nextSpawnTimestamp = Number(raw.nextSpawnAt ?? raw.nextSpawnTimestamp ?? 0) || 0;
+            luckyBox.nextSpawnTimestamp = nextSpawnTimestamp;
             luckyBox.spawnCycle = cycle;
             luckyBox.claimExpiresAt = Number(raw.claimExpiresAt ?? 0) || 0;
             luckyBox.claimed = Boolean(raw.claimed);
@@ -164,21 +174,21 @@
 
             const now = secureNow();
 
-            // A claim has a short timeout. If the winner closes the page before spinning,
-            // the same global box becomes available again automatically.
-            if (luckyBox.claimed && luckyBox.claimExpiresAt > now) {
-                timerEl.innerText = 'มีผู้เล่นกำลังสุ่ม...';
-                luckyBox.active = false;
-                if (luckyBox.mesh) luckyBox.mesh.visible = false;
-                return;
-            }
-
             if (luckyBox.nextSpawnTimestamp > now) {
                 const totalSec = Math.max(0, Math.ceil((luckyBox.nextSpawnTimestamp - now) / 1000));
                 const hours = Math.floor(totalSec / 3600);
                 const minutes = Math.floor((totalSec % 3600) / 60);
                 const seconds = totalSec % 60;
                 timerEl.innerText = `${String(hours).padStart(2,'0')}:${String(minutes).padStart(2,'0')}:${String(seconds).padStart(2,'0')}`;
+                luckyBox.active = false;
+                if (luckyBox.mesh) luckyBox.mesh.visible = false;
+                return;
+            }
+
+            // Legacy snapshots may have a pending spin without a cooldown.
+            // A collection-time cooldown takes priority for every observer.
+            if (luckyBox.claimed && luckyBox.claimExpiresAt > now) {
+                timerEl.innerText = 'มีผู้เล่นกำลังสุ่ม...';
                 luckyBox.active = false;
                 if (luckyBox.mesh) luckyBox.mesh.visible = false;
                 return;

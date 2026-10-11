@@ -17,6 +17,7 @@ const checks = [
   ['browser', 'python', ['tests/rebuild/p1-browser.py']],
   ['secret-config', process.execPath, ['scripts/rebuild/check-secrets.cjs']]
 ];
+if (phase === 'P8') checks.push(['load-evidence', process.execPath, ['scripts/rebuild/load-evidence.cjs']]);
 const outputs = {};
 for (const [name, command, args] of checks) {
   const result = spawnSync(command, args, { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });

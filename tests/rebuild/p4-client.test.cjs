@@ -224,14 +224,25 @@ test('P4 client Lucky Box ignores an older cycle without moving its authoritativ
   assert.equal(f.context.luckyBox.active, false);
 });
 
-test('P4 client authoritative claim expiry permits a fresh claim within the same box cycle', async () => {
+test('P4/P8 client claim expiry retains collection cooldown and only a new authoritative cycle permits another claim', async () => {
   const f = await fixture(); f.snapshot(0);
   f.context.secureRequestLuckyBoxCollect(); const oldId = f.sent[0].requestId;
-  f.snapshot(0, { active: false, claimed: true, claimExpiresAt: f.serverNow() + 90_000 });
-  f.advance(90_000); f.snapshot(0);
+  const collectedAt = f.serverNow(), nextSpawnAt = collectedAt + 4 * 60 * 60_000;
+  f.snapshot(1, { active: false, claimed: true, claimExpiresAt: collectedAt + 90_000, nextSpawnAt });
+  assert.equal(f.element('hud-box-timer').innerText, '04:00:00');
+  f.advance(90_000);
+  f.snapshot(1, { active: false, nextSpawnAt });
+  f.context.secureRequestLuckyBoxCollect();
+  assert.equal(f.sent.length, 1, 'an expired spin claim cannot bypass the global cooldown');
+  assert.equal(f.element('hud-box-timer').innerText, '03:58:30');
+  f.advance(4 * 60 * 60_000 - 90_000);
+  f.context.secureUpdateLuckyBoxTimer();
+  f.context.secureRequestLuckyBoxCollect();
+  assert.equal(f.sent.length, 1, 'the device timer cannot create an authoritative spawn');
+  f.snapshot(1, { nextSpawnAt });
   f.context.secureRequestLuckyBoxCollect();
   assert.notEqual(f.sent[1].requestId, oldId);
-  assert.equal(f.context.luckyBox.spawnCycle, 0);
+  assert.equal(f.context.luckyBox.spawnCycle, 1);
 });
 
 test('P4 client identified claim denial clears only its completed action, while unknown timeout keeps its ID', async () => {

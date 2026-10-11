@@ -40,7 +40,8 @@ export class ZoneRoom {
     return result;
   }
   authenticationExpired(ws,p) {
-    return ws.readyState!==1 || !p || p.revoked ||
+    return ws.readyState!==1 || !p || p.revoked || p.sessionClosed ||
+      (p.uid && Number(p.exp)<=Math.floor(Date.now()/1000)) ||
       (!p.uid && Date.now()>=Number(p.acceptedAt||0)+SECURITY.authDeadlineMs);
   }
   send(ws,value) { try { ws.send(JSON.stringify(value)); } catch (_) {} }
@@ -165,6 +166,17 @@ export class ZoneRoom {
     const zoneId=this.currentZoneId();
     if (!zoneId) return new Response('Invalid zone',{status:400});
 
+    // Expired transports already receive no projections or world fan-out.
+    // Reclaim them when the raw transport bound would obstruct a fresh join;
+    // otherwise their next packet retains the established explicit rejection.
+    if (this.sockets().length>=ZONE_SOFT_CAP) {
+      for (const ws of this.sockets()) {
+        const p=this.player(ws);
+        if (p?.uid && (Number(p.exp)<=Math.floor(Date.now()/1000) ||
+            (p.handoffResume ? Date.now()>=Number(p.handoffResume.deadline||0) : !this.activePlayer(p))))
+          await this.endSession(ws,1008,'Session expired');
+      }
+    }
     if (this.sockets().length>=ZONE_SOFT_CAP)
       return new Response('Zone full',{status:503});
 
@@ -253,7 +265,7 @@ export class ZoneRoom {
     }
 
     p=this.player(ws);
-    if (this.authenticationExpired(ws,p)) {
+    if (this.authenticationExpired(ws,p) || verified.exp<=Math.floor(Date.now()/1000)) {
       ws.close(1008,'Authentication deadline exceeded');
       return;
     }
@@ -283,7 +295,7 @@ export class ZoneRoom {
     }
 
     p=this.player(ws);
-    if (this.authenticationExpired(ws,p)) {
+    if (this.authenticationExpired(ws,p) || verified.exp<=Math.floor(Date.now()/1000)) {
       ws.close(1008,'Authentication deadline exceeded');
       return;
     }
@@ -298,7 +310,8 @@ export class ZoneRoom {
         }
         const refreshed=await this.sessionCall('checkpoint',{...identity,exp:verified.exp});
         p=this.player(ws);
-        if (!refreshed?.ok || this.authenticationExpired(ws,p)) {
+        if (!refreshed?.ok || this.authenticationExpired(ws,p) || p?.sessionId!==identity.sessionId ||
+            verified.exp<=Math.floor(Date.now()/1000)) {
           ws.close(1008,'Session no longer owned');
           return;
         }
@@ -348,7 +361,7 @@ export class ZoneRoom {
     }
 
     p=this.player(ws);
-    if (this.authenticationExpired(ws,p)) {
+    if (this.authenticationExpired(ws,p) || verified.exp<=Math.floor(Date.now()/1000)) {
       ws.close(1008,'Authentication deadline exceeded');
       return;
     }
@@ -401,7 +414,7 @@ export class ZoneRoom {
           return;
         }
       }
-      if (this.authenticationExpired(ws,p)) {
+      if (this.authenticationExpired(ws,p) || verified.exp<=Math.floor(Date.now()/1000)) {
         try { await this.sessionCall('release',{uid:verified.uid,sessionId:session.sessionId,owner:this.sessionOwner()}); }
         catch (_) { /* A closed socket cannot act on a retained server lease. */ }
         ws.close(1008,'Authentication deadline exceeded');
@@ -524,6 +537,7 @@ export class ZoneRoom {
       });
       p=this.player(ws);
       if (!transferred?.ok || ws.readyState!==1 || !p?.handoffResume ||
+          Number(p?.exp)<=Math.floor(Date.now()/1000) ||
           Date.now()>=Number(p.handoffResume.deadline||0)) {
         if (transferred?.ok) await this.sessionCall('release',{
           uid:p.uid,sessionId:p.sessionId,owner:this.sessionOwner()
@@ -537,6 +551,7 @@ export class ZoneRoom {
       });
       p=this.player(ws);
       if (!checkpoint?.ok || ws.readyState!==1 || p?.revoked || !p?.handoffResume ||
+          Number(p?.exp)<=Math.floor(Date.now()/1000) ||
           Date.now()>=Number(p.handoffResume.deadline||0)) {
         await this.sessionCall('release',{uid:p.uid,sessionId:p.sessionId,owner:this.sessionOwner()});
         ws.close(1008,'Handoff ownership rejected');
@@ -553,6 +568,7 @@ export class ZoneRoom {
       });
       p=this.player(ws);
       if (!stillOwned?.ok || ws.readyState!==1 || p?.revoked || !p?.handoffResume ||
+          Number(p?.exp)<=Math.floor(Date.now()/1000) ||
           Date.now()>=Number(p.handoffResume.deadline||0)) {
         await this.sessionCall('release',{uid:p.uid,sessionId:p.sessionId,owner:this.sessionOwner()});
         ws.close(1008,'Handoff ownership rejected');

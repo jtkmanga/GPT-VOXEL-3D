@@ -5,7 +5,7 @@ import { WS_MESSAGE, PROTOCOL_VERSION } from '../shared/protocol.mjs';
 import { normalizePlayerName, normalizeZoneId, adjacentZoneIds, zonesAreAdjacent, zoneFromPosition, zoneIdsNearPosition } from './spatial.mjs';
 import { COINS, coinPosition, luckyBoxPosition, secureLuckyReward } from './world.mjs';
 import { verifyFirebaseIdToken } from './firebase-auth.mjs';
-import { SessionStore } from './sessions.mjs';
+import { SessionStore, SESSION_TTL_MS } from './sessions.mjs';
 import { SECURITY, clearAuthDeadline, scheduleAuthDeadline } from './security.mjs';
 import { enqueueFrame, sessionMetadata, checkpointPlayer } from './room-security.mjs';
 import { initializeMotion, applyMovementIntent, publicMovement } from './movement.mjs';
@@ -20,6 +20,11 @@ export class GameRoom {
     this.projectId=env.FIREBASE_PROJECT_ID;
     this.sql=ctx.storage.sql;
     this.sessions=new SessionStore(ctx);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS voxel_session_revocations (
+      uid TEXT NOT NULL, session_id TEXT NOT NULL, owner TEXT NOT NULL,
+      expires_at INTEGER NOT NULL, next_attempt_at INTEGER NOT NULL,
+      PRIMARY KEY(uid,session_id,owner)
+    )`);
     this.sql.exec('CREATE INDEX IF NOT EXISTS voxel_sessions_routing_idx ON voxel_sessions(owner,lease_expires,exp)');
     this.sql.exec('CREATE TABLE IF NOT EXISTS voxel_scores (uid TEXT PRIMARY KEY, nickname TEXT NOT NULL, score INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL)');
     this.sql.exec('CREATE TABLE IF NOT EXISTS voxel_coins (id INTEGER PRIMARY KEY, respawn_at INTEGER NOT NULL)');
@@ -104,11 +109,9 @@ export class GameRoom {
   player(ws) { return ws.deserializeAttachment(); }
   sockets() { return this.ctx.getWebSockets(); }
   activePlayer(p) {
-    if (!p?.uid || p.revoked || p.sessionClosed) return false;
-    if (this.serverScope!=='vip1') return true;
-    return Number(p.exp)>Math.floor(Date.now()/1000) &&
-      this.sessions.validate({uid:p.uid,sessionId:p.sessionId,owner:this.sessionOwner()}) &&
-      Number(this.entitlementSnapshot(p.uid).vip1Expires)>Date.now();
+    if (!p?.uid || p.revoked || p.sessionClosed || Number(p.exp)<=Math.floor(Date.now()/1000) ||
+        !this.sessions.validate({uid:p.uid,sessionId:p.sessionId,owner:this.sessionOwner()})) return false;
+    return this.serverScope!=='vip1' || Number(this.entitlementSnapshot(p.uid).vip1Expires)>Date.now();
   }
   count() { return this.sockets().filter(ws=>this.activePlayer(this.player(ws))).length; }
   sessionOwner() { return 'room'; }
@@ -176,7 +179,7 @@ export class GameRoom {
     return checkpoint.ok ? {...checkpoint,resumeExpiresAt:Math.min(checkpoint.resumeExpiresAt,seat.leaseExpiresAt)} : checkpoint;
   }
   async sessionCall(action,payload) {
-    if (action==='revoke') return this.revokeOwner(payload);
+    if (action==='revoke') return this.retireOwner(payload);
     if (!['acquire','validate','checkpoint','release','transfer'].includes(action))
       throw Error('Invalid session action');
     if (this.serverScope==='vip1') return this.vipSessionCall(action,payload);
@@ -189,11 +192,36 @@ export class GameRoom {
       const transfer=this.sessions.transfer(payload);
       if (transfer.ok) this.sql.exec("UPDATE voxel_handoff_grants SET status='complete' WHERE token=? AND status='pending'",grant.token);
       return transfer;
+    }) : action==='acquire' ? this.ctx.storage.transactionSync(()=>{
+      const acquired=this.sessions.acquire(payload);
+      if (acquired.ok && acquired.previousOwner && acquired.previousSessionId)
+        this.sql.exec(`INSERT OR IGNORE INTO voxel_session_revocations
+          (uid,session_id,owner,expires_at,next_attempt_at) VALUES (?,?,?,?,?)`,
+        payload.uid,acquired.previousSessionId,acquired.previousOwner,
+        Date.now()+SESSION_TTL_MS,Date.now()+1000);
+      return acquired;
     }) : this.sessions[action](payload);
     if (action==='acquire' && result.ok && result.previousOwner && result.previousSessionId) {
-      const revoked=await this.revokeOwner({uid:payload.uid,owner:result.previousOwner,sessionId:result.previousSessionId});
-      if (!revoked?.ok) throw Error('Session revocation unavailable');
+      // Keep the exact retired generation durable before the RPC. Failed
+      // delivery/restart cannot lose eviction or target a successor generation.
+      await this.retireOwner({uid:payload.uid,owner:result.previousOwner,sessionId:result.previousSessionId});
     }
+    return result;
+  }
+  async retireOwner(payload) {
+    const {uid,sessionId,owner}=payload||{};
+    const zone=typeof owner==='string' && owner.startsWith('zone:') && normalizeZoneId(owner.slice(5));
+    if (typeof uid!=='string' || !uid || uid.length>128 || typeof sessionId!=='string' ||
+        !sessionId || sessionId.length>256 || (owner!=='room' && (!zone || owner!==`zone:${zone}`)))
+      return {ok:false,error:'Invalid session revocation'};
+    this.sql.exec(`INSERT OR IGNORE INTO voxel_session_revocations
+      (uid,session_id,owner,expires_at,next_attempt_at) VALUES (?,?,?,?,?)`,
+    uid,sessionId,owner,Date.now()+SESSION_TTL_MS,Date.now()+1000);
+    await this.scheduleEconomyAlarm();
+    const result=await this.revokeOwner(payload);
+    if (!result?.ok) throw Error('Session revocation unavailable');
+    this.sql.exec('DELETE FROM voxel_session_revocations WHERE uid=? AND session_id=? AND owner=?',uid,sessionId,owner);
+    await this.scheduleEconomyAlarm();
     return result;
   }
   revokeSession({uid,sessionId}) {
@@ -291,6 +319,8 @@ export class GameRoom {
     const row=this.sql.exec('SELECT next_spawn_at,claimed_uid,claim_expires_at FROM voxel_lucky_box WHERE id=1').toArray()[0];
     const future=[Number(row?.next_spawn_at)||0,
       row?.claimed_uid ? Number(row.claim_expires_at)||0 : 0].filter(value=>value>Date.now());
+    const pending=this.sql.exec('SELECT next_attempt_at FROM voxel_session_revocations').toArray();
+    for (const retry of pending) future.push(Math.max(Date.now()+1000,Number(retry.next_attempt_at)||0));
     const due=future.length ? Math.min(...future) : 0;
     const current=await this.ctx.storage.getAlarm();
     if (due>Date.now()) {
@@ -300,9 +330,24 @@ export class GameRoom {
   async alarm() {
     await this.ready;
     const now=Date.now();
-    const box=this.boxSnapshot(now);
-    this.broadcast({type:WS_MESSAGE.BOX_STATE,box,serverNow:now});
-    await this.sendAllZones({type:WS_MESSAGE.BOX_STATE,box,serverNow:now});
+    for (const retired of this.sql.exec('SELECT * FROM voxel_session_revocations WHERE next_attempt_at<=? LIMIT 64',now).toArray()) {
+      let delivered=Number(retired.expires_at)<=now;
+      if (!delivered) {
+        try { delivered=(await this.revokeOwner({uid:retired.uid,sessionId:retired.session_id,owner:retired.owner}))?.ok===true; }
+        catch (_) { /* The current durable generation still rejects mutations. */ }
+      }
+      if (delivered) this.sql.exec('DELETE FROM voxel_session_revocations WHERE uid=? AND session_id=? AND owner=?',
+        retired.uid,retired.session_id,retired.owner);
+      else this.sql.exec('UPDATE voxel_session_revocations SET next_attempt_at=? WHERE uid=? AND session_id=? AND owner=?',
+        now+1000,retired.uid,retired.session_id,retired.owner);
+    }
+    const before=this.sql.exec('SELECT * FROM voxel_lucky_box WHERE id=1').toArray()[0];
+    if ((before?.claimed_uid && Number(before.claim_expires_at)<=now) ||
+        (Number(before?.next_spawn_at)>0 && Number(before.next_spawn_at)<=now && Number(before.spawn_cycle)!==Number(before.cycle))) {
+      const box=this.boxSnapshot(now);
+      this.broadcast({type:WS_MESSAGE.BOX_STATE,box,serverNow:now});
+      await this.sendAllZones({type:WS_MESSAGE.BOX_STATE,box,serverNow:now});
+    }
     await this.scheduleEconomyAlarm();
   }
   economyPosition(body,uid) {
@@ -857,7 +902,15 @@ export class GameRoom {
 
       if (!previous || String(previous.nickname || '') !== nickname) {
         const leaderboardNow=this.top();
-        this.ctx.waitUntil(this.sendAllZones({type:WS_MESSAGE.LEADERBOARD,top:leaderboardNow}));
+        const fingerprint=JSON.stringify(leaderboardNow);
+        // A newly registered player outside the top ten does not change the
+        // shared board. Avoid quadratic identical fan-out during admission.
+        // Every welcome still reads the current board; restart republishes on
+        // its first bootstrap because this delivery cache is not authority.
+        if (fingerprint!==this.lastZoneLeaderboard) {
+          this.lastZoneLeaderboard=fingerprint;
+          this.ctx.waitUntil(this.sendAllZones({type:WS_MESSAGE.LEADERBOARD,top:leaderboardNow}));
+        }
       }
 
       const ent = this.sql.exec(
@@ -916,12 +969,10 @@ export class GameRoom {
         );
       }
     }
-    if (this.serverScope==='vip1') {
-      for (const ws of this.sockets()) {
-        const player=this.player(ws);
-        if (player?.uid && !this.activePlayer(player))
-          await this.closeSession(ws,1008,'VIP session expired');
-      }
+    for (const ws of this.sockets()) {
+      const player=this.player(ws);
+      if (player?.uid && !this.activePlayer(player))
+        await this.closeSession(ws,1008,'Session expired');
     }
     if (this.sockets().length>=ROOM_SOFT_CAP) return new Response('Scale test room full',{status:503});
     const pair=new WebSocketPair();
@@ -963,10 +1014,18 @@ export class GameRoom {
     if (p.uid) {
       const identity={uid:p.uid,sessionId:p.sessionId,owner:this.sessionOwner()};
       if (!await this.sessionCall('validate',identity)) { ws.close(1008,'Session no longer owned'); return; }
+      p=this.player(ws);
+      if (ws.readyState!==1 || p?.revoked || p?.sessionClosed || p?.sessionId!==identity.sessionId ||
+          verified.exp<=Math.floor(Date.now()/1000)) return;
       const checkpoint=await this.sessionCall('checkpoint',{
         ...identity,exp:verified.exp
       });
       if (!checkpoint.ok) { ws.close(1008,'Session no longer owned'); return; }
+      p=this.player(ws);
+      if (ws.readyState!==1 || p?.revoked || p?.sessionClosed || p?.sessionId!==identity.sessionId ||
+          verified.exp<=Math.floor(Date.now()/1000) || !this.sessions.validate(identity)) {
+        ws.close(1008,'Session no longer owned'); return;
+      }
       p.exp=verified.exp;
       p.resumeExpiresAt=checkpoint.resumeExpiresAt;
       p.entitlements=this.entitlementSnapshot(p.uid);

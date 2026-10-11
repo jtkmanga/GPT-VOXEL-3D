@@ -384,10 +384,10 @@ test('P4 Lucky Box claim survives restart and belongs only to its original authe
   assert.equal(score(h, uid), last(resumed, 'box_reward').reward);
 });
 
-test('P4 Lucky Box claim expiry is server-clock controlled and a stale owner cannot steal a successor claim', async t => {
+test('P4/P8 Lucky Box claim expiry preserves collection cooldown and a stale owner cannot steal a successor claim', async t => {
   const h = harness(t);
   const first = await authenticate(h, 'synthetic-p4-expired-claim-owner');
-  const second = await authenticate(h, 'synthetic-p4-successor-claim-owner', '4,4');
+  let second = await authenticate(h, 'synthetic-p4-successor-claim-owner', '4,4');
   const box = h.room().boxSnapshot();
   h.place(first, contact(box));
   h.place(second, contact(box));
@@ -397,12 +397,21 @@ test('P4 Lucky Box claim expiry is server-clock controlled and a stale owner can
   await h.setTime(deadline - 1);
   assert.equal(h.room().boxSnapshot().claimed, true);
   await h.advance(1);
-  assert.equal(h.room().boxSnapshot().active, true);
+  const cooling = h.room().boxSnapshot();
+  assert.equal(cooling.active, false);
+  assert.equal(cooling.claimed, false);
+  assert.equal(cooling.nextSpawnAt, deadline - 90_000 + BOX_RESPAWN);
   await second.send({ type: 'collect_box', requestId: 'synthetic-successor-claim' });
-  assert.ok(last(second, 'box_spin_ready'));
+  assert.equal(second.messages('box_spin_ready').length, 0);
+  assert.equal(score(h, 'synthetic-p4-successor-claim-owner'), 0);
   await first.send({ type: 'spin_box', requestId: 'synthetic-expired-owner-spin' });
   assert.equal(first.messages('box_reward').length, 0);
   assert.equal(score(h, 'synthetic-p4-expired-claim-owner'), 0);
+  await h.setTime(cooling.nextSpawnAt);
+  second = await authenticate(h, 'synthetic-p4-successor-claim-owner', '4,4');
+  h.place(second, contact(h.room().boxSnapshot()));
+  await second.send({ type: 'collect_box', requestId: 'synthetic-successor-claim' });
+  assert.ok(last(second, 'box_spin_ready'));
   await second.send({ type: 'spin_box', requestId: 'synthetic-successor-spin' });
   assert.equal(score(h, 'synthetic-p4-successor-claim-owner'), last(second, 'box_reward').reward);
 });
@@ -489,8 +498,8 @@ for (const failure of ['score', 'receipt']) {
     await player.send({ type: 'spin_box', requestId: `synthetic-box-failed-${failure}` });
     const reward = last(player, 'box_reward').reward;
     assert.equal(score(h, uid), reward);
-    assert.equal(boxRow(h).cycle, before.cycle + 1);
-    assert.equal(boxRow(h).next_spawn_at, h.now() + BOX_RESPAWN);
+    assert.equal(boxRow(h).cycle, before.cycle, 'collection already advanced the cycle; a retry cannot advance it again');
+    assert.equal(boxRow(h).next_spawn_at, before.next_spawn_at, 'spin retry must preserve the collection deadline');
   });
 }
 
@@ -601,7 +610,7 @@ test('P4 a claim retry across reconnect does not extend its original server dead
   assert.equal(score(h, uid), 0);
 });
 
-test('P4 a disconnected claimant is released by the actual server alarm for every observer', async t => {
+test('P4/P8 a disconnected claimant releases spin ownership but preserves cooldown for every observer', async t => {
   const h = harness(t);
   const collector = await authenticate(h, 'synthetic-p4-disconnected-claim');
   const roomObserver = await authenticate(h, 'synthetic-p4-claim-alarm-room');
@@ -618,13 +627,14 @@ test('P4 a disconnected claimant is released by the actual server alarm for ever
   assert.equal(boxRow(h).claimed_uid, 'synthetic-p4-disconnected-claim');
   await h.advance(1);
   assert.equal(boxRow(h).claimed_uid, null);
-  assert.equal(boxRow(h).cycle, 0);
-  assert.equal(boxRow(h).next_spawn_at, 0);
+  assert.equal(boxRow(h).cycle, 1);
+  assert.equal(boxRow(h).next_spawn_at, expires - 90_000 + BOX_RESPAWN);
   assert.equal(score(h, 'synthetic-p4-disconnected-claim'), 0);
   for (const observer of [roomObserver, zoneObserver]) {
     const released = last(observer, 'box_state');
     assert.ok(released, 'a server alarm publishes claim recovery without another player action');
-    assert.equal(released.box.active, true);
+    assert.equal(released.box.active, false);
+    assert.equal(released.box.nextSpawnAt, boxRow(h).next_spawn_at);
     assert.equal(released.box.claimed, false);
   }
 });

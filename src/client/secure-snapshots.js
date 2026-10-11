@@ -131,7 +131,7 @@
 
         function secureApplyCoinSnapshot(serverCoins = [], serverNow = null) {
             if (serverNow) secureSetServerNow(serverNow);
-            const now = serverNow ? Number(serverNow) : secureNow();
+            const now = secureNow();
             const entries = new Map();
             if (Array.isArray(serverCoins)) serverCoins.forEach(data => {
                 const id = Number(data?.id);

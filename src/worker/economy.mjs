@@ -11,9 +11,25 @@ export class EconomyStore {
     this.sql = ctx.storage.sql;
     this.players = players;
     const columns = new Set(this.sql.exec('PRAGMA table_info(voxel_lucky_box)').toArray().map(row => row.name));
-    for (const [name, definition] of [['spawn_x', 'REAL'], ['spawn_z', 'REAL'], ['spawn_cycle', 'INTEGER NOT NULL DEFAULT -1']]) {
+    for (const [name, definition] of [['spawn_x', 'REAL'], ['spawn_z', 'REAL'], ['spawn_cycle', 'INTEGER NOT NULL DEFAULT -1'], ['claim_cycle', 'INTEGER NOT NULL DEFAULT -1']]) {
       if (!columns.has(name)) this.sql.exec(`ALTER TABLE voxel_lucky_box ADD COLUMN ${name} ${definition}`);
     }
+    // Pending P5 claims start the requested collection-time cooldown using
+    // their already-durable claim deadline; restarting never renews it.
+    ctx.storage.transactionSync(() => {
+      const row = this.sql.exec('SELECT * FROM voxel_lucky_box WHERE id=1').toArray()[0];
+      if (row?.claimed_uid && Number(row.claim_cycle) === -1) {
+        const collectedAt = Number(row.claim_expires_at) - LUCKY_BOX_CLAIM_MS;
+        if (!Number.isSafeInteger(collectedAt) || collectedAt < 0 || collectedAt > Date.now() ||
+            !Number.isSafeInteger(collectedAt + LUCKY_BOX_RESPAWN_MS) ||
+            Number(row.next_spawn_at) !== 0 || !Number.isSafeInteger(Number(row.cycle) + 1) || Number(row.cycle) < 0)
+          throw Error('Invalid legacy Lucky Box claim');
+        this.sql.exec('UPDATE voxel_lucky_box SET next_spawn_at=?,claim_cycle=?,cycle=? WHERE id=1',
+          collectedAt + LUCKY_BOX_RESPAWN_MS, Number(row.cycle), Number(row.cycle) + 1);
+      }
+      if (row?.claimed_uid && Number(row.claim_expires_at) <= Date.now())
+        this.sql.exec('UPDATE voxel_lucky_box SET claimed_uid=NULL,claim_expires_at=0,claim_cycle=-1 WHERE id=1');
+    });
     this.sql.exec(`CREATE TABLE IF NOT EXISTS voxel_economy_actions (
       action_key TEXT PRIMARY KEY,
       uid TEXT NOT NULL,
@@ -58,8 +74,8 @@ export class EconomyStore {
     if (kind === 'claim' || kind === 'spin') {
       result.box = this.boxSnapshot(now);
       if (kind === 'claim') {
-        const box = this.sql.exec('SELECT cycle,claimed_uid,claim_expires_at FROM voxel_lucky_box WHERE id=1').toArray()[0];
-        result.claimed = Boolean(result.claimed && Number(box.cycle) === Number(row.cycle) &&
+        const box = this.sql.exec('SELECT claim_cycle,claimed_uid,claim_expires_at FROM voxel_lucky_box WHERE id=1').toArray()[0];
+        result.claimed = Boolean(result.claimed && Number(box.claim_cycle) === Number(row.cycle) &&
           box.claimed_uid === uid && Number(box.claim_expires_at) > now);
       }
     }
@@ -146,9 +162,9 @@ export class EconomyStore {
     return this.ctx.storage.transactionSync(() => {
       let row = this.sql.exec('SELECT * FROM voxel_lucky_box WHERE id=1').toArray()[0];
       if (!row) throw Error('Lucky Box state missing');
-      if (row.claimed_uid && Number(row.claim_expires_at) <= now && Number(row.next_spawn_at) <= now) {
-        this.sql.exec('UPDATE voxel_lucky_box SET claimed_uid=NULL,claim_expires_at=0 WHERE id=1');
-        row = { ...row, claimed_uid:null, claim_expires_at:0 };
+      if (row.claimed_uid && Number(row.claim_expires_at) <= now) {
+        this.sql.exec('UPDATE voxel_lucky_box SET claimed_uid=NULL,claim_expires_at=0,claim_cycle=-1 WHERE id=1');
+        row = { ...row, claimed_uid:null, claim_expires_at:0, claim_cycle:-1 };
       }
       const cycle = Number(row.cycle) || 0;
       let position = luckyBoxPosition(cycle);
@@ -176,7 +192,8 @@ export class EconomyStore {
       if (Math.hypot(position.x - snapshot.x, position.z - snapshot.z) > 2.8 || position.y > 3.2)
         return this.remember(uid, 'claim', 1, snapshot.cycle, requestId,
           { ok:false, error:'Too far from Lucky Box', status:403 }, false, now);
-      this.sql.exec('UPDATE voxel_lucky_box SET claimed_uid=?,claim_expires_at=? WHERE id=1', uid, now + LUCKY_BOX_CLAIM_MS);
+      this.sql.exec('UPDATE voxel_lucky_box SET claimed_uid=?,claim_expires_at=?,claim_cycle=?,next_spawn_at=?,cycle=? WHERE id=1',
+        uid, now + LUCKY_BOX_CLAIM_MS, snapshot.cycle, now + LUCKY_BOX_RESPAWN_MS, snapshot.cycle + 1);
       result.claimed = true;
       result.box = this.boxSnapshot(now);
       return this.remember(uid, 'claim', 1, snapshot.cycle, requestId, result, false, now);
@@ -190,16 +207,17 @@ export class EconomyStore {
       this.score(uid);
       const row = this.sql.exec('SELECT * FROM voxel_lucky_box WHERE id=1').toArray()[0];
       if (!row) throw Error('Lucky Box state missing');
-      const cycle = Number(row.cycle) || 0;
-      if (Number(row.next_spawn_at) > now) return this.remember(uid, 'spin', 1, cycle, requestId,
-        { ok:false, error:'Lucky Box is cooling down', status:409 }, false, now);
+      const cycle = Number(row.claim_cycle);
+      if (!Number.isSafeInteger(cycle) || cycle < 0)
+        return { ok:false, error:'Lucky Box claim expired', status:409 };
       if (row.claimed_uid !== uid || Number(row.claim_expires_at) <= now)
         return this.remember(uid, 'spin', 1, cycle, requestId,
           { ok:false, error:'Lucky Box claim expired', status:409 }, false, now);
       const reward = secureLuckyReward();
       this.sql.exec('UPDATE voxel_scores SET score=score+?,updated_at=? WHERE uid=?', reward, now, uid);
-      this.sql.exec('UPDATE voxel_lucky_box SET next_spawn_at=?,cycle=?,claimed_uid=NULL,claim_expires_at=0 WHERE id=1',
-        now + LUCKY_BOX_RESPAWN_MS, cycle + 1);
+      // Collection already advanced the global spawn cycle and fixed cooldown.
+      // Reward delivery cannot postpone respawn or create a new resource cycle.
+      this.sql.exec('UPDATE voxel_lucky_box SET claimed_uid=NULL,claim_expires_at=0,claim_cycle=-1 WHERE id=1');
       const result = { ok:true, reward, score:this.score(uid), box:this.boxSnapshot(now), serverNow:now };
       return this.remember(uid, 'spin', 1, cycle, requestId, result, true, now);
     });

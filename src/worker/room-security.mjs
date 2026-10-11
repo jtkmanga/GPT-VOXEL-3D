@@ -66,6 +66,12 @@ async function handleFrame(room, ws, raw, protocol, dispatch) {
   // A replacement can revoke this transport while the coordinator RPC awaits.
   player = room.player(ws);
   if (ws.readyState !== 1 || !player || player.revoked || player.sessionClosed) return;
+  // A successful authority response may have been delayed past token/lease
+  // expiry. It cannot authorize a mutation at the later dispatch time.
+  if (Number(player.exp) <= Math.floor(Date.now() / 1000) ||
+      (!provisional && Number(player.resumeExpiresAt) <= Date.now())) {
+    ws.close(1008, 'Session expired'); return;
+  }
   // Old clients may omit sequence IDs; authored sequences cannot be replayed.
   if (packet.seq !== undefined) {
     if (Number.isSafeInteger(player.lastSequence) && packet.seq <= player.lastSequence) return;
