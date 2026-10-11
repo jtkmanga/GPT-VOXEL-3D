@@ -3550,7 +3550,11 @@ return { MOVEMENT, validMovementInput, integrateMovement };
                 }
                 case "coin_collected":
                 case "coin_state":
-                    secureUpdateCoinState(message);
+                    if (message.type === "coin_state" && Array.isArray(message.coins)) {
+                        secureApplyCoinSnapshot(message.coins, message.serverNow);
+                    } else {
+                        secureUpdateCoinState(message);
+                    }
                     break;
                 case "box_state":
                     if (message.requestId && message.claimed === false &&

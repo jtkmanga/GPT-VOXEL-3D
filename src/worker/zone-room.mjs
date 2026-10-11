@@ -7,6 +7,7 @@ import { verifyFirebaseIdToken } from './firebase-auth.mjs';
 import { SECURITY, scheduleAuthDeadline, clearAuthDeadline } from './security.mjs';
 import { enqueueFrame, sessionMetadata } from './room-security.mjs';
 import { initializeMotion, applyMovementIntent, publicMovement } from './movement.mjs';
+import { ZoneVisibility } from './zone-visibility.mjs';
 
 // Phase 2A movement-zone Durable Object.
 // World state, scores, payments, coins and Lucky Box remain authoritative in GameRoom.
@@ -16,12 +17,14 @@ export class ZoneRoom {
     this.env=env;
     this.projectId=env.FIREBASE_PROJECT_ID;
     this.lastBorderFlushAt=0;
+    this.visibility=new ZoneVisibility(this);
     for (const ws of this.sockets()) scheduleAuthDeadline(this,ws);
   }
 
   player(ws) { return ws.deserializeAttachment(); }
   sockets() { return this.ctx.getWebSockets(); }
-  activePlayer(p) { return Boolean(p?.uid && !p.revoked && !p.sessionClosed && !p.handoffResume); }
+  activePlayer(p) { return Boolean(p?.uid && !p.revoked && !p.sessionClosed && !p.handoffResume &&
+    Number(p.exp)>Math.floor(Date.now()/1000) && Number(p.resumeExpiresAt)>Date.now()); }
   count() { return this.sockets().filter(ws=>this.activePlayer(this.player(ws))).length; }
   sessionOwner() { return 'zone:'+this.currentZoneId(); }
   async sessionCall(action,payload) {
@@ -65,6 +68,11 @@ export class ZoneRoom {
   }
 
   broadcastNearby(value,sourcePlayer,except) {
+    if (value.type===WS_MESSAGE.LEAVE) { this.visibility.leave(sourcePlayer,except); return; }
+    if (except && [WS_MESSAGE.JOIN,WS_MESSAGE.MOVE].includes(value.type)) {
+      this.visibility.local(except,sourcePlayer,value.type===WS_MESSAGE.MOVE);
+      return;
+    }
     const data=JSON.stringify(value);
     for (const ws of this.nearbySockets(sourcePlayer,except)) {
       try { ws.send(data); } catch (_) {}
@@ -95,61 +103,11 @@ export class ZoneRoom {
   }
 
   async flushBorderSnapshot(force=false, exceptWs=null) {
-    const now=Date.now();
-    if (!force && now-this.lastBorderFlushAt<BORDER_SNAPSHOT_INTERVAL_MS) return;
-    this.lastBorderFlushAt=now;
-
-    const sourceZone=this.currentZoneId();
-    if (!sourceZone) return;
-
-    const players=this.borderPlayers(exceptWs);
-    const payload=JSON.stringify({
-      sourceZone,
-      players,
-      serverNow:now
-    });
-
-    await Promise.allSettled(
-      adjacentZoneIds(sourceZone).map(zoneId=>
-        this.env.ZONE.getByName(`free-zone-${zoneId}`).fetch(
-          new Request('https://zone.internal/_internal/border-snapshot',{
-            method:'POST',
-            headers:{'content-type':'application/json'},
-            body:payload
-          })
-        )
-      )
-    );
+    return this.visibility.flush(force,exceptWs);
   }
 
   async sendInitialGhostSnapshots(ws,p) {
-    const currentZone=this.currentZoneId();
-    if (!currentZone || !p?.uid) return;
-
-    await Promise.allSettled(
-      adjacentZoneIds(currentZone).map(async zoneId=>{
-        const response=await this.env.ZONE.getByName(`free-zone-${zoneId}`).fetch(
-          new Request('https://zone.internal/_internal/border-state',{method:'GET'})
-        );
-        if (!response.ok) return;
-        const state=await response.json();
-        const players=Array.isArray(state?.players) ? state.players : [];
-        const maxD2=PLAYER_VISIBILITY_RADIUS*PLAYER_VISIBILITY_RADIUS;
-        const visible=players.filter(other=>{
-          if (!other || typeof other.id!=='string' || other.id===p.id) return false;
-          const x=Number(other.x), z=Number(other.z);
-          if (!Number.isFinite(x) || !Number.isFinite(z)) return false;
-          const dx=x-Number(p.x||0), dz=z-Number(p.z||0);
-          return dx*dx+dz*dz<=maxD2;
-        });
-        this.send(ws,{
-          type:WS_MESSAGE.GHOST_SNAPSHOT,
-          zone:zoneId,
-          players:visible,
-          serverNow:Number(state?.serverNow)||Date.now()
-        });
-      })
-    );
+    return this.visibility.initial(ws,p);
   }
 
   async fetch(request) {
@@ -177,61 +135,19 @@ export class ZoneRoom {
     }
 
     if (url.pathname==='/_internal/border-state' && request.method==='GET') {
-      return Response.json({
-        ok:true,
-        zone:this.currentZoneId(),
-        players:this.borderPlayers(),
-        serverNow:Date.now()
-      });
+      const destination=url.searchParams.has('destination') ? normalizeZoneId(url.searchParams.get('destination')) : null;
+      if (url.searchParams.has('destination') && (!destination || !zonesAreAdjacent(this.currentZoneId(),destination)))
+        return Response.json({ok:false,error:'Invalid destination zone'},{status:400});
+      return Response.json({ok:true,zone:this.currentZoneId(),...this.visibility.snapshot(destination)});
     }
 
     if (url.pathname==='/_internal/border-snapshot' && request.method==='POST') {
       let body;
       try { body=await request.json(); }
       catch (_) { return new Response('Bad JSON',{status:400}); }
-
-      const currentZone=this.currentZoneId();
-      const sourceZone=normalizeZoneId(body?.sourceZone);
-      if (!currentZone || !sourceZone || !zonesAreAdjacent(currentZone,sourceZone)) {
-        return new Response('Invalid source zone',{status:403});
-      }
-
-      const rawPlayers=Array.isArray(body?.players) ? body.players : [];
-      if (rawPlayers.length>ZONE_SOFT_CAP+20) {
-        return new Response('Snapshot too large',{status:413});
-      }
-
-      const players=[];
-      for (const item of rawPlayers) {
-        const id=String(item?.id||'');
-        const x=Number(item?.x), y=Number(item?.y), z=Number(item?.z), r=Number(item?.r);
-        if (!id || id.length>128 || ![x,y,z,r].every(Number.isFinite)) continue;
-        if (Math.abs(x)>748 || Math.abs(z)>748 || y<-.25 || y>8 || Math.abs(r)>10000) continue;
-        players.push({id,x,y,z,r,name:normalizePlayerName(item?.name,'Player')});
-      }
-
-      const maxD2=PLAYER_VISIBILITY_RADIUS*PLAYER_VISIBILITY_RADIUS;
-      const serverNow=Number(body?.serverNow)||Date.now();
-
-      for (const ws of this.sockets()) {
-        const p=this.player(ws);
-        if (!this.activePlayer(p)) continue;
-
-        const visible=players.filter(other=>{
-          if (other.id===p.id) return false;
-          const dx=other.x-Number(p.x||0);
-          const dz=other.z-Number(p.z||0);
-          return dx*dx+dz*dz<=maxD2;
-        });
-
-        this.send(ws,{
-          type:WS_MESSAGE.GHOST_SNAPSHOT,
-          zone:sourceZone,
-          players:visible,
-          serverNow
-        });
-      }
-
+      const snapshot=this.visibility.normalizeSnapshot(body);
+      if (snapshot.error) return new Response('Invalid border snapshot',{status:snapshot.error});
+      this.visibility.receive(snapshot);
       return new Response('OK');
     }
 
@@ -537,6 +453,9 @@ export class ZoneRoom {
     ws.serializeAttachment(p);
     clearAuthDeadline(ws);
 
+    p.localVisible=this.nearbySockets(p,ws).map(other=>this.player(other).id);
+    ws.serializeAttachment(p);
+
     this.send(ws,{
       type:WS_MESSAGE.WELCOME,
       protocol:PROTOCOL_VERSION.ZONE_ROOM,
@@ -594,6 +513,7 @@ export class ZoneRoom {
     }
 
     let transferred;
+    let worldState;
     try {
       transferred=await this.sessionCall('transfer',{
         uid:p.uid,
@@ -625,7 +545,27 @@ export class ZoneRoom {
         return;
       }
       transferred.resumeExpiresAt=checkpoint.resumeExpiresAt;
+      // Provisional sockets deliberately receive no world broadcasts. Read
+      // current shared resources after ownership commits before acknowledging
+      // the target, so changes during bootstrap cannot survive the transfer.
+      worldState=await this.refreshWorldState(p);
+      const stillOwned=await this.sessionCall('validate',{
+        uid:p.uid,sessionId:p.sessionId,owner:this.sessionOwner()
+      });
+      p=this.player(ws);
+      if (!stillOwned?.ok || ws.readyState!==1 || p?.revoked || !p?.handoffResume ||
+          Date.now()>=Number(p.handoffResume.deadline||0)) {
+        await this.sessionCall('release',{uid:p.uid,sessionId:p.sessionId,owner:this.sessionOwner()});
+        ws.close(1008,'Handoff ownership rejected');
+        return;
+      }
     } catch (_) {
+      if (transferred?.ok) {
+        try { await this.sessionCall('release',{uid:p.uid,sessionId:p.sessionId,owner:this.sessionOwner()}); }
+        catch (_) { /* A failed CAS cannot release a successor generation. */ }
+        try { await this.sessionCall('revoke',{uid:p.uid,sessionId:p.sessionId,owner:'zone:'+resume.fromZone}); }
+        catch (_) { /* The durable owner already prevents source actions. */ }
+      }
       this.send(ws,{type:WS_MESSAGE.HANDOFF_RESUME_ERROR,message:'Handoff authority unavailable'});
       ws.close(1011,'Handoff authority unavailable');
       return;
@@ -643,6 +583,11 @@ export class ZoneRoom {
     initializeMotion(p,Date.now());
     if (Number.isSafeInteger(m.seq)) p.motion.seq=m.seq;
     ws.serializeAttachment(p);
+
+    this.send(ws,{type:WS_MESSAGE.COIN_STATE,coins:worldState.coins,serverNow:worldState.serverNow});
+    this.send(ws,{type:WS_MESSAGE.BOX_STATE,box:worldState.luckyBox,serverNow:worldState.serverNow});
+    this.send(ws,{type:WS_MESSAGE.SCORE,score:worldState.score,serverNow:worldState.serverNow});
+    this.send(ws,{type:WS_MESSAGE.LEADERBOARD,top:worldState.leaderboard,serverNow:worldState.serverNow});
 
     this.send(ws,{
       type:WS_MESSAGE.HANDOFF_RESUMED,
@@ -801,7 +746,21 @@ export class ZoneRoom {
       player:this.publicPlayer(p)
     },p,ws);
 
+    await this.visibility.refresh(ws);
     this.ctx.waitUntil(this.flushBorderSnapshot(false));
+  }
+
+  async refreshWorldState(p) {
+    const response=await this.env.ROOM.getByName('free-v2-demo').fetch(
+      new Request('https://internal/_internal/zone-world-state',{
+        method:'POST',headers:{'content-type':'application/json'},
+        body:JSON.stringify({uid:p.uid,sessionId:p.sessionId,owner:this.sessionOwner()})
+      }));
+    const state=await response.json();
+    if (!response.ok || !state?.ok || !Array.isArray(state.coins) || state.coins.length!==COINS.length ||
+        !state.luckyBox || !Number.isSafeInteger(state.score) || state.score<0 || !Array.isArray(state.leaderboard))
+      throw Error('World state unavailable');
+    return state;
   }
 
   sendMovementAck(ws,p,seq,now=Date.now(),applied=true) {

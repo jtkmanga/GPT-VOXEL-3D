@@ -469,7 +469,11 @@
                 }
                 case protocol.WS_MESSAGE.COIN_COLLECTED:
                 case protocol.WS_MESSAGE.COIN_STATE:
-                    secureUpdateCoinState(message);
+                    if (message.type === protocol.WS_MESSAGE.COIN_STATE && Array.isArray(message.coins)) {
+                        secureApplyCoinSnapshot(message.coins, message.serverNow);
+                    } else {
+                        secureUpdateCoinState(message);
+                    }
                     break;
                 case protocol.WS_MESSAGE.BOX_STATE:
                     if (message.requestId && message.claimed === false &&

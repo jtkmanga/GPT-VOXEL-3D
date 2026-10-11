@@ -2,7 +2,7 @@ import { PLAYER_VISIBILITY_RADIUS, RESPAWN_MS, LUCKY_BOX_CLAIM_MS, LUCKY_BOX_RES
 import { MOVEMENT } from '../shared/movement.mjs';
 import { PAYMENT_CONFIG } from '../shared/catalog.mjs';
 import { WS_MESSAGE, PROTOCOL_VERSION } from '../shared/protocol.mjs';
-import { normalizePlayerName, normalizeZoneId, allZoneIds, zonesAreAdjacent, zoneFromPosition, zoneIdsNearPosition } from './spatial.mjs';
+import { normalizePlayerName, normalizeZoneId, adjacentZoneIds, zonesAreAdjacent, zoneFromPosition, zoneIdsNearPosition } from './spatial.mjs';
 import { COINS, coinPosition, luckyBoxPosition, secureLuckyReward } from './world.mjs';
 import { verifyFirebaseIdToken } from './firebase-auth.mjs';
 import { SessionStore } from './sessions.mjs';
@@ -18,6 +18,7 @@ export class GameRoom {
     this.projectId=env.FIREBASE_PROJECT_ID;
     this.sql=ctx.storage.sql;
     this.sessions=new SessionStore(ctx);
+    this.sql.exec('CREATE INDEX IF NOT EXISTS voxel_sessions_routing_idx ON voxel_sessions(owner,lease_expires,exp)');
     this.sql.exec('CREATE TABLE IF NOT EXISTS voxel_scores (uid TEXT PRIMARY KEY, nickname TEXT NOT NULL, score INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL)');
     this.sql.exec('CREATE TABLE IF NOT EXISTS voxel_coins (id INTEGER PRIMARY KEY, respawn_at INTEGER NOT NULL)');
     try { this.sql.exec('ALTER TABLE voxel_coins ADD COLUMN cycle INTEGER NOT NULL DEFAULT 0'); } catch (_) {}
@@ -248,7 +249,7 @@ export class GameRoom {
   }
 
   async sendZoneEvent(zoneIds,event) {
-    const ids=[...new Set((zoneIds||[]).map(normalizeZoneId).filter(Boolean))];
+    const ids=this.activeZoneIds(zoneIds);
     if (!ids.length) return;
     const body=JSON.stringify(event);
     await Promise.allSettled(ids.map(zoneId=>
@@ -263,7 +264,22 @@ export class GameRoom {
   }
 
   async sendAllZones(event) {
-    return this.sendZoneEvent(allZoneIds(),event);
+    return this.sendZoneEvent(null,event);
+  }
+
+  activeZoneIds(candidates=null) {
+    const now=Date.now();
+    const allowed=candidates===null ? null : new Set(candidates.map(normalizeZoneId).filter(Boolean));
+    if (allowed && !allowed.size) return [];
+    const owners=allowed ? [...allowed].map(zone=>'zone:'+zone) : [];
+    const ownerFilter=allowed ? ` AND owner IN (${owners.map(()=>'?').join(',')})` : '';
+    // Membership is derived from the same durable lease/generation that grants
+    // action authority. There is no separate presence row to drift or revive.
+    return this.sql.exec('SELECT DISTINCT owner FROM voxel_sessions WHERE lease_expires>? AND (exp=0 OR exp>?)'+ownerFilter,
+      now,Math.floor(now/1000),...owners).toArray()
+      .map(row=>typeof row.owner==='string' && row.owner.startsWith('zone:') ? normalizeZoneId(row.owner.slice(5)) : null)
+      .filter(zone=>zone && (!allowed || allowed.has(zone)))
+      .sort();
   }
 
   grantPayment(uid, item, amount, transactionId) {
@@ -367,6 +383,33 @@ export class GameRoom {
     await this.ready;
 
     const url = new URL(request.url);
+
+    if (url.pathname==='/_internal/active-zones' && request.method==='GET') {
+      const zone=url.searchParams.has('zone') ? normalizeZoneId(url.searchParams.get('zone')) : null;
+      if (url.searchParams.has('zone') && !zone)
+        return Response.json({ok:false,error:'Invalid zone'},{status:400});
+      try {
+        return Response.json({ok:true,zones:this.activeZoneIds(zone ? adjacentZoneIds(zone) : null),serverNow:Date.now()});
+      } catch (_) {
+        return Response.json({ok:false,error:'Routing authority unavailable'},{status:503});
+      }
+    }
+
+    if (url.pathname==='/_internal/zone-world-state' && request.method==='POST') {
+      let body;
+      try { body=await request.json(); }
+      catch (_) { return Response.json({ok:false,error:'Invalid JSON'},{status:400}); }
+      const uid=typeof body?.uid==='string' ? body.uid : '';
+      if (!uid || uid.length>128) return Response.json({ok:false,error:'Invalid UID'},{status:400});
+      try {
+        if (!this.ownsZoneSession(body,uid))
+          return Response.json({ok:false,error:'Session no longer owned'},{status:403});
+        return Response.json({ok:true,coins:this.coinSnapshot(),luckyBox:this.boxSnapshot(),
+          score:this.economy.score(uid),leaderboard:this.top(),serverNow:Date.now()});
+      } catch (_) {
+        return Response.json({ok:false,error:'World state unavailable'},{status:503});
+      }
+    }
 
     if (url.pathname.startsWith('/_internal/session/')) {
       const action=url.pathname.slice('/_internal/session/'.length);

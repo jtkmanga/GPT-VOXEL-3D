@@ -79,12 +79,19 @@ async function handleFrame(room, ws, raw, protocol, dispatch) {
     player.recentRequests ||= [];
     player.recentRequests.push(requestKey);
     if (player.recentRequests.length > 128) player.recentRequests.shift();
+    ws.serializeAttachment(player);
   }
   if (ws.readyState !== 1 || !player?.uid || player.revoked || player.handoffResume) return;
+  const checkpointUid = player.uid, checkpointSessionId = player.sessionId;
   const checkpoint = await room.sessionCall('checkpoint', {
     uid: player.uid, sessionId: player.sessionId, owner: room.sessionOwner(),
     position: { x: player.x, y: player.y, z: player.z, r: player.r }
   });
+  // Border projection and revocation may update the attachment during this
+  // RPC. Preserve the current projection and never restore a replaced owner.
+  player = room.player(ws);
+  if (ws.readyState !== 1 || !player?.uid || player.revoked || player.sessionClosed ||
+      player.handoffResume || player.uid !== checkpointUid || player.sessionId !== checkpointSessionId) return;
   if (!owned(checkpoint)) { ws.close(1008, 'Session no longer owned'); return; }
   if (Number.isFinite(checkpoint.resumeExpiresAt)) player.resumeExpiresAt = checkpoint.resumeExpiresAt;
   const now = Date.now();

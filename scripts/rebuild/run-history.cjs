@@ -13,7 +13,8 @@ const ROOT = path.resolve(__dirname, '../..');
 const CHECKPOINTS = [
   { phase: 'P1', revision: '10dfaf0aff07d2896c50af06d88502166b16fe9e', tests: ['p1-structure.test.cjs'] },
   { phase: 'P2', revision: 'e7ce2674f66f8d7c7f22efb669bd506e5359bceb', tests: ['p2-source-preservation.test.cjs'] },
-  { phase: 'P3', revision: '592c0707a746f7a55002ce5fcc7110f00cdccf66', tests: ['p3-source-preservation.test.cjs'] }
+  { phase: 'P3', revision: '592c0707a746f7a55002ce5fcc7110f00cdccf66', tests: ['p3-source-preservation.test.cjs'] },
+  { phase: 'P4', revision: '149ecd9f4c617dd432e3536443be7b3081827c9b', tests: ['p4-scope.test.cjs'] }
 ];
 const HISTORICAL_TESTS = CHECKPOINTS.flatMap(checkpoint => checkpoint.tests);
 
