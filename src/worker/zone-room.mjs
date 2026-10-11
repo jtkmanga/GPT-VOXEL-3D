@@ -5,7 +5,7 @@ import { normalizePlayerName, normalizeZoneId, adjacentZoneIds, zonesAreAdjacent
 import { COINS } from './world.mjs';
 import { verifyFirebaseIdToken } from './firebase-auth.mjs';
 import { SECURITY, scheduleAuthDeadline, clearAuthDeadline } from './security.mjs';
-import { enqueueFrame, sessionMetadata } from './room-security.mjs';
+import { enqueueFrame, sessionMetadata, checkpointPlayer } from './room-security.mjs';
 import { initializeMotion, applyMovementIntent, publicMovement } from './movement.mjs';
 import { ZoneVisibility } from './zone-visibility.mjs';
 
@@ -218,10 +218,7 @@ export class ZoneRoom {
           }
           Object.assign(p,{x:source.x,y:source.y,z:source.z,r:source.r,
             motion:{...source.motion,clock:Date.now()},at:Date.now(),last:Date.now()});
-          const checkpoint=await this.sessionCall('checkpoint',{
-            uid:p.uid,sessionId:p.sessionId,owner:this.sessionOwner(),
-            position:{x:p.x,y:p.y,z:p.z,r:p.r}
-          });
+          const checkpoint=await checkpointPlayer(this,ws,p);
           if (!checkpoint?.ok || ws.readyState!==1) {
             ws.close(1008,'Handoff cancellation ownership rejected');
             return;
@@ -376,7 +373,7 @@ export class ZoneRoom {
           ...(m.resumeToken ? {resumeToken:m.resumeToken} : {})
         });
         if (!session?.ok) {
-          this.send(ws,{type:WS_MESSAGE.AUTH_ERROR,message:'Invalid or expired session resume'});
+          this.send(ws,{type:WS_MESSAGE.AUTH_ERROR,message:'Invalid or expired session resume',resumeZone:session?.resumeZone});
           ws.close(1008,'Session acquisition rejected');
           return;
         }
@@ -431,6 +428,7 @@ export class ZoneRoom {
       sessionId:session?.sessionId||handoff.sessionId,
       resumeToken:session?.resumeToken||null,
       resumeExpiresAt:Number(session?.resumeExpiresAt)||0,
+      checkpointRevision:Number(session?.checkpointRevision)||0,
       revoked:false,
       at:now,
       last:0,
@@ -535,7 +533,7 @@ export class ZoneRoom {
       }
       const checkpoint=await this.sessionCall('checkpoint',{
         uid:p.uid,sessionId:p.sessionId,owner:this.sessionOwner(),
-        position:{x,y,z,r},exp:p.exp
+        position:{x,y,z,r},exp:p.exp,revision:Number(transferred.checkpointRevision)+1
       });
       p=this.player(ws);
       if (!checkpoint?.ok || ws.readyState!==1 || p?.revoked || !p?.handoffResume ||
@@ -545,6 +543,7 @@ export class ZoneRoom {
         return;
       }
       transferred.resumeExpiresAt=checkpoint.resumeExpiresAt;
+      transferred.checkpointRevision=checkpoint.checkpointRevision;
       // Provisional sockets deliberately receive no world broadcasts. Read
       // current shared resources after ownership commits before acknowledging
       // the target, so changes during bootstrap cannot survive the transfer.
@@ -577,6 +576,7 @@ export class ZoneRoom {
       last:Date.now(),
       resumeToken:transferred.resumeToken,
       resumeExpiresAt:transferred.resumeExpiresAt,
+      checkpointRevision:transferred.checkpointRevision,
       handoffPending:null,
       handoffResume:null
     });
@@ -770,10 +770,7 @@ export class ZoneRoom {
   }
 
   async checkpointEconomy(ws,p) {
-    const checkpoint=await this.sessionCall('checkpoint',{
-      uid:p.uid,sessionId:p.sessionId,owner:this.sessionOwner(),
-      position:{x:p.x,y:p.y,z:p.z,r:p.r}
-    });
+    const checkpoint=await checkpointPlayer(this,ws,p);
     const current=this.player(ws);
     return checkpoint?.ok===true && ws.readyState===1 && !current?.revoked &&
       !current?.sessionClosed && current?.sessionId===p.sessionId;

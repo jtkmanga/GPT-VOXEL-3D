@@ -1,11 +1,11 @@
 import { SERVER_MAP_SIZE, ZONE_GRID_SIZE, ZONE_SIZE, PLAYER_VISIBILITY_RADIUS } from '../shared/config.mjs';
 
 export function normalizePlayerName(value, fallback='Player') {
-  let name=String(value ?? '')
-    .replace(/[\u0000-\u001f\u007f]/g,'')
+  const clean=value => (typeof value==='string' ? value : '')
+    .replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]/g,'')
     .replace(/\s+/g,' ')
     .trim();
-  if (!name) name=String(fallback || 'Player').trim() || 'Player';
+  const name=clean(value) || clean(fallback) || 'Player';
   return [...name].slice(0,12).join('');
 }
 

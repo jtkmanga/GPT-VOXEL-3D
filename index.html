@@ -80,16 +80,15 @@
         .name-tag {
             position: absolute;
             transform: translate(-50%, -100%);
-            background: rgba(15, 23, 42, 0.85);
-            border: 1.5px solid #f59e0b;
+            background: transparent;
+            border: none;
             color: #ffffff;
-            padding: 4px 12px;
-            border-radius: 20px;
+            padding: 0;
             font-size: 13px;
             font-weight: 700;
             white-space: nowrap;
             pointer-events: none;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+            text-shadow: 0 1px 2px rgba(0,0,0,0.7);
             display: flex;
             align-items: center;
             gap: 6px;
@@ -3657,7 +3656,7 @@ return { MOVEMENT, validMovementInput, integrateMovement };
             }
         }
 
-        async function secureOpenZoneSocket(zoneId, handoffToken = '', forceTokenRefresh = false, requireResume = false) {
+        async function secureOpenZoneSocket(zoneId, handoffToken = '', forceTokenRefresh = false, requireResume = false, savedZoneRedirected = false) {
             if (!auth.currentUser) throw new Error('ต้องล็อกอิน Google ก่อนเข้าเล่น');
             const normalizedZone = secureNormalizeZoneId(zoneId);
             if (!normalizedZone) throw new Error('Zone ไม่ถูกต้อง');
@@ -3681,6 +3680,7 @@ return { MOVEMENT, validMovementInput, integrateMovement };
                 if (typeof secureRegisterClientSocket === 'function') secureRegisterClientSocket(ws);
                 let welcomed = false;
                 let settled = false;
+                let resumeRequested = false;
 
                 const timer = setTimeout(() => {
                     if (settled) return;
@@ -3716,7 +3716,10 @@ return { MOVEMENT, validMovementInput, integrateMovement };
                             failBeforeWelcome('Session เดิมหมดอายุ กรุณาเข้าเกมใหม่');
                             return;
                         }
-                        if (ticket) authMessage.resumeToken = ticket.resumeToken;
+                        if (ticket) {
+                            authMessage.resumeToken = ticket.resumeToken;
+                            resumeRequested = true;
+                        }
                     }
                     ws.send(JSON.stringify(authMessage));
                 };
@@ -3751,6 +3754,30 @@ return { MOVEMENT, validMovementInput, integrateMovement };
                             return;
                         }
                         if (message?.type === "auth_error" || message?.type === "handoff_error" || message?.type === "server_error") {
+                            // A freshly authenticated login can recover its saved
+                            // Zone once. Resume/handoff capabilities remain bound
+                            // to their original Zone and never follow redirects.
+                            const savedZone = message.type === "auth_error" &&
+                                typeof message.resumeZone === 'string' && secureNormalizeZoneId(message.resumeZone);
+                            if (!savedZoneRedirected && !handoffToken && !requireResume && !resumeRequested &&
+                                savedZone && savedZone === message.resumeZone && savedZone !== normalizedZone && connectionCurrent()) {
+                                settled = true;
+                                clearTimeout(timer);
+                                secureCloseSocket(ws, 1000, 'Saved Zone redirect');
+                                if (!connectionCurrent()) {
+                                    reject(new Error('บัญชีเปลี่ยนระหว่างเชื่อมต่อ Game Server'));
+                                    return;
+                                }
+                                secureOpenZoneSocket(savedZone, '', forceTokenRefresh, false, true).then(result => {
+                                    if (!connectionCurrent()) {
+                                        secureCloseSocket(result.ws, 1008, 'Account changed');
+                                        reject(new Error('บัญชีเปลี่ยนระหว่างเชื่อมต่อ Game Server'));
+                                        return;
+                                    }
+                                    resolve(result);
+                                }, reject);
+                                return;
+                            }
                             failBeforeWelcome(message.message || 'Game Server ปฏิเสธการเชื่อมต่อ');
                             return;
                         }

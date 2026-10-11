@@ -7,7 +7,7 @@ import { COINS, coinPosition, luckyBoxPosition, secureLuckyReward } from './worl
 import { verifyFirebaseIdToken } from './firebase-auth.mjs';
 import { SessionStore } from './sessions.mjs';
 import { SECURITY, clearAuthDeadline, scheduleAuthDeadline } from './security.mjs';
-import { enqueueFrame, sessionMetadata } from './room-security.mjs';
+import { enqueueFrame, sessionMetadata, checkpointPlayer } from './room-security.mjs';
 import { initializeMotion, applyMovementIntent, publicMovement } from './movement.mjs';
 import { EconomyStore } from './economy.mjs';
 
@@ -812,7 +812,7 @@ export class GameRoom {
       const identity={uid:p.uid,sessionId:p.sessionId,owner:this.sessionOwner()};
       if (!await this.sessionCall('validate',identity)) { ws.close(1008,'Session no longer owned'); return; }
       const checkpoint=await this.sessionCall('checkpoint',{
-        ...identity,position:{x:p.x,y:p.y,z:p.z,r:p.r},exp:verified.exp
+        ...identity,exp:verified.exp
       });
       if (!checkpoint.ok) { ws.close(1008,'Session no longer owned'); return; }
       p.exp=verified.exp;
@@ -847,12 +847,12 @@ export class GameRoom {
       return;
     }
     const id=session.playerId;
-    const nickname='Player-'+uid.slice(-6);
-    this.sql.exec('INSERT INTO voxel_scores(uid,nickname,score,updated_at) VALUES (?, ?, 0, ?) ON CONFLICT(uid) DO NOTHING',uid,nickname,now);
+    const nickname=normalizePlayerName(m?.name,'Player-'+uid.slice(-6));
+    this.sql.exec('INSERT INTO voxel_scores(uid,nickname,score,updated_at) VALUES (?, ?, 0, ?) ON CONFLICT(uid) DO UPDATE SET nickname=excluded.nickname',uid,nickname,now);
     const score=this.sql.exec('SELECT score FROM voxel_scores WHERE uid=?',uid).toArray()[0]?.score||0;
     Object.assign(p,{uid,exp:verified.exp,id,nickname:normalizePlayerName(m?.name,nickname),
       ...session.position,sessionId:session.sessionId,resumeToken:session.resumeToken,
-      resumeExpiresAt:session.resumeExpiresAt,at:now,last:0,lastCollect:0,
+      resumeExpiresAt:session.resumeExpiresAt,checkpointRevision:session.checkpointRevision,at:now,last:0,lastCollect:0,
       entitlements:this.entitlementSnapshot(uid)});
     initializeMotion(p,now);
     ws.serializeAttachment(p);

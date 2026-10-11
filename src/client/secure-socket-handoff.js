@@ -576,7 +576,7 @@
             }
         }
 
-        async function secureOpenZoneSocket(zoneId, handoffToken = '', forceTokenRefresh = false, requireResume = false) {
+        async function secureOpenZoneSocket(zoneId, handoffToken = '', forceTokenRefresh = false, requireResume = false, savedZoneRedirected = false) {
             if (!auth.currentUser) throw new Error('ต้องล็อกอิน Google ก่อนเข้าเล่น');
             const normalizedZone = secureNormalizeZoneId(zoneId);
             if (!normalizedZone) throw new Error('Zone ไม่ถูกต้อง');
@@ -600,6 +600,7 @@
                 if (typeof secureRegisterClientSocket === 'function') secureRegisterClientSocket(ws);
                 let welcomed = false;
                 let settled = false;
+                let resumeRequested = false;
 
                 const timer = setTimeout(() => {
                     if (settled) return;
@@ -635,7 +636,10 @@
                             failBeforeWelcome('Session เดิมหมดอายุ กรุณาเข้าเกมใหม่');
                             return;
                         }
-                        if (ticket) authMessage.resumeToken = ticket.resumeToken;
+                        if (ticket) {
+                            authMessage.resumeToken = ticket.resumeToken;
+                            resumeRequested = true;
+                        }
                     }
                     ws.send(JSON.stringify(authMessage));
                 };
@@ -670,6 +674,30 @@
                             return;
                         }
                         if (message?.type === protocol.WS_MESSAGE.AUTH_ERROR || message?.type === protocol.WS_MESSAGE.HANDOFF_ERROR || message?.type === protocol.WS_MESSAGE.SERVER_ERROR) {
+                            // A freshly authenticated login can recover its saved
+                            // Zone once. Resume/handoff capabilities remain bound
+                            // to their original Zone and never follow redirects.
+                            const savedZone = message.type === protocol.WS_MESSAGE.AUTH_ERROR &&
+                                typeof message.resumeZone === 'string' && secureNormalizeZoneId(message.resumeZone);
+                            if (!savedZoneRedirected && !handoffToken && !requireResume && !resumeRequested &&
+                                savedZone && savedZone === message.resumeZone && savedZone !== normalizedZone && connectionCurrent()) {
+                                settled = true;
+                                clearTimeout(timer);
+                                secureCloseSocket(ws, 1000, 'Saved Zone redirect');
+                                if (!connectionCurrent()) {
+                                    reject(new Error('บัญชีเปลี่ยนระหว่างเชื่อมต่อ Game Server'));
+                                    return;
+                                }
+                                secureOpenZoneSocket(savedZone, '', forceTokenRefresh, false, true).then(result => {
+                                    if (!connectionCurrent()) {
+                                        secureCloseSocket(result.ws, 1008, 'Account changed');
+                                        reject(new Error('บัญชีเปลี่ยนระหว่างเชื่อมต่อ Game Server'));
+                                        return;
+                                    }
+                                    resolve(result);
+                                }, reject);
+                                return;
+                            }
                             failBeforeWelcome(message.message || 'Game Server ปฏิเสธการเชื่อมต่อ');
                             return;
                         }
