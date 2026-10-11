@@ -1,4 +1,5 @@
         function secureReturnToMenu() {
+            if (typeof secureAbortClientConnections === 'function') secureAbortClientConnections('Returned to menu');
             state.isPlaying = false;
             state.isPaused = false;
             secureGameReady = false;

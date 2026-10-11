@@ -3,6 +3,8 @@ import { WS_MESSAGE, PROTOCOL_VERSION } from '../shared/protocol.mjs';
 import { normalizePlayerName, normalizeZoneId, adjacentZoneIds, zonesAreAdjacent, zoneCenter, zoneFromPosition } from './spatial.mjs';
 import { COINS } from './world.mjs';
 import { verifyFirebaseIdToken } from './firebase-auth.mjs';
+import { SECURITY, scheduleAuthDeadline, clearAuthDeadline } from './security.mjs';
+import { enqueueFrame, sessionMetadata } from './room-security.mjs';
 
 // Phase 2A movement-zone Durable Object.
 // World state, scores, payments, coins and Lucky Box remain authoritative in GameRoom.
@@ -12,28 +14,47 @@ export class ZoneRoom {
     this.env=env;
     this.projectId=env.FIREBASE_PROJECT_ID;
     this.lastBorderFlushAt=0;
+    for (const ws of this.sockets()) scheduleAuthDeadline(this,ws);
   }
 
   player(ws) { return ws.deserializeAttachment(); }
   sockets() { return this.ctx.getWebSockets(); }
-  count() { return this.sockets().filter(ws=>this.player(ws)?.uid).length; }
+  activePlayer(p) { return Boolean(p?.uid && !p.revoked && !p.sessionClosed && !p.handoffResume); }
+  count() { return this.sockets().filter(ws=>this.activePlayer(this.player(ws))).length; }
+  sessionOwner() { return 'zone:'+this.currentZoneId(); }
+  async sessionCall(action,payload) {
+    const response=await this.env.ROOM.getByName('free-v2-demo').fetch(
+      new Request(`https://internal/_internal/session/${action}`,{
+        method:'POST',
+        headers:{'content-type':'application/json'},
+        body:JSON.stringify(payload)
+      })
+    );
+    const result=await response.json();
+    if (response.status>=500 || !result || typeof result!=='object') throw Error('Session authority unavailable');
+    return result;
+  }
+  authenticationExpired(ws,p) {
+    return ws.readyState!==1 || !p || p.revoked ||
+      (!p.uid && Date.now()>=Number(p.acceptedAt||0)+SECURITY.authDeadlineMs);
+  }
   send(ws,value) { try { ws.send(JSON.stringify(value)); } catch (_) {} }
   broadcastAll(value,except) {
     const data=JSON.stringify(value);
     for(const ws of this.sockets()) {
-      if(ws===except || !this.player(ws)?.uid) continue;
+      if(ws===except || !this.activePlayer(this.player(ws))) continue;
       try { ws.send(data); } catch (_) {}
     }
   }
 
   nearbySockets(sourcePlayer, except) {
-    if (!sourcePlayer?.uid) return [];
+    if (!sourcePlayer?.uid || sourcePlayer.revoked) return [];
     const out=[];
     const maxD2=PLAYER_VISIBILITY_RADIUS*PLAYER_VISIBILITY_RADIUS;
     for (const ws of this.sockets()) {
       if (ws===except) continue;
       const other=this.player(ws);
-      if (!other?.uid) continue;
+      if (!this.activePlayer(other)) continue;
       const dx=(Number(other.x)||0)-(Number(sourcePlayer.x)||0);
       const dz=(Number(other.z)||0)-(Number(sourcePlayer.z)||0);
       if (dx*dx+dz*dz<=maxD2) out.push(ws);
@@ -66,7 +87,7 @@ export class ZoneRoom {
 
   borderPlayers(exceptWs=null) {
     return this.sockets()
-      .filter(ws=>ws!==exceptWs && this.player(ws)?.uid)
+      .filter(ws=>ws!==exceptWs && this.activePlayer(this.player(ws)))
       .map(ws=>this.publicPlayer(this.player(ws)))
       .filter(Boolean);
   }
@@ -132,6 +153,27 @@ export class ZoneRoom {
   async fetch(request) {
     const url=new URL(request.url);
 
+    if (url.pathname==='/_internal/session-revoke' && request.method==='POST') {
+      let body;
+      try { body=await request.json(); }
+      catch (_) { return Response.json({ok:false},{status:400}); }
+      if (typeof body?.uid!=='string' || typeof body?.sessionId!=='string')
+        return Response.json({ok:false},{status:400});
+      for (const ws of this.sockets()) {
+        const p=this.player(ws);
+        if ((p?.uid||p?.pendingUid)!==body.uid || (p.sessionId||p.pendingSessionId)!==body.sessionId) continue;
+        if (this.activePlayer(p)) this.broadcastNearby({
+          type:WS_MESSAGE.LEAVE,id:p.id,count:Math.max(0,this.count()-1)
+        },p,ws);
+        p.revoked=true;
+        ws.serializeAttachment(p);
+        clearAuthDeadline(ws);
+        ws.close(1008,'Session ownership transferred');
+        this.ctx.waitUntil(this.flushBorderSnapshot(true,ws));
+      }
+      return Response.json({ok:true});
+    }
+
     if (url.pathname==='/_internal/border-state' && request.method==='GET') {
       return Response.json({
         ok:true,
@@ -171,7 +213,7 @@ export class ZoneRoom {
 
       for (const ws of this.sockets()) {
         const p=this.player(ws);
-        if (!p?.uid) continue;
+        if (!this.activePlayer(p)) continue;
 
         const visible=players.filter(other=>{
           if (other.id===p.id) return false;
@@ -216,32 +258,26 @@ export class ZoneRoom {
       acceptedAt:Date.now(),
       zoneId
     });
+    scheduleAuthDeadline(this,server);
     return new Response(null,{status:101,webSocket:client});
   }
 
   async webSocketMessage(ws,message) {
-    if (typeof message!=='string' || message.length>8192) {
-      ws.close(1009,'Invalid message');
-      return;
-    }
+    return enqueueFrame(this,ws,message,PROTOCOL_VERSION.ZONE_ROOM,
+      (m,p)=>this.dispatchMessage(ws,p,m));
+  }
 
-    let m;
-    try { m=JSON.parse(message); } catch (_) { return; }
-
-    const p=this.player(ws);
-    if (!p) return;
-
+  async dispatchMessage(ws,p,m) {
     if (m?.type===WS_MESSAGE.AUTH) return this.handleAuth(ws,p,m);
-
-    if (!p.uid || Math.floor(Date.now()/1000)>=p.exp) {
-      ws.close(1008,'Sign in required');
-      return;
-    }
-
-    if (message.length>256) return;
-
     if (m?.type===WS_MESSAGE.HANDOFF_RESUME) return this.handleHandoffResume(ws,p,m);
     if (m?.type===WS_MESSAGE.HANDOFF_CANCEL) {
+      if (p.handoffResume) {
+        // A provisional target cannot become an active owner by cancellation.
+        p.revoked=true;
+        ws.serializeAttachment(p);
+        ws.close(1008,'Handoff cancelled');
+        return;
+      }
       p.handoffPending=null;
       p.handoffResume=null;
       ws.serializeAttachment(p);
@@ -255,14 +291,6 @@ export class ZoneRoom {
   }
 
   async handleAuth(ws,p,m) {
-    if (!p.uid) {
-      if (++p.authAttempts>3) {
-        ws.close(1008,'Too many attempts');
-        return;
-      }
-      ws.serializeAttachment(p);
-    }
-
     let verified;
     try { verified=await verifyFirebaseIdToken(m.token,this.projectId); }
     catch (_) {
@@ -272,26 +300,25 @@ export class ZoneRoom {
     }
 
     p=this.player(ws);
+    if (this.authenticationExpired(ws,p)) {
+      ws.close(1008,'Authentication deadline exceeded');
+      return;
+    }
 
     if (p.uid && p.uid!==verified.uid) {
       ws.close(1008,'Different account');
       return;
     }
 
-    if (p.uid) {
-      p.exp=verified.exp;
-      ws.serializeAttachment(p);
-      this.send(ws,{type:WS_MESSAGE.AUTH_REFRESHED});
-      return;
-    }
-
     let bootstrap;
     try {
+      const refresh=Boolean(p.uid);
       const response=await this.env.ROOM.getByName('free-v2-demo').fetch(
-        new Request('https://internal/_internal/zone-bootstrap',{
+        new Request(`https://internal/_internal/${refresh ? 'get-entitlements' : 'zone-bootstrap'}`,{
           method:'POST',
           headers:{'content-type':'application/json'},
-          body:JSON.stringify({uid:verified.uid,name:normalizePlayerName(m?.name,'Player')})
+          body:JSON.stringify(refresh ? {uid:verified.uid} :
+            {uid:verified.uid,name:normalizePlayerName(m?.name,'Player')})
         })
       );
       bootstrap=await response.json();
@@ -303,6 +330,38 @@ export class ZoneRoom {
     }
 
     p=this.player(ws);
+    if (this.authenticationExpired(ws,p)) {
+      ws.close(1008,'Authentication deadline exceeded');
+      return;
+    }
+
+    if (p.uid) {
+      try {
+        const identity={uid:p.uid,sessionId:p.sessionId,owner:this.sessionOwner()};
+        const valid=await this.sessionCall('validate',identity);
+        if (!valid?.ok) {
+          ws.close(1008,'Session no longer owned');
+          return;
+        }
+        const refreshed=await this.sessionCall('checkpoint',{...identity,exp:verified.exp});
+        p=this.player(ws);
+        if (!refreshed?.ok || this.authenticationExpired(ws,p)) {
+          ws.close(1008,'Session no longer owned');
+          return;
+        }
+        p.exp=verified.exp;
+        p.speedExpires=Number(bootstrap.entitlements?.speedExpires)||0;
+        p.resumeExpiresAt=Number(refreshed.resumeExpiresAt)||p.resumeExpiresAt;
+        ws.serializeAttachment(p);
+        clearAuthDeadline(ws);
+        this.send(ws,{type:WS_MESSAGE.AUTH_REFRESHED,session:sessionMetadata(p),
+          entitlements:bootstrap.entitlements||{},serverNow:Date.now()});
+      } catch (_) {
+        ws.close(1011,'Session authority unavailable');
+      }
+      return;
+    }
+
     const zoneId=normalizeZoneId(p.zoneId);
     const center=zoneCenter(zoneId);
 
@@ -335,6 +394,11 @@ export class ZoneRoom {
       }
     }
 
+    p=this.player(ws);
+    if (this.authenticationExpired(ws,p)) {
+      ws.close(1008,'Authentication deadline exceeded');
+      return;
+    }
     const now=Date.now();
     const n=this.count();
     const col=n%10;
@@ -343,17 +407,75 @@ export class ZoneRoom {
     const spawnY=handoff ? Number(handoff.y) : 0;
     const spawnZ=handoff ? Number(handoff.z) : center.z+(row-4.5)*4;
     const spawnR=handoff ? Number(handoff.r) : 0;
-    const id=handoff ? String(handoff.playerId) : crypto.randomUUID();
+    let id=handoff ? String(handoff.playerId) : crypto.randomUUID();
+    let session=null;
+    if (!handoff) {
+      try {
+        session=await this.sessionCall('acquire',{
+          uid:verified.uid,
+          exp:verified.exp,
+          owner:this.sessionOwner(),
+          playerId:id,
+          position:{x:spawnX,y:spawnY,z:spawnZ,r:spawnR},
+          ...(m.resumeToken ? {resumeToken:m.resumeToken} : {})
+        });
+        if (!session?.ok) {
+          this.send(ws,{type:WS_MESSAGE.AUTH_ERROR,message:'Invalid or expired session resume'});
+          ws.close(1008,'Session acquisition rejected');
+          return;
+        }
+      } catch (_) {
+        this.send(ws,{type:WS_MESSAGE.SERVER_ERROR,message:'Session authority unavailable'});
+        ws.close(1011,'Session authority unavailable');
+        return;
+      }
+      p=this.player(ws);
+      if (!this.authenticationExpired(ws,p)) {
+        p.pendingUid=verified.uid;
+        p.pendingSessionId=session.sessionId;
+        ws.serializeAttachment(p);
+        try {
+          const valid=await this.sessionCall('validate',{
+            uid:verified.uid,sessionId:session.sessionId,owner:this.sessionOwner()
+          });
+          p=this.player(ws);
+          if (!valid?.ok) {
+            ws.close(1008,'Session no longer owned');
+            return;
+          }
+        } catch (_) {
+          ws.close(1011,'Session authority unavailable');
+          return;
+        }
+      }
+      if (this.authenticationExpired(ws,p)) {
+        try { await this.sessionCall('release',{uid:verified.uid,sessionId:session.sessionId,owner:this.sessionOwner()}); }
+        catch (_) { /* A closed socket cannot act on a retained server lease. */ }
+        ws.close(1008,'Authentication deadline exceeded');
+        return;
+      }
+      id=String(session.playerId);
+    } else if (typeof handoff.sessionId!=='string' || !handoff.sessionId) {
+      ws.close(1008,'Invalid handoff session');
+      return;
+    }
+    const position=session?.position||{x:spawnX,y:spawnY,z:spawnZ,r:spawnR};
+    delete p.pendingUid;
+    delete p.pendingSessionId;
 
     Object.assign(p,{
       uid:verified.uid,
       exp:verified.exp,
       id,
       zoneId,
-      x:spawnX,
-      y:spawnY,
-      z:spawnZ,
-      r:spawnR,
+      x:position.x,
+      y:position.y,
+      z:position.z,
+      r:position.r,
+      sessionId:session?.sessionId||handoff.sessionId,
+      resumeToken:session?.resumeToken||null,
+      resumeExpiresAt:Number(session?.resumeExpiresAt)||0,
+      revoked:false,
       at:now,
       last:0,
       lastCollect:0,
@@ -362,14 +484,16 @@ export class ZoneRoom {
         anchorX:spawnX,
         anchorY:spawnY,
         anchorZ:spawnZ,
+        fromZone:handoff.fromZone,
         createdAt:Number(handoff.createdAt)||now,
-        deadline:now+9000
+        deadline:Math.min(now+9000,Number(handoff.expiresAt)||now+9000)
       } : null,
       nickname:normalizePlayerName(bootstrap.nickname,m?.name || ('Player-'+verified.uid.slice(-6))),
       speedExpires:Number(bootstrap.entitlements?.speedExpires)||0
     });
 
     ws.serializeAttachment(p);
+    clearAuthDeadline(ws);
 
     this.send(ws,{
       type:WS_MESSAGE.WELCOME,
@@ -379,6 +503,8 @@ export class ZoneRoom {
       fromZone:handoff?.fromZone||null,
       zone:zoneId,
       id,
+      session:sessionMetadata(p),
+      entitlements:bootstrap.entitlements||{},
       spawn:{x:p.x,y:p.y,z:p.z,r:p.r},
       players:this.nearbySockets(p,ws)
         .map(other=>this.publicPlayer(this.player(other)))
@@ -391,25 +517,27 @@ export class ZoneRoom {
       count:this.count()
     });
 
-    this.broadcastNearby({
-      type:WS_MESSAGE.JOIN,
-      player:this.publicPlayer(p),
-      count:this.count()
-    },p,ws);
-
-    this.ctx.waitUntil(this.sendInitialGhostSnapshots(ws,p));
-    this.ctx.waitUntil(this.flushBorderSnapshot(true));
+    if (!handoff) {
+      this.broadcastNearby({
+        type:WS_MESSAGE.JOIN,
+        player:this.publicPlayer(p),
+        count:this.count()
+      },p,ws);
+      this.ctx.waitUntil(this.sendInitialGhostSnapshots(ws,p));
+      this.ctx.waitUntil(this.flushBorderSnapshot(true));
+    }
   }
 
   async handleHandoffResume(ws,p,m) {
     const now=Date.now();
     const resume=p?.handoffResume;
-    if (!resume || now>Number(resume.deadline||0)) {
+    if (!resume || now>=Number(resume.deadline||0)) {
       if (p?.uid) {
-        p.handoffResume=null;
+        p.revoked=true;
         ws.serializeAttachment(p);
       }
       this.send(ws,{type:WS_MESSAGE.HANDOFF_RESUME_ERROR,message:'Handoff resume window expired'});
+      ws.close(1008,'Handoff resume window expired');
       return;
     }
 
@@ -440,27 +568,88 @@ export class ZoneRoom {
       return;
     }
 
+    let transferred;
+    try {
+      transferred=await this.sessionCall('transfer',{
+        uid:p.uid,
+        sessionId:p.sessionId,
+        fromOwner:'zone:'+resume.fromZone,
+        toOwner:this.sessionOwner(),
+        playerId:p.id,
+        position:{x,y,z,r}
+      });
+      p=this.player(ws);
+      if (!transferred?.ok || ws.readyState!==1 || !p?.handoffResume ||
+          Date.now()>=Number(p.handoffResume.deadline||0)) {
+        if (transferred?.ok) await this.sessionCall('release',{
+          uid:p.uid,sessionId:p.sessionId,owner:this.sessionOwner()
+        });
+        ws.close(1008,'Handoff ownership rejected');
+        return;
+      }
+      const checkpoint=await this.sessionCall('checkpoint',{
+        uid:p.uid,sessionId:p.sessionId,owner:this.sessionOwner(),
+        position:{x,y,z,r},exp:p.exp
+      });
+      p=this.player(ws);
+      if (!checkpoint?.ok || ws.readyState!==1 || p?.revoked || !p?.handoffResume ||
+          Date.now()>=Number(p.handoffResume.deadline||0)) {
+        await this.sessionCall('release',{uid:p.uid,sessionId:p.sessionId,owner:this.sessionOwner()});
+        ws.close(1008,'Handoff ownership rejected');
+        return;
+      }
+      transferred.resumeExpiresAt=checkpoint.resumeExpiresAt;
+    } catch (_) {
+      this.send(ws,{type:WS_MESSAGE.HANDOFF_RESUME_ERROR,message:'Handoff authority unavailable'});
+      ws.close(1011,'Handoff authority unavailable');
+      return;
+    }
+
     Object.assign(p,{
       x,y,z,r,
-      at:now,
-      last:now,
+      at:Date.now(),
+      last:Date.now(),
+      resumeToken:transferred.resumeToken,
+      resumeExpiresAt:transferred.resumeExpiresAt,
       handoffPending:null,
       handoffResume:null
     });
     ws.serializeAttachment(p);
 
-    this.broadcastNearby({
-      type:WS_MESSAGE.MOVE,
-      player:this.publicPlayer(p)
-    },p,ws);
-    this.ctx.waitUntil(this.flushBorderSnapshot(true));
-
     this.send(ws,{
       type:WS_MESSAGE.HANDOFF_RESUMED,
       x,y,z,r,
       zone:p.zoneId,
+      session:sessionMetadata(p),
       serverNow:now
     });
+
+    // Ownership commits before ACK. Only after the target ACK is sent may the
+    // source socket be closed; its matching generation cannot release us.
+    try {
+      const revoked=await this.sessionCall('revoke',{
+        uid:p.uid,sessionId:p.sessionId,owner:'zone:'+resume.fromZone
+      });
+      if (!revoked?.ok) throw Error('Source revocation unavailable');
+    } catch (_) {
+      // Durable ownership already belongs to this target. Stop gameplay if
+      // revocation cannot be confirmed; stale source packets also fail CAS.
+      p=this.player(ws);
+      p.revoked=true;
+      ws.serializeAttachment(p);
+      ws.close(1011,'Source revocation unavailable');
+      return;
+    }
+    p=this.player(ws);
+    if (ws.readyState!==1 || !this.activePlayer(p)) return;
+    this.broadcastNearby({
+      type:WS_MESSAGE.JOIN,
+      player:this.publicPlayer(p),
+      count:this.count()
+    },p,ws);
+    this.broadcastNearby({type:WS_MESSAGE.MOVE,player:this.publicPlayer(p)},p,ws);
+    this.ctx.waitUntil(this.sendInitialGhostSnapshots(ws,p));
+    this.ctx.waitUntil(this.flushBorderSnapshot(true));
   }
 
   async handleMove(ws,p,m) {
@@ -516,6 +705,7 @@ export class ZoneRoom {
             headers:{'content-type':'application/json'},
             body:JSON.stringify({
               uid:p.uid,
+              sessionId:p.sessionId,
               playerId:p.id,
               fromZone:p.zoneId,
               toZone:requestedZone,
@@ -596,7 +786,7 @@ export class ZoneRoom {
         new Request('https://internal/_internal/zone-collect',{
           method:'POST',
           headers:{'content-type':'application/json'},
-          body:JSON.stringify({uid:p.uid,id,x:p.x,y:p.y,z:p.z})
+          body:JSON.stringify({uid:p.uid,sessionId:p.sessionId,owner:this.sessionOwner(),id,x:p.x,y:p.y,z:p.z})
         })
       );
       const result=await response.json();
@@ -641,7 +831,7 @@ export class ZoneRoom {
         new Request('https://internal/_internal/zone-collect-box',{
           method:'POST',
           headers:{'content-type':'application/json'},
-          body:JSON.stringify({uid:p.uid,x:p.x,y:p.y,z:p.z})
+          body:JSON.stringify({uid:p.uid,sessionId:p.sessionId,owner:this.sessionOwner(),x:p.x,y:p.y,z:p.z})
         })
       );
       const result=await response.json();
@@ -671,7 +861,7 @@ export class ZoneRoom {
         new Request('https://internal/_internal/zone-spin-box',{
           method:'POST',
           headers:{'content-type':'application/json'},
-          body:JSON.stringify({uid:p.uid})
+          body:JSON.stringify({uid:p.uid,sessionId:p.sessionId,owner:this.sessionOwner()})
         })
       );
       const result=await response.json();
@@ -696,28 +886,34 @@ export class ZoneRoom {
   }
 
   async webSocketClose(ws) {
-    const p=this.player(ws);
-    if (p?.uid) {
-      this.broadcastNearby({
-        type:WS_MESSAGE.LEAVE,
-        id:p.id,
-        count:Math.max(0,this.count()-1)
-      },p,ws);
-      this.ctx.waitUntil(this.flushBorderSnapshot(true,ws));
-    }
-    try { ws.close(1000,'Bye'); } catch (_) {}
+    return this.endSession(ws,1000,'Bye');
   }
 
   async webSocketError(ws) {
+    return this.endSession(ws,1011,'Connection error');
+  }
+
+  async endSession(ws,code,reason) {
+    clearAuthDeadline(ws);
     const p=this.player(ws);
-    if (p?.uid) {
+    if (p?.sessionClosed) return;
+    const wasActive=this.activePlayer(p);
+    if (p) {
+      p.sessionClosed=true;
+      ws.serializeAttachment(p);
+    }
+    if (wasActive) {
       this.broadcastNearby({
         type:WS_MESSAGE.LEAVE,
         id:p.id,
-        count:Math.max(0,this.count()-1)
+        count:this.count()
       },p,ws);
       this.ctx.waitUntil(this.flushBorderSnapshot(true,ws));
     }
-    try { ws.close(1011,'Connection error'); } catch (_) {}
+    try { ws.close(code,reason); } catch (_) {}
+    if ((p?.uid||p?.pendingUid) && (p.sessionId||p.pendingSessionId)) {
+      try { await this.sessionCall('release',{uid:p.uid||p.pendingUid,sessionId:p.sessionId||p.pendingSessionId,owner:this.sessionOwner()}); }
+      catch (_) { console.warn('Zone session release unavailable'); }
+    }
   }
 }

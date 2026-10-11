@@ -42,9 +42,11 @@ async function install() {
   let pumping = false;
   let pumpScheduled = false;
   let timerId = 0;
+  let syntheticUserId = 0;
   let lastProgress = performance.now();
   const timers = new Map();
   const sockets = new Set();
+  const syntheticUsers = new Set();
 
   function schedulePump() {
     if (stopped || pumpScheduled || pumping || timers.size === 0) return;
@@ -125,6 +127,11 @@ async function install() {
       this.readyState = OfflineWebSocket.CONNECTING;
       this.url = url.href;
       this.connection = null;
+      // The original multiplayer smoke uses one environment token for two
+      // independent players. P2 correctly permits one owner per verified UID,
+      // so independent fixture sockets need independently signed identities.
+      this.syntheticUid = `synthetic-legacy-smoke-player-${++syntheticUserId}`;
+      syntheticUsers.add(this.syntheticUid);
       sockets.add(this);
       void tracked(async () => {
         this.connection = await harness.open(url.pathname + url.search);
@@ -147,7 +154,31 @@ async function install() {
     send(data) {
       if (this.readyState !== OfflineWebSocket.OPEN) throw new Error('WebSocket is not open');
       void tracked(async () => {
-        await this.connection.send(String(data));
+        let frame = String(data);
+        let packet;
+        try { packet = JSON.parse(frame); } catch (_) { /* Preserve malformed frames. */ }
+        // Rewrite only our exact in-memory synthetic environment token. Unknown
+        // credentials are never repaired or accepted by the fixture adapter.
+        if (packet?.type === 'auth' && packet.token === token) {
+          if (typeof packet.handoffToken === 'string' && packet.handoffToken) {
+            // A handoff is the same player, not another independent login. Read
+            // the real durable ticket created by the actual source ZoneRoom.
+            const ticket = harness.room().sql.exec(
+              'SELECT uid FROM voxel_zone_handoffs WHERE token=?', packet.handoffToken
+            ).toArray()[0];
+            if (ticket && syntheticUsers.has(ticket.uid)) this.syntheticUid = ticket.uid;
+            else {
+              // Keep an unknown/expired/non-fixture ticket unchanged; real
+              // Firebase/handoff validation decides whether it is acceptable.
+              await this.connection.send(frame);
+              await harness.settle();
+              return;
+            }
+          }
+          packet.token = harness.token(this.syntheticUid);
+          frame = JSON.stringify(packet);
+        }
+        await this.connection.send(frame);
         await harness.settle();
       }).catch(error => this.emit('error', error));
     }

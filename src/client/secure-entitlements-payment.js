@@ -33,6 +33,31 @@
         const secureIntentionalSockets = new WeakSet();
         const secureRemoteSources = new Map();
         const secureGhostMembersByZone = new Map();
+        let secureIdentityUid = null;
+
+        function secureOnIdentityChanged(user) {
+            const nextUid = typeof user?.uid === 'string' ? user.uid : null;
+            if (secureIdentityUid === nextUid) return;
+            secureIdentityUid = nextUid;
+            state.shop.speedBuffExpires = 0;
+            state.shop.coinBuffExpires = 0;
+            state.userVipSubscriptions = {};
+            if (typeof secureCancelReconnect === 'function') secureCancelReconnect();
+            if (typeof secureSessionTickets !== 'undefined') secureSessionTickets.clear();
+            if (typeof secureAbortClientConnections === 'function') {
+                secureAbortClientConnections('Account changed', 1008);
+            } else if (secureGameSocket && secureGameSocket.secureAuthenticatedUid !== nextUid) {
+                const ws = secureGameSocket;
+                if (typeof secureClearSocketRefresh === 'function') secureClearSocketRefresh(ws);
+                secureCloseSocket(ws, 1008, 'Account changed');
+                if (secureGameSocket === ws) secureGameSocket = null;
+            }
+            if (state.isPlaying) secureReturnToMenu();
+            if (!nextUid && secureEntitlementRefreshTimer) {
+                clearInterval(secureEntitlementRefreshTimer);
+                secureEntitlementRefreshTimer = null;
+            }
+        }
 
         function secureNow() {
             return Date.now() + secureServerTimeOffset;
@@ -83,7 +108,11 @@
                 return null;
             }
 
+            const uid = user.uid;
             const token = await user.getIdToken(forceTokenRefresh);
+            if (auth.currentUser !== user || auth.currentUser?.uid !== uid) {
+                throw new Error('บัญชีเปลี่ยนระหว่างตรวจสอบสิทธิ์');
+            }
             const response = await fetch(SECURE_WORKER_HTTP_BASE + '/entitlements', {
                 method: 'GET',
                 headers: { 'Authorization': 'Bearer ' + token }
@@ -91,6 +120,9 @@
             const result = await response.json().catch(() => ({}));
             if (!response.ok || !result?.ok) {
                 throw new Error(result?.error || 'ไม่สามารถโหลดสิทธิ์จาก Server ได้');
+            }
+            if (auth.currentUser !== user || auth.currentUser?.uid !== uid) {
+                throw new Error('บัญชีเปลี่ยนระหว่างตรวจสอบสิทธิ์');
             }
 
             secureApplyEntitlements(result.entitlements, result.servers, result.serverNow);

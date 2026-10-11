@@ -105,6 +105,7 @@
         };
 
         confirmExitGame = function() {
+            if (typeof secureAbortClientConnections === 'function') secureAbortClientConnections('Exit game');
             const ws = secureGameSocket;
             secureGameSocket = null;
             secureGameReady = false;

@@ -4,6 +4,9 @@ import { WS_MESSAGE, PROTOCOL_VERSION } from '../shared/protocol.mjs';
 import { normalizePlayerName, normalizeZoneId, allZoneIds, zonesAreAdjacent, zoneFromPosition, zoneIdsNearPosition } from './spatial.mjs';
 import { COINS, coinPosition, luckyBoxPosition, secureLuckyReward } from './world.mjs';
 import { verifyFirebaseIdToken } from './firebase-auth.mjs';
+import { SessionStore } from './sessions.mjs';
+import { SECURITY, clearAuthDeadline, scheduleAuthDeadline } from './security.mjs';
+import { enqueueFrame, sessionMetadata } from './room-security.mjs';
 
 export class GameRoom {
   constructor(ctx,env) {
@@ -11,6 +14,7 @@ export class GameRoom {
     this.env=env;
     this.projectId=env.FIREBASE_PROJECT_ID;
     this.sql=ctx.storage.sql;
+    this.sessions=new SessionStore(ctx);
     this.sql.exec('CREATE TABLE IF NOT EXISTS voxel_scores (uid TEXT PRIMARY KEY, nickname TEXT NOT NULL, score INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL)');
     this.sql.exec('CREATE TABLE IF NOT EXISTS voxel_coins (id INTEGER PRIMARY KEY, respawn_at INTEGER NOT NULL)');
     try { this.sql.exec('ALTER TABLE voxel_coins ADD COLUMN cycle INTEGER NOT NULL DEFAULT 0'); } catch (_) {}
@@ -53,8 +57,10 @@ export class GameRoom {
       z REAL NOT NULL,
       r REAL NOT NULL,
       expires_at INTEGER NOT NULL,
-      created_at INTEGER NOT NULL
+      created_at INTEGER NOT NULL,
+      session_id TEXT
     )`);
+    try { this.sql.exec('ALTER TABLE voxel_zone_handoffs ADD COLUMN session_id TEXT'); } catch (_) {}
     this.sql.exec('CREATE INDEX IF NOT EXISTS voxel_zone_handoffs_exp_idx ON voxel_zone_handoffs(expires_at)');
 
     this.ready=ctx.blockConcurrencyWhile(async()=>{
@@ -69,14 +75,78 @@ export class GameRoom {
         await ctx.storage.delete('coinRespawns');
       }
     });
+    for (const ws of this.sockets()) scheduleAuthDeadline(this,ws);
   }
   player(ws) { return ws.deserializeAttachment(); }
   sockets() { return this.ctx.getWebSockets(); }
-  count() { return this.sockets().filter(ws=>this.player(ws)?.uid).length; }
+  count() { return this.sockets().filter(ws=>{const p=this.player(ws);return p?.uid && !p.revoked && !p.sessionClosed;}).length; }
+  sessionOwner() { return 'room'; }
+  async sessionCall(action,payload) {
+    if (action==='revoke') return this.revokeOwner(payload);
+    if (!['acquire','validate','checkpoint','release','transfer'].includes(action))
+      throw Error('Invalid session action');
+    const result=this.sessions[action](payload);
+    if (action==='acquire' && result.ok && result.previousOwner && result.previousSessionId) {
+      const revoked=await this.revokeOwner({uid:payload.uid,owner:result.previousOwner,sessionId:result.previousSessionId});
+      if (!revoked?.ok) throw Error('Session revocation unavailable');
+    }
+    return result;
+  }
+  revokeSession({uid,sessionId}) {
+    let count=0;
+    for (const ws of this.sockets()) {
+      const p=this.player(ws);
+      if (!p?.uid || p.uid!==uid || p.sessionId!==sessionId) continue;
+      p.revoked=true;
+      ws.serializeAttachment(p);
+      clearAuthDeadline(ws);
+      try { ws.close(1008,'Session replaced'); } catch (_) {}
+      count++;
+    }
+    return {ok:true,count};
+  }
+  async revokeOwner({uid,sessionId,owner}) {
+    if (typeof uid!=='string' || !uid || uid.length>128 ||
+        typeof sessionId!=='string' || !sessionId || sessionId.length>256)
+      return {ok:false,error:'Invalid session revocation'};
+    if (owner==='room') return this.revokeSession({uid,sessionId});
+    const zoneId=typeof owner==='string' && owner.startsWith('zone:') && normalizeZoneId(owner.slice(5));
+    if (!zoneId || owner!==`zone:${zoneId}`) return {ok:false,error:'Invalid session owner'};
+    const response=await this.env.ZONE.getByName(`free-zone-${zoneId}`).fetch(
+      new Request('https://zone.internal/_internal/session-revoke',{
+        method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({uid,sessionId})
+      })
+    );
+    const result=await response.json();
+    if (!response.ok || !result?.ok) throw Error('Session revocation unavailable');
+    return result;
+  }
+  entitlementSnapshot(uid) {
+    const row=this.sql.exec(
+      'SELECT speed_expires,coin_expires,vip1_expires FROM voxel_entitlements WHERE uid=?',uid
+    ).toArray()[0] || {};
+    return {speedExpires:Number(row.speed_expires)||0,coinExpires:Number(row.coin_expires)||0,
+      vip1Expires:Number(row.vip1_expires)||0};
+  }
+  ownsSession(ws,p) {
+    const current=this.player(ws);
+    const owned=current?.uid===p?.uid && current?.sessionId===p?.sessionId &&
+      !current?.revoked && !current?.sessionClosed &&
+      (typeof ws.readyState!=='number' || ws.readyState===1) &&
+      this.sessions.validate({uid:p?.uid,sessionId:p?.sessionId,owner:this.sessionOwner()});
+    if (!owned) ws.close(1008,'Session no longer owned');
+    return owned;
+  }
+  ownsZoneSession(body,uid) {
+    const owner=body?.owner;
+    const zoneId=typeof owner==='string' && owner.startsWith('zone:') && normalizeZoneId(owner.slice(5));
+    return Boolean(zoneId && owner===`zone:${zoneId}` &&
+      this.sessions.validate({uid,sessionId:body?.sessionId,owner}));
+  }
   send(ws,value) { try { ws.send(JSON.stringify(value)); } catch (_) {} }
   broadcast(value,except) {
     const data=JSON.stringify(value);
-    for(const ws of this.sockets()) if(ws!==except && this.player(ws)?.uid) {
+    for(const ws of this.sockets()) if(ws!==except && this.player(ws)?.uid && !this.player(ws)?.revoked && !this.player(ws)?.sessionClosed) {
       try { ws.send(data); } catch (_) {}
     }
   }
@@ -87,7 +157,7 @@ export class GameRoom {
     for (const ws of this.sockets()) {
       if (ws===except) continue;
       const other=this.player(ws);
-      if (!other?.uid) continue;
+      if (!other?.uid || other.revoked || other.sessionClosed) continue;
       const dx=(Number(other.x)||0)-(Number(sourcePlayer.x)||0);
       const dz=(Number(other.z)||0)-(Number(sourcePlayer.z)||0);
       if (dx*dx+dz*dz<=maxD2) out.push(ws);
@@ -237,6 +307,25 @@ export class GameRoom {
 
     const url = new URL(request.url);
 
+    if (url.pathname.startsWith('/_internal/session/')) {
+      const action=url.pathname.slice('/_internal/session/'.length);
+      if (request.method!=='POST') return Response.json({ok:false,error:'Method not allowed'},{status:405});
+      if (!['acquire','validate','checkpoint','release','transfer','revoke'].includes(action))
+        return Response.json({ok:false,error:'Unknown session action'},{status:404});
+      let body;
+      try { body=await request.json(); }
+      catch (_) { return Response.json({ok:false,error:'Invalid JSON'},{status:400}); }
+      if (!body || typeof body!=='object' || Array.isArray(body))
+        return Response.json({ok:false,error:'Invalid session request'},{status:400});
+      try {
+        const result=await this.sessionCall(action,body);
+        const value=typeof result==='boolean' ? {ok:result} : result;
+        return Response.json(value,{status:value?.ok ? 200 : 409});
+      } catch (_) {
+        return Response.json({ok:false,error:'Session storage unavailable'},{status:503});
+      }
+    }
+
     if (
       url.pathname === '/_internal/get-entitlements' &&
       request.method === 'POST'
@@ -320,17 +409,21 @@ export class GameRoom {
 
       const uid=String(body?.uid||'');
       const playerId=String(body?.playerId||'');
+      const sessionId=String(body?.sessionId||'');
       const fromZone=normalizeZoneId(body?.fromZone);
       const toZone=normalizeZoneId(body?.toZone);
       const x=Number(body?.x), y=Number(body?.y), z=Number(body?.z), r=Number(body?.r);
 
-      if (!uid || uid.length>128 || !playerId || playerId.length>128 ||
+      if (!uid || uid.length>128 || !playerId || playerId.length>128 || !sessionId || sessionId.length>256 ||
           !fromZone || !toZone || !zonesAreAdjacent(fromZone,toZone) ||
           ![x,y,z,r].every(Number.isFinite) ||
           Math.abs(x)>748 || Math.abs(z)>748 || y<-.25 || y>8 ||
           zoneFromPosition(x,z)!==toZone) {
         return Response.json({ok:false,error:'Invalid handoff'},{status:400});
       }
+      if (!this.sessions.validate({uid,sessionId,owner:`zone:${fromZone}`}) ||
+          this.sessions.row(uid)?.player_id!==playerId)
+        return Response.json({ok:false,error:'Source session not owned'},{status:409});
 
       const now=Date.now();
       const expiresAt=now+12000;
@@ -338,9 +431,9 @@ export class GameRoom {
       this.sql.exec('DELETE FROM voxel_zone_handoffs WHERE expires_at<=?',now);
       this.sql.exec(
         `INSERT INTO voxel_zone_handoffs
-         (token,uid,player_id,from_zone,to_zone,x,y,z,r,expires_at,created_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-        token,uid,playerId,fromZone,toZone,x,y,z,r,expiresAt,now
+         (token,uid,player_id,from_zone,to_zone,x,y,z,r,expires_at,created_at,session_id)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+        token,uid,playerId,fromZone,toZone,x,y,z,r,expiresAt,now,sessionId
       );
 
       return Response.json({ok:true,token,expiresAt,toZone});
@@ -365,12 +458,13 @@ export class GameRoom {
 
       const result=this.ctx.storage.transactionSync(()=>{
         const row=this.sql.exec(
-          `SELECT token,uid,player_id,from_zone,to_zone,x,y,z,r,expires_at,created_at
+          `SELECT token,uid,player_id,from_zone,to_zone,x,y,z,r,expires_at,created_at,session_id
            FROM voxel_zone_handoffs WHERE token=?`,
           token
         ).toArray()[0];
 
-        if (!row || row.uid!==uid || row.to_zone!==toZone || Number(row.expires_at||0)<=now) {
+        if (!row || row.uid!==uid || row.to_zone!==toZone || Number(row.expires_at||0)<=now ||
+            !this.sessions.validate({uid,sessionId:row.session_id,owner:`zone:${row.from_zone}`})) {
           return null;
         }
 
@@ -379,6 +473,8 @@ export class GameRoom {
           playerId:String(row.player_id),
           fromZone:String(row.from_zone),
           toZone:String(row.to_zone),
+          sessionId:String(row.session_id),
+          expiresAt:Number(row.expires_at),
           x:Number(row.x),y:Number(row.y),z:Number(row.z),r:Number(row.r),
           createdAt:Number(row.created_at)||now
         };
@@ -406,6 +502,8 @@ export class GameRoom {
           ![px,py,pz].every(Number.isFinite)) {
         return Response.json({ok:false,error:'Invalid collect request'},{status:400});
       }
+      if (!this.ownsZoneSession(body,uid))
+        return Response.json({ok:false,error:'Session no longer owned'},{status:403});
 
       const visibleRow=this.sql.exec(
         'SELECT respawn_at,cycle FROM voxel_coins WHERE id=?',id
@@ -496,6 +594,8 @@ export class GameRoom {
       if (!uid || uid.length>128 || ![px,py,pz].every(Number.isFinite)) {
         return Response.json({ok:false,error:'Invalid Lucky Box request'},{status:400});
       }
+      if (!this.ownsZoneSession(body,uid))
+        return Response.json({ok:false,error:'Session no longer owned'},{status:403});
 
       const snap=this.boxSnapshot(now);
       if (!snap.active) {
@@ -541,6 +641,8 @@ export class GameRoom {
       if (!uid || uid.length>128) {
         return Response.json({ok:false,error:'Invalid Lucky Box request'},{status:400});
       }
+      if (!this.ownsZoneSession(body,uid))
+        return Response.json({ok:false,error:'Session no longer owned'},{status:403});
 
       const reward=secureLuckyReward();
       let result;
@@ -685,22 +787,20 @@ export class GameRoom {
     const [client,server]=Object.values(pair);
     this.ctx.acceptWebSocket(server);
     server.serializeAttachment({authAttempts:0,acceptedAt:Date.now()});
+    scheduleAuthDeadline(this,server);
     return new Response(null,{status:101,webSocket:client});
   }
 
   async webSocketMessage(ws,message) {
     await this.ready;
-    if (typeof message!=='string' || message.length>8192) { ws.close(1009,'Invalid message'); return; }
-    let m; try { m=JSON.parse(message); } catch (_) { return; }
-    const p=this.player(ws);
-    if (!p) return;
-    if (m?.type===WS_MESSAGE.AUTH) return this.handleAuth(ws,p,m);
-    if (!p.uid || Math.floor(Date.now()/1000)>=p.exp) { ws.close(1008,'Sign in required'); return; }
-    if (message.length>256) return;
-    if (m?.type===WS_MESSAGE.MOVE) return this.handleMove(ws,p,m);
-    if (m?.type===WS_MESSAGE.COLLECT) return this.handleCollect(ws,p,m);
-      if (m?.type===WS_MESSAGE.COLLECT_BOX) return this.handleCollectBox(ws,p,m);
-      if (m?.type===WS_MESSAGE.SPIN_BOX) return this.handleSpinBox(ws,p,m);
+    return enqueueFrame(this,ws,message,PROTOCOL_VERSION.LEGACY_ROOM,async (m,p)=>{
+      if (m.type===WS_MESSAGE.AUTH) return this.handleAuth(ws,p,m);
+      if (m.type===WS_MESSAGE.MOVE) return this.handleMove(ws,p,m);
+      if (m.type===WS_MESSAGE.COLLECT) return this.handleCollect(ws,p,m);
+      if (m.type===WS_MESSAGE.COLLECT_BOX) return this.handleCollectBox(ws,p,m);
+      if (m.type===WS_MESSAGE.SPIN_BOX) return this.handleSpinBox(ws,p,m);
+      ws.close(1008,'Message unavailable in this room');
+    });
   }
 
   async handleAuth(ws,p,m) {
@@ -712,18 +812,65 @@ export class GameRoom {
     try { verified=await verifyFirebaseIdToken(m.token,this.projectId); }
     catch (_) { this.send(ws,{type:WS_MESSAGE.AUTH_ERROR,message:'Firebase sign-in failed'}); ws.close(1008,'Invalid ID token'); return; }
     p=this.player(ws); // Another auth frame may have completed during certificate fetch.
+    if (!p || p.revoked || p.sessionClosed || (typeof ws.readyState==='number' && ws.readyState!==1)) return;
+    if (!p.uid && Date.now()>=Number(p.acceptedAt)+SECURITY.authDeadlineMs) {
+      ws.close(1008,'Authentication deadline exceeded');
+      return;
+    }
     if (p.uid && p.uid!==verified.uid) { ws.close(1008,'Different account'); return; }
-    if (p.uid) { p.exp=verified.exp; ws.serializeAttachment(p); this.send(ws,{type:WS_MESSAGE.AUTH_REFRESHED}); return; }
-    const uid=verified.uid, now=Date.now(), id=crypto.randomUUID();
+    if (m.handoffToken) { ws.close(1008,'Handoff requires a target zone'); return; }
+    if (p.uid) {
+      const identity={uid:p.uid,sessionId:p.sessionId,owner:this.sessionOwner()};
+      if (!await this.sessionCall('validate',identity)) { ws.close(1008,'Session no longer owned'); return; }
+      const checkpoint=await this.sessionCall('checkpoint',{
+        ...identity,position:{x:p.x,y:p.y,z:p.z,r:p.r},exp:verified.exp
+      });
+      if (!checkpoint.ok) { ws.close(1008,'Session no longer owned'); return; }
+      p.exp=verified.exp;
+      p.resumeExpiresAt=checkpoint.resumeExpiresAt;
+      p.entitlements=this.entitlementSnapshot(p.uid);
+      ws.serializeAttachment(p);
+      clearAuthDeadline(ws);
+      this.send(ws,{type:WS_MESSAGE.AUTH_REFRESHED,session:sessionMetadata(p),entitlements:p.entitlements,serverNow:Date.now()});
+      return;
+    }
+    const uid=verified.uid, now=Date.now();
+    const n=this.count();
+    const session=await this.sessionCall('acquire',{
+      uid,owner:this.sessionOwner(),playerId:crypto.randomUUID(),
+      position:{x:(n%5)*2-4,y:0,z:Math.floor(n/5)*2,r:0},exp:verified.exp,
+      ...(Object.hasOwn(m,'resumeToken') ? {resumeToken:m.resumeToken} : {})
+    });
+    if (!session?.ok) {
+      this.send(ws,{type:WS_MESSAGE.AUTH_ERROR,message:'Session resume failed'});
+      ws.close(1008,'Invalid session resume');
+      return;
+    }
+    if (!this.sessions.validate({uid,sessionId:session.sessionId,owner:this.sessionOwner()})) {
+      ws.close(1008,'Session no longer owned');
+      return;
+    }
+    if ((typeof ws.readyState==='number' && ws.readyState!==1) ||
+        Date.now()>=Number(p.acceptedAt)+SECURITY.authDeadlineMs ||
+        verified.exp<=Math.floor(Date.now()/1000)) {
+      await this.sessionCall('release',{uid,sessionId:session.sessionId,owner:this.sessionOwner()});
+      ws.close(1008,'Authentication deadline exceeded');
+      return;
+    }
+    const id=session.playerId;
     const nickname='Player-'+uid.slice(-6);
     this.sql.exec('INSERT INTO voxel_scores(uid,nickname,score,updated_at) VALUES (?, ?, 0, ?) ON CONFLICT(uid) DO NOTHING',uid,nickname,now);
     const score=this.sql.exec('SELECT score FROM voxel_scores WHERE uid=?',uid).toArray()[0]?.score||0;
-    const n=this.count();
-    Object.assign(p,{uid,exp:verified.exp,id,nickname:normalizePlayerName(m?.name,nickname),x:(n%5)*2-4,y:0,z:Math.floor(n/5)*2,r:0,at:now,last:0,lastCollect:0});
+    Object.assign(p,{uid,exp:verified.exp,id,nickname:normalizePlayerName(m?.name,nickname),
+      ...session.position,sessionId:session.sessionId,resumeToken:session.resumeToken,
+      resumeExpiresAt:session.resumeExpiresAt,at:now,last:0,lastCollect:0,
+      entitlements:this.entitlementSnapshot(uid)});
     ws.serializeAttachment(p);
+    clearAuthDeadline(ws);
     this.send(ws,{type:WS_MESSAGE.WELCOME,protocol:PROTOCOL_VERSION.LEGACY_ROOM,id,spawn:{x:p.x,y:p.y,z:p.z},
       players:this.nearbySockets(p,ws).map(other=>this.publicPlayer(this.player(other))).filter(Boolean),
-      coins:this.coinSnapshot(),luckyBox:this.boxSnapshot(now),score,leaderboard:this.top(),serverNow:now,count:this.count()});
+      coins:this.coinSnapshot(),luckyBox:this.boxSnapshot(now),score,leaderboard:this.top(),serverNow:now,count:this.count(),
+      session:sessionMetadata(p),resumed:session.resumed,entitlements:p.entitlements});
     this.broadcastNearby({type:WS_MESSAGE.JOIN,player:this.publicPlayer(p),count:this.count()},p,ws);
     this.broadcast({type:WS_MESSAGE.LEADERBOARD,top:this.top()});
   }
@@ -757,6 +904,7 @@ export class GameRoom {
   }
 
   handleCollectBox(ws,p) {
+    if (!this.ownsSession(ws,p)) return;
     const now = Date.now();
     const snap = this.boxSnapshot(now);
     if (!snap.active) {
@@ -788,6 +936,7 @@ export class GameRoom {
   }
 
   handleSpinBox(ws,p) {
+    if (!this.ownsSession(ws,p)) return;
     const now = Date.now();
     const reward = secureLuckyReward();
     let result;
@@ -837,6 +986,7 @@ export class GameRoom {
 
 
   handleMove(ws,p,m) {
+    if (!this.ownsSession(ws,p)) return;
     const now=Date.now();
     if (now-p.last<MOVE_TICK_MS) return;
     const {x,y,z,r}=m;
@@ -864,6 +1014,7 @@ export class GameRoom {
   }
 
   async handleCollect(ws,p,m) {
+    if (!this.ownsSession(ws,p)) return;
     const now=Date.now(), id=m.id;
     if (!Number.isInteger(id) || id<0 || id>=COINS.length || now-p.lastCollect<150) return;
     p.lastCollect=now; ws.serializeAttachment(p);
@@ -913,13 +1064,23 @@ export class GameRoom {
   }
 
   async webSocketClose(ws) {
-    const p=this.player(ws);
-    if (p?.uid) this.broadcast({type:WS_MESSAGE.LEAVE,id:p.id,count:Math.max(0,this.count()-1)},ws);
-    try { ws.close(1000,'Bye'); } catch (_) {}
+    return this.closeSession(ws,1000,'Bye');
   }
   async webSocketError(ws) {
+    return this.closeSession(ws,1011,'Connection error');
+  }
+  async closeSession(ws,code,reason) {
+    clearAuthDeadline(ws);
     const p=this.player(ws);
-    if (p?.uid) this.broadcast({type:WS_MESSAGE.LEAVE,id:p.id,count:Math.max(0,this.count()-1)},ws);
-    try { ws.close(1011,'Connection error'); } catch (_) {}
+    if (p?.uid && !p.sessionClosed) {
+      p.sessionClosed=true;
+      ws.serializeAttachment(p);
+      try {
+        const released=await this.sessionCall('release',{uid:p.uid,sessionId:p.sessionId,owner:this.sessionOwner()});
+        if (released.ok && !p.revoked && !p.provisional)
+          this.broadcast({type:WS_MESSAGE.LEAVE,id:p.id,count:this.count()},ws);
+      } catch (_) { /* Durable ownership remains fail-closed while storage is unavailable. */ }
+    }
+    try { ws.close(code,reason); } catch (_) {}
   }
 }

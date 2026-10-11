@@ -2,6 +2,8 @@
 'use strict';
 
 const fs = require('fs');
+const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 const htmlPath = process.argv[2] || 'index_phase2c2_multiplayer_fix.html';
 const workerPath = process.argv[3] || 'worker_phase2c2_multiplayer_fix.js';
 
@@ -37,8 +39,17 @@ check('client can cancel handoff after stepping back',
 check('worker handles handoff_cancel',
   /m\?\.type===['"]handoff_cancel['"]/.test(worker)
 );
+// Execute the active Worker graph to verify the nine-second window, ticket
+// expiry, real movement envelope, ACK ordering and persisted single ownership.
+const handoffWindow = spawnSync(process.execPath, [
+  path.join(__dirname, 'tests/rebuild/handoff-window.cjs')
+], { cwd: __dirname, encoding: 'utf8', timeout: 30000, maxBuffer: 1024 * 1024 });
+if (handoffWindow.stdout) process.stdout.write(handoffWindow.stdout);
+if (handoffWindow.stderr) process.stderr.write(handoffWindow.stderr);
+if (handoffWindow.error) console.error(handoffWindow.error.message);
 check('handoff resume window increased',
-  /deadline:now\+9000/.test(worker) && /Math\.min\(9,Math\.max/.test(worker)
+  !handoffWindow.error && handoffWindow.status === 0 && !handoffWindow.signal &&
+  /Math\.min\(9,Math\.max/.test(worker)
 );
 
 check('client hides coin immediately on contact',

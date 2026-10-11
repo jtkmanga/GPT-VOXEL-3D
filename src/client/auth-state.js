@@ -40,6 +40,7 @@
 
         // Listen to Auth State Changes
         auth.onAuthStateChanged((user) => {
+            if (typeof secureOnIdentityChanged === 'function') secureOnIdentityChanged(user);
             if (user) {
                 state.isLoggedIn = true;
                 state.userId = user.uid;
