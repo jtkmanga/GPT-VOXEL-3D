@@ -810,10 +810,20 @@ export class ZoneRoom {
       grounded:p.motion.grounded,serverNow:now});
   }
 
+  async checkpointEconomy(ws,p) {
+    const checkpoint=await this.sessionCall('checkpoint',{
+      uid:p.uid,sessionId:p.sessionId,owner:this.sessionOwner(),
+      position:{x:p.x,y:p.y,z:p.z,r:p.r}
+    });
+    const current=this.player(ws);
+    return checkpoint?.ok===true && ws.readyState===1 && !current?.revoked &&
+      !current?.sessionClosed && current?.sessionId===p.sessionId;
+  }
+
   async handleCollect(ws,p,m) {
     const now=Date.now();
     const id=Number(m?.id);
-    if (!Number.isInteger(id) || id<0 || id>=COINS.length || now-Number(p.lastCollect||0)<150) return;
+    if (!Number.isInteger(id) || id<0 || id>=COINS.length || now-Number(p.lastCollect||0)<150) return false;
 
     // Collection uses the latest server simulation state. Legacy contact
     // coordinates remain accepted by the schema but cannot move a player.
@@ -821,18 +831,22 @@ export class ZoneRoom {
     ws.serializeAttachment(p);
 
     try {
+      if (!await this.checkpointEconomy(ws,p)) return false;
       const response=await this.env.ROOM.getByName('free-v2-demo').fetch(
         new Request('https://internal/_internal/zone-collect',{
           method:'POST',
           headers:{'content-type':'application/json'},
-          body:JSON.stringify({uid:p.uid,sessionId:p.sessionId,owner:this.sessionOwner(),id,x:p.x,y:p.y,z:p.z})
+          body:JSON.stringify({uid:p.uid,sessionId:p.sessionId,owner:this.sessionOwner(),id,requestId:m.requestId})
         })
       );
       const result=await response.json();
 
       if (!response.ok || !result?.ok) {
-        if (response.status>=500) this.send(ws,{type:WS_MESSAGE.SERVER_ERROR,message:'Score storage unavailable'});
-        return;
+        if (response.status>=500) this.send(ws,{type:WS_MESSAGE.SERVER_ERROR,message:'Score storage unavailable',requestId:m.requestId});
+        else this.send(ws,{type:WS_MESSAGE.COIN_COLLECT_RESULT,id,collected:false,
+          activeAfter:Number(result?.activeAfter)||0,serverNow:Date.now(),requestId:m.requestId,
+          event:result?.event||null,cycle:result?.cycle});
+        return false;
       }
 
       if (!result.collected) {
@@ -841,9 +855,11 @@ export class ZoneRoom {
           id,
           collected:false,
           activeAfter:Number(result.activeAfter)||0,
-          serverNow:Number(result.serverNow)||now
+          serverNow:Number(result.serverNow)||now,
+          requestId:m.requestId,receipt:result.receipt,replayed:result.replayed,
+          event:result.event||null,cycle:result.cycle
         });
-        return;
+        return false;
       }
 
       this.send(ws,{
@@ -853,74 +869,89 @@ export class ZoneRoom {
         event:result.event||null,
         score:Number(result.score)||0,
         reward:Number(result.reward)||0,
-        serverNow:Number(result.serverNow)||now
+        serverNow:Number(result.serverNow)||now,
+        requestId:m.requestId,receipt:result.receipt,replayed:result.replayed
       });
       // Local Zone gets the board immediately; GameRoom also fans it out globally.
       if (Array.isArray(result.leaderboard)) {
         this.broadcastAll({type:WS_MESSAGE.LEADERBOARD,top:result.leaderboard});
       }
+      return true;
     } catch (_) {
-      this.send(ws,{type:WS_MESSAGE.SERVER_ERROR,message:'World action unavailable'});
+      this.send(ws,{type:WS_MESSAGE.SERVER_ERROR,message:'World action unavailable',requestId:m.requestId});
+      return false;
     }
   }
 
-  async handleCollectBox(ws,p) {
+  async handleCollectBox(ws,p,m={}) {
     try {
+      if (!await this.checkpointEconomy(ws,p)) return false;
       const response=await this.env.ROOM.getByName('free-v2-demo').fetch(
         new Request('https://internal/_internal/zone-collect-box',{
           method:'POST',
           headers:{'content-type':'application/json'},
-          body:JSON.stringify({uid:p.uid,sessionId:p.sessionId,owner:this.sessionOwner(),x:p.x,y:p.y,z:p.z})
+          body:JSON.stringify({uid:p.uid,sessionId:p.sessionId,owner:this.sessionOwner(),requestId:m.requestId})
         })
       );
       const result=await response.json();
-      if (!response.ok || !result?.ok) return;
+      if (!response.ok || !result?.ok) {
+        if (response.status>=500) this.send(ws,{type:WS_MESSAGE.SERVER_ERROR,message:'Lucky Box storage unavailable',requestId:m.requestId});
+        else if (result?.box) this.send(ws,{type:WS_MESSAGE.BOX_STATE,box:result.box,
+          serverNow:Date.now(),requestId:m.requestId,claimed:false});
+        return false;
+      }
 
       if (result.claimed) {
         this.send(ws,{
           type:WS_MESSAGE.BOX_SPIN_READY,
           box:result.box,
-          serverNow:Number(result.serverNow)||Date.now()
+          serverNow:Number(result.serverNow)||Date.now(),
+          requestId:m.requestId,receipt:result.receipt,replayed:result.replayed
         });
       } else if (result.box) {
         this.send(ws,{
           type:WS_MESSAGE.BOX_STATE,
           box:result.box,
-          serverNow:Number(result.serverNow)||Date.now()
+          serverNow:Number(result.serverNow)||Date.now(),requestId:m.requestId,claimed:false
         });
       }
+      return result.claimed===true;
     } catch (_) {
-      this.send(ws,{type:WS_MESSAGE.SERVER_ERROR,message:'Lucky Box unavailable'});
+      this.send(ws,{type:WS_MESSAGE.SERVER_ERROR,message:'Lucky Box unavailable',requestId:m.requestId});
+      return false;
     }
   }
 
-  async handleSpinBox(ws,p) {
+  async handleSpinBox(ws,p,m={}) {
     try {
       const response=await this.env.ROOM.getByName('free-v2-demo').fetch(
         new Request('https://internal/_internal/zone-spin-box',{
           method:'POST',
           headers:{'content-type':'application/json'},
-          body:JSON.stringify({uid:p.uid,sessionId:p.sessionId,owner:this.sessionOwner()})
+          body:JSON.stringify({uid:p.uid,sessionId:p.sessionId,owner:this.sessionOwner(),requestId:m.requestId})
         })
       );
       const result=await response.json();
 
       if (!response.ok || !result?.ok) {
-        this.send(ws,{type:WS_MESSAGE.BOX_ERROR,message:result?.error||'Lucky Box spin failed'});
-        return;
+        this.send(ws,{type:WS_MESSAGE.BOX_ERROR,message:result?.error||'Lucky Box spin failed',requestId:m.requestId});
+        return false;
       }
 
       this.send(ws,{
         type:WS_MESSAGE.BOX_REWARD,
         reward:Number(result.reward)||0,
         score:Number(result.score)||0,
-        serverNow:Number(result.serverNow)||Date.now()
+        serverNow:Number(result.serverNow)||Date.now(),
+        requestId:m.requestId,receipt:result.receipt,replayed:result.replayed
       });
       if (Array.isArray(result.leaderboard)) {
         this.broadcastAll({type:WS_MESSAGE.LEADERBOARD,top:result.leaderboard});
       }
+      return true;
     } catch (_) {
-      this.send(ws,{type:WS_MESSAGE.BOX_ERROR,message:'Lucky Box storage unavailable'});
+      this.send(ws,{type:WS_MESSAGE.BOX_ERROR,message:'Lucky Box storage unavailable',requestId:m.requestId});
+      return false;
     }
   }
 

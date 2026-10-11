@@ -67,9 +67,12 @@ check('collector receives direct authoritative result',
   /type:\s*['"]coin_collect_result['"]/.test(worker) &&
   /case\s+['"]coin_collect_result['"]/.test(html)
 );
-check('coin fan-out no longer blocks collector response',
-  /this\.ctx\.waitUntil\(this\.sendZoneEvent\(affected,event\)\)/.test(worker)
-);
+// Exercise the actual collector while only downstream transport is delayed.
+// Helper extraction must not be mistaken for a loss of nonblocking fan-out.
+const fanout = spawnSync(process.execPath, [
+  path.join(__dirname, 'tests/rebuild/economy-fanout.cjs')
+], { cwd: __dirname, stdio: 'inherit' });
+check('coin fan-out no longer blocks collector response', !fanout.error && fanout.status === 0);
 
 const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/gi)];
 if (!scripts.length) {

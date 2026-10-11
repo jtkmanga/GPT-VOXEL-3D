@@ -58,16 +58,28 @@ async function handleFrame(room, ws, raw, protocol, dispatch) {
     if (Number.isSafeInteger(player.lastSequence) && packet.seq <= player.lastSequence) return;
     player.lastSequence = packet.seq;
   }
+  const economyAction = [WS_MESSAGE.COLLECT, WS_MESSAGE.COLLECT_BOX, WS_MESSAGE.SPIN_BOX].includes(packet.type);
+  let requestKey;
   if (packet.requestId !== undefined) {
     const key = `${typeof packet.requestId}:${packet.requestId}`;
     player.recentRequests ||= [];
     if (player.recentRequests.includes(key)) return;
-    player.recentRequests.push(key);
-    if (player.recentRequests.length > 128) player.recentRequests.shift();
+    requestKey = key;
+    if (!economyAction) {
+      player.recentRequests.push(key);
+      if (player.recentRequests.length > 128) player.recentRequests.shift();
+    }
   }
   ws.serializeAttachment(player);
-  await dispatch(packet, player);
+  const completed = await dispatch(packet, player);
   player = room.player(ws);
+  // A failed persistence attempt must remain retryable. Completed same-socket
+  // repeats stay silent; the economy ledger fences retries after reconnect.
+  if (economyAction && completed === true && requestKey && player) {
+    player.recentRequests ||= [];
+    player.recentRequests.push(requestKey);
+    if (player.recentRequests.length > 128) player.recentRequests.shift();
+  }
   if (ws.readyState !== 1 || !player?.uid || player.revoked || player.handoffResume) return;
   const checkpoint = await room.sessionCall('checkpoint', {
     uid: player.uid, sessionId: player.sessionId, owner: room.sessionOwner(),

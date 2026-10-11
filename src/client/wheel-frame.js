@@ -272,9 +272,9 @@
                 camera.lookAt(smoothCamTarget);
 
                 coins.forEach((coin) => {
-                    // Firebase เป็นตัวกลางของสถานะ แต่การกลับมาแสดงผลหลัง 1 นาที
-                    // ต้องทำได้ทันทีในเครื่องนี้โดยไม่ต้องรอ snapshot ใหม่
-                    if (!coin.active && coin.respawnTime > 0 && nowMs >= coin.respawnTime) {
+                    // Project only the cooldown supplied by the authoritative
+                    // room, using its clock offset rather than device time.
+                    if (!coin.active && coin.respawnTime > 0 && secureNow() >= coin.respawnTime) {
                         coin.active = true;
                         coin.mesh.visible = true;
                         coin.respawnTime = 0;

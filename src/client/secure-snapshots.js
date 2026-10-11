@@ -130,19 +130,26 @@
         function secureApplyCoinSnapshot(serverCoins = [], serverNow = null) {
             if (serverNow) secureSetServerNow(serverNow);
             const now = serverNow ? Number(serverNow) : secureNow();
-
-            coins.forEach(c => {
-                c.serverId = null;
-                c.active = false;
-                c.mesh.visible = false;
-            });
-
-            if (!Array.isArray(serverCoins)) return;
-
-            serverCoins.forEach(data => {
+            const entries = new Map();
+            if (Array.isArray(serverCoins)) serverCoins.forEach(data => {
                 const id = Number(data?.id);
                 if (!Number.isInteger(id) || id < 0 || id >= coins.length) return;
-                const coin = coins[id];
+                entries.set(id, data);
+            });
+
+            coins.forEach((coin, id) => {
+                const data = entries.get(id);
+                if (!data) {
+                    coin.serverId = null;
+                    coin.active = false;
+                    coin.mesh.visible = false;
+                    return;
+                }
+                const cycle = Number(data.cycle) || 0;
+                if (Number.isSafeInteger(coin.serverCycle) && cycle < coin.serverCycle) return;
+                if (coin.serverCycle !== cycle) coin._collectActionRequestId = null;
+                coin.serverCycle = cycle;
+                coin._collectPendingUntil = 0;
                 coin.serverId = id;
                 coin.id = `server_coin_${id}`;
                 coin.mesh.position.x = Number(data.x) || 0;
@@ -157,8 +164,19 @@
         function secureUpdateCoinState(message) {
             const id = Number(message?.id);
             if (!Number.isInteger(id) || id < 0 || id >= coins.length) return;
-            if (message?.serverNow) secureSetServerNow(message.serverNow);
             const coin = coins[id];
+            if (message?.requestId && coin._collectActionRequestId &&
+                message.requestId !== coin._collectActionRequestId &&
+                Number(coin._collectPendingUntil || 0) > 0) return;
+            const cycle = Number(message?.cycle);
+            if (Number.isSafeInteger(cycle) && cycle >= 0) {
+                if (Number.isSafeInteger(coin.serverCycle) && cycle < coin.serverCycle) return;
+                if (coin.serverCycle !== cycle) coin._collectActionRequestId = null;
+                coin.serverCycle = cycle;
+            }
+            if (message?.serverNow) secureSetServerNow(message.serverNow);
+            if (message?.type === protocol.WS_MESSAGE.COIN_STATE &&
+                message.requestId === coin._collectActionRequestId) coin._collectActionRequestId = null;
             coin.serverId = id;
             if (Number.isFinite(Number(message?.x)) && Number.isFinite(Number(message?.z))) {
                 coin.mesh.position.x = Number(message.x);

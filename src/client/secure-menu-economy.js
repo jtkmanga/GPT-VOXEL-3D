@@ -35,6 +35,15 @@
             coins.forEach(c => { c.active = false; c.mesh.visible = false; });
         };
 
+        let secureEconomyRequestCounter = 0;
+
+        function secureEconomyRequestId(kind) {
+            const nonce = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+                ? crypto.randomUUID()
+                : `${Date.now().toString(36)}-${(++secureEconomyRequestCounter).toString(36)}-${Math.random().toString(36).slice(2)}`;
+            return `${kind}:${nonce}`;
+        }
+
         collectCoin = function(coin) {
             if (secureHandoffInProgress || !coin || !coin.active || !secureGameReady || !secureGameSocket || secureGameSocket.readyState !== WebSocket.OPEN) return;
             const id = Number(coin.serverId);
@@ -47,6 +56,11 @@
             // server-authoritative. If the server rejects/times out, restore it.
             const requestId = Number(coin._collectRequestId || 0) + 1;
             coin._collectRequestId = requestId;
+            const uid = String(auth.currentUser?.uid || '');
+            if (!coin._collectActionRequestId || coin._collectActionUid !== uid) {
+                coin._collectActionRequestId = secureEconomyRequestId('coin');
+                coin._collectActionUid = uid;
+            }
             coin._collectPendingUntil = now + 2500;
             coin.active = false;
             coin.mesh.visible = false;
@@ -54,7 +68,8 @@
             try {
                 secureGameSocket.send(JSON.stringify({
                     type: protocol.WS_MESSAGE.COLLECT,
-                    id
+                    id,
+                    requestId: coin._collectActionRequestId
                 }));
             } catch (_) {
                 coin._collectPendingUntil = 0;
@@ -95,7 +110,6 @@
         // Lucky Box is fully server-authoritative in this build.
         // The Worker owns: one-box state, claim locking, 4-hour respawn and reward RNG.
         function secureApplyLuckyBoxState(raw = null, serverNow = null) {
-            if (serverNow) secureSetServerNow(serverNow);
             if (!raw || typeof raw !== 'object') return;
 
             if (!luckyBox || !luckyBox.mesh) {
@@ -110,14 +124,24 @@
                     spawnCycle: 0,
                     collecting: false,
                     claimExpiresAt: 0,
-                    claimed: false
+                    claimed: false,
+                    serverActive: false
                 };
             }
 
+            const cycle = Number(raw.cycle ?? raw.spawnCycle ?? 0) || 0;
+            if (cycle < luckyBox.spawnCycle) return;
+            if (serverNow) secureSetServerNow(serverNow);
+            if (luckyBox.claimed && !raw.claimed && raw.active && cycle === luckyBox.spawnCycle) {
+                // The server released the previous claim. Contact now is a new
+                // logical attempt, rather than a replay of its expired receipt.
+                luckyBox._actionCycle = null;
+            }
             luckyBox.nextSpawnTimestamp = Number(raw.nextSpawnAt ?? raw.nextSpawnTimestamp ?? 0) || 0;
-            luckyBox.spawnCycle = Number(raw.cycle ?? raw.spawnCycle ?? 0) || 0;
+            luckyBox.spawnCycle = cycle;
             luckyBox.claimExpiresAt = Number(raw.claimExpiresAt ?? 0) || 0;
             luckyBox.claimed = Boolean(raw.claimed);
+            luckyBox.serverActive = Boolean(raw.active);
             luckyBox.collecting = false;
 
             const x = Number(raw.x);
@@ -129,7 +153,7 @@
             const now = secureNow();
             const claimStillActive = luckyBox.claimed && luckyBox.claimExpiresAt > now;
             const waitingRespawn = luckyBox.nextSpawnTimestamp > now;
-            luckyBox.active = Boolean(raw.active) && !claimStillActive && !waitingRespawn;
+            luckyBox.active = luckyBox.serverActive && !claimStillActive && !waitingRespawn;
             luckyBox.mesh.visible = luckyBox.active;
             secureUpdateLuckyBoxTimer();
         }
@@ -160,18 +184,31 @@
                 return;
             }
 
-            luckyBox.claimed = false;
-            luckyBox.active = true;
-            if (luckyBox.mesh) luckyBox.mesh.visible = true;
-            timerEl.innerText = 'พร้อมเปิด!';
+            // A clock reaching zero cannot create an authoritative spawn or
+            // release a claim. The room publishes its persisted active state.
+            luckyBox.active = Boolean(luckyBox.serverActive) && !luckyBox.claimed;
+            if (luckyBox.mesh) luckyBox.mesh.visible = luckyBox.active;
+            timerEl.innerText = luckyBox.active ? 'พร้อมเปิด!' : 'กำลังรอสถานะจาก Server...';
         }
 
         function secureRequestLuckyBoxCollect() {
             if (secureHandoffInProgress || !luckyBox || !luckyBox.active || luckyBox.collecting) return;
             if (!secureGameReady || !secureGameSocket || secureGameSocket.readyState !== WebSocket.OPEN) return;
+            const uid = String(auth.currentUser?.uid || '');
+            if (!luckyBox._claimActionRequestId || luckyBox._actionCycle !== luckyBox.spawnCycle || luckyBox._actionUid !== uid) {
+                luckyBox._actionCycle = luckyBox.spawnCycle;
+                luckyBox._actionUid = uid;
+                luckyBox._claimActionRequestId = secureEconomyRequestId('box-claim');
+                luckyBox._spinActionRequestId = null;
+            }
             luckyBox.collecting = true;
             setTimeout(() => { if (luckyBox) luckyBox.collecting = false; }, 1200);
-            secureGameSocket.send(JSON.stringify({ type: protocol.WS_MESSAGE.COLLECT_BOX }));
+            try {
+                secureGameSocket.send(JSON.stringify({ type: protocol.WS_MESSAGE.COLLECT_BOX,
+                    requestId: luckyBox._claimActionRequestId }));
+            } catch (_) {
+                luckyBox.collecting = false;
+            }
         }
 
         spawnLuckyBoxes = function() {
@@ -187,7 +224,8 @@
                 spawnCycle: 0,
                 collecting: false,
                 claimExpiresAt: 0,
-                claimed: false
+                claimed: false,
+                serverActive: false
             };
             luckyBoxServerRef = null;
             const timerEl = document.getElementById('hud-box-timer');
@@ -209,7 +247,7 @@
         };
 
         spinWheel = function() {
-            if (state.wheelSpinning || secureHandoffInProgress) return;
+            if (state.wheelSpinning || secureHandoffInProgress || !luckyBox) return;
             if (!secureGameReady || !secureGameSocket || secureGameSocket.readyState !== WebSocket.OPEN) {
                 alert('Game Server หลุด กรุณาเข้าเกมใหม่');
                 return;
@@ -217,5 +255,20 @@
             state.wheelSpinning = true;
             document.getElementById('btn-spin-wheel').classList.add('hidden');
             document.getElementById('wheel-result-msg').innerText = 'กำลังขอผลสุ่มจาก Server...';
-            secureGameSocket.send(JSON.stringify({ type: protocol.WS_MESSAGE.SPIN_BOX }));
+            if (!luckyBox._spinActionRequestId) luckyBox._spinActionRequestId = secureEconomyRequestId('box-spin');
+            const requestId = luckyBox._spinActionRequestId;
+            luckyBox._spinPendingRequestId = requestId;
+            const allowRetry = () => {
+                if (luckyBox?._spinPendingRequestId !== requestId) return;
+                luckyBox._spinPendingRequestId = null;
+                state.wheelSpinning = false;
+                document.getElementById('btn-spin-wheel').classList.remove('hidden');
+                document.getElementById('wheel-result-msg').innerText = 'ยังไม่ได้รับผลจาก Server กรุณาลองอีกครั้ง';
+            };
+            try {
+                secureGameSocket.send(JSON.stringify({ type: protocol.WS_MESSAGE.SPIN_BOX, requestId }));
+                setTimeout(allowRetry, 2700);
+            } catch (_) {
+                allowRetry();
+            }
         };

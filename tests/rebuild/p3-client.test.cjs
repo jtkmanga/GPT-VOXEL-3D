@@ -371,12 +371,17 @@ test('P3 delayed real target ACK cannot revive an expired or absent client hando
   assert.equal(h.zone('5,4').count(), 1);
 });
 
-test('P3 client collection contains only a coin identifier and never mutates score', async () => {
+test('P3 client collection contains only resource and idempotency identifiers and never mutates score', async () => {
   const fixture = await clientFixture();
   const coin = { serverId: 3, active: true, mesh: { visible: true }, position: { x: 999, y: 0, z: 999 } };
   fixture.context.state.score = 7;
   fixture.context.collectCoin(coin);
-  assert.deepEqual(fixture.sent[0], { type: 'collect', id: 3 });
+  assert.deepEqual(Object.keys(fixture.sent[0]).sort(), ['id', 'requestId', 'type']);
+  assert.equal(fixture.sent[0].type, 'collect');
+  assert.equal(fixture.sent[0].id, 3);
+  assert.match(fixture.sent[0].requestId, /^coin:[^\s\x00-\x1f\x7f]+$/);
+  assert.ok(fixture.sent[0].requestId.length <= 128);
+  assert.equal(coin._collectActionRequestId, fixture.sent[0].requestId);
   assert.equal(fixture.context.state.score, 7);
   assert.equal(coin.active, false);
   fixture.context.collectCoin(coin);

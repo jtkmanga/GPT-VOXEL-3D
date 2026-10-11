@@ -9,6 +9,7 @@ import { SessionStore } from './sessions.mjs';
 import { SECURITY, clearAuthDeadline, scheduleAuthDeadline } from './security.mjs';
 import { enqueueFrame, sessionMetadata } from './room-security.mjs';
 import { initializeMotion, applyMovementIntent, publicMovement } from './movement.mjs';
+import { EconomyStore } from './economy.mjs';
 
 export class GameRoom {
   constructor(ctx,env) {
@@ -30,6 +31,7 @@ export class GameRoom {
     this.sql.exec(`INSERT OR IGNORE INTO voxel_lucky_box
       (id, next_spawn_at, cycle, claimed_uid, claim_expires_at)
       VALUES (1, 0, 0, NULL, 0)`);
+    this.economy=new EconomyStore(ctx,now=>this.economyPlayers(now));
 
     // Server-authoritative paid entitlements
     this.sql.exec(`CREATE TABLE IF NOT EXISTS voxel_entitlements (
@@ -87,6 +89,7 @@ export class GameRoom {
         });
         await ctx.storage.delete('coinRespawns');
       }
+      await this.scheduleEconomyAlarm();
     });
     for (const ws of this.sockets()) scheduleAuthDeadline(this,ws);
   }
@@ -193,16 +196,52 @@ export class GameRoom {
     }
   }
   publicPlayer(p) { return p?.uid && {id:p.id,x:p.x,y:p.y,z:p.z,r:p.r,name:normalizePlayerName(p.nickname,'Player')}; }
-  coinSnapshot() {
-    const rows = new Map(
-      this.sql.exec('SELECT id, respawn_at, cycle FROM voxel_coins').toArray()
-        .map(row => [Number(row.id), {respawnAt:Number(row.respawn_at)||0, cycle:Number(row.cycle)||0}])
-    );
-    return COINS.map((_,id) => {
-      const row = rows.get(id) || {respawnAt:0, cycle:0};
-      const pos = coinPosition(id, row.cycle);
-      return {id,x:pos.x,z:pos.z,respawnAt:row.respawnAt,cycle:row.cycle};
-    });
+  coinSnapshot() { return this.economy.coinSnapshot(); }
+  economyPlayers(now=Date.now()) {
+    const persisted=this.sql.exec('SELECT x,z FROM voxel_sessions WHERE lease_expires>? AND (exp=0 OR exp>?)',now,Math.floor(now/1000)).toArray();
+    const local=this.sockets().map(ws=>this.player(ws)).filter(p=>p?.uid && !p.revoked && !p.sessionClosed && p.exp>Math.floor(now/1000));
+    return [...persisted,...local].filter(p=>Number.isFinite(Number(p.x)) && Number.isFinite(Number(p.z)))
+      .map(p=>({x:Number(p.x),z:Number(p.z)}));
+  }
+  async scheduleEconomyAlarm() {
+    const row=this.sql.exec('SELECT next_spawn_at,claimed_uid,claim_expires_at FROM voxel_lucky_box WHERE id=1').toArray()[0];
+    const future=[Number(row?.next_spawn_at)||0,
+      row?.claimed_uid ? Number(row.claim_expires_at)||0 : 0].filter(value=>value>Date.now());
+    const due=future.length ? Math.min(...future) : 0;
+    const current=await this.ctx.storage.getAlarm();
+    if (due>Date.now()) {
+      if (Number(current)!==due) await this.ctx.storage.setAlarm(due);
+    } else if (current!==null) await this.ctx.storage.deleteAlarm();
+  }
+  async alarm() {
+    await this.ready;
+    const now=Date.now();
+    const box=this.boxSnapshot(now);
+    this.broadcast({type:WS_MESSAGE.BOX_STATE,box,serverNow:now});
+    await this.sendAllZones({type:WS_MESSAGE.BOX_STATE,box,serverNow:now});
+    await this.scheduleEconomyAlarm();
+  }
+  economyPosition(body,uid) {
+    if (!this.ownsZoneSession(body,uid)) return null;
+    const row=this.sessions.row(uid);
+    return {x:Number(row.x),y:Number(row.y),z:Number(row.z),r:Number(row.r)};
+  }
+  publishCoin(result) {
+    const event=result.event;
+    this.broadcast(event);
+    const old=result.oldPosition||event;
+    this.ctx.waitUntil(this.sendZoneEvent([
+      ...zoneIdsNearPosition(old.x,old.z),...zoneIdsNearPosition(event.x,event.z)
+    ],event));
+    const leaderboard=this.top();
+    this.broadcast({type:WS_MESSAGE.LEADERBOARD,top:leaderboard});
+    this.ctx.waitUntil(this.sendAllZones({type:WS_MESSAGE.LEADERBOARD,top:leaderboard}));
+    return leaderboard;
+  }
+  publishBox(box,now=Date.now()) {
+    const event={type:WS_MESSAGE.BOX_STATE,box,serverNow:now};
+    this.broadcast(event);
+    this.ctx.waitUntil(this.sendAllZones(event));
   }
   top() {
     return this.sql.exec('SELECT nickname, score FROM voxel_scores ORDER BY score DESC, updated_at ASC LIMIT 10').toArray();
@@ -530,210 +569,71 @@ export class GameRoom {
       return Response.json({ok:cancelled},{status:cancelled ? 200 : 409});
     }
 
-    // Global coin collection for zoned players.
-    if (
-      url.pathname === '/_internal/zone-collect' &&
-      request.method === 'POST'
-    ) {
+    // Zones submit only a server-owned session generation. Contact comes
+    // from its latest durable server checkpoint, never from request coordinates.
+    if (url.pathname==='/_internal/zone-collect' && request.method==='POST') {
       let body;
       try { body=await request.json(); }
       catch (_) { return Response.json({ok:false,error:'Invalid JSON'},{status:400}); }
-
       const uid=String(body?.uid||'');
       const id=Number(body?.id);
-      const px=Number(body?.x), py=Number(body?.y), pz=Number(body?.z);
-      const now=Date.now();
-
-      if (!uid || uid.length>128 || !Number.isInteger(id) || id<0 || id>=COINS.length ||
-          ![px,py,pz].every(Number.isFinite)) {
+      if (!uid || uid.length>128 || !Number.isInteger(id) || id<0 || id>=COINS.length)
         return Response.json({ok:false,error:'Invalid collect request'},{status:400});
-      }
-      if (!this.ownsZoneSession(body,uid))
-        return Response.json({ok:false,error:'Session no longer owned'},{status:403});
-
-      const visibleRow=this.sql.exec(
-        'SELECT respawn_at,cycle FROM voxel_coins WHERE id=?',id
-      ).toArray()[0] || {respawn_at:0,cycle:0};
-      const visibleCycle=Number(visibleRow.cycle||0);
-      const oldPos=coinPosition(id,visibleCycle);
-
-      if (Math.hypot(px-oldPos.x,pz-oldPos.z)>2.35 || py>2.6) {
-        return Response.json({ok:false,error:'Too far from coin'},{status:403});
-      }
-
+      const position=this.economyPosition(body,uid);
+      if (!position) return Response.json({ok:false,error:'Session no longer owned'},{status:403});
       let result;
-      try {
-        result=this.ctx.storage.transactionSync(()=>{
-          const row=this.sql.exec(
-            'SELECT respawn_at,cycle FROM voxel_coins WHERE id=?',id
-          ).toArray()[0] || {respawn_at:0,cycle:0};
-          const activeAfter=Number(row.respawn_at)||0;
-          const oldCycle=Number(row.cycle)||0;
-          if (activeAfter>now) return {collected:false,activeAfter,oldCycle};
-
-          const nextCycle=oldCycle+1;
-          const respawnAt=now+RESPAWN_MS;
-          this.sql.exec(
-            `INSERT INTO voxel_coins(id,respawn_at,cycle) VALUES (?,?,?)
-             ON CONFLICT(id) DO UPDATE SET respawn_at=excluded.respawn_at,cycle=excluded.cycle`,
-            id,respawnAt,nextCycle
-          );
-
-          const ent=this.sql.exec(
-            'SELECT coin_expires FROM voxel_entitlements WHERE uid=?',uid
-          ).toArray()[0];
-          const reward=Number(ent?.coin_expires||0)>now ? 2 : 1;
-
-          this.sql.exec(
-            'UPDATE voxel_scores SET score=score+?,updated_at=? WHERE uid=?',
-            reward,now,uid
-          );
-          const score=Number(
-            this.sql.exec('SELECT score FROM voxel_scores WHERE uid=?',uid).toArray()[0]?.score||0
-          );
-          return {collected:true,respawnAt,nextCycle,oldCycle,reward,score};
-        });
-      } catch (_) {
-        return Response.json({ok:false,error:'Score storage unavailable'},{status:500});
+      try { result=this.economy.collectCoin({uid,id,position,requestId:body.requestId}); }
+      catch (_) { return Response.json({ok:false,error:'Score storage unavailable'},{status:500}); }
+      if (!result.ok) {
+        result.id=id;
+        result.activeAfter=Number(this.economy.coinRow(id).respawn_at)||0;
       }
-
       if (!result.collected) {
-        return Response.json({
-          ok:true,collected:false,id,activeAfter:result.activeAfter,serverNow:now
-        });
+        result.event=this.economy.coinEvent(id,Date.now());
+        result.cycle=result.event.cycle;
       }
-
-      const nextPos=coinPosition(id,result.nextCycle);
-      const event={
-        type:WS_MESSAGE.COIN_COLLECTED,id,x:nextPos.x,z:nextPos.z,cycle:result.nextCycle,
-        respawnAt:result.respawnAt,serverNow:now
-      };
-      const affected=[
-        ...zoneIdsNearPosition(oldPos.x,oldPos.z),
-        ...zoneIdsNearPosition(nextPos.x,nextPos.z)
-      ];
-      const leaderboard=this.top();
-
-      // Do not hold the collector's response open while multiple Zone Durable Objects
-      // receive fan-out updates. The collector gets an immediate authoritative ACK;
-      // world/leaderboard propagation continues in waitUntil().
-      this.ctx.waitUntil(this.sendZoneEvent(affected,event));
-      this.ctx.waitUntil(this.sendAllZones({type:WS_MESSAGE.LEADERBOARD,top:leaderboard}));
-
-      return Response.json({
-        ok:true,collected:true,event,score:result.score,reward:result.reward,
-        leaderboard,serverNow:now
-      });
+      if (result.collected) result.leaderboard=result.replayed ? this.top() : this.publishCoin(result);
+      return Response.json(result,{status:result.ok ? 200 : result.status||409});
     }
 
-    if (
-      url.pathname === '/_internal/zone-collect-box' &&
-      request.method === 'POST'
-    ) {
+    if (url.pathname==='/_internal/zone-collect-box' && request.method==='POST') {
       let body;
       try { body=await request.json(); }
       catch (_) { return Response.json({ok:false,error:'Invalid JSON'},{status:400}); }
-
       const uid=String(body?.uid||'');
-      const px=Number(body?.x), py=Number(body?.y), pz=Number(body?.z);
-      const now=Date.now();
-      if (!uid || uid.length>128 || ![px,py,pz].every(Number.isFinite)) {
-        return Response.json({ok:false,error:'Invalid Lucky Box request'},{status:400});
-      }
-      if (!this.ownsZoneSession(body,uid))
-        return Response.json({ok:false,error:'Session no longer owned'},{status:403});
-
-      const snap=this.boxSnapshot(now);
-      if (!snap.active) {
-        return Response.json({ok:true,claimed:false,box:snap,serverNow:now});
-      }
-      if (Math.hypot(px-snap.x,pz-snap.z)>2.8 || py>3.2) {
-        return Response.json({ok:false,error:'Too far from Lucky Box'},{status:403});
-      }
-
-      let claimed=false;
-      try {
-        claimed=this.ctx.storage.transactionSync(()=>{
-          const row=this.sql.exec(
-            'SELECT next_spawn_at,claimed_uid,claim_expires_at FROM voxel_lucky_box WHERE id=1'
-          ).toArray()[0];
-          if (!row || Number(row.next_spawn_at||0)>now) return false;
-          if (row.claimed_uid && Number(row.claim_expires_at||0)>now && row.claimed_uid!==uid) return false;
-          this.sql.exec(
-            'UPDATE voxel_lucky_box SET claimed_uid=?,claim_expires_at=? WHERE id=1',
-            uid,now+LUCKY_BOX_CLAIM_MS
-          );
-          return true;
-        });
-      } catch (_) {
-        return Response.json({ok:false,error:'Lucky Box storage unavailable'},{status:500});
-      }
-
-      const state=this.boxSnapshot(now);
-      await this.sendAllZones({type:WS_MESSAGE.BOX_STATE,box:state,serverNow:now});
-      return Response.json({ok:true,claimed,box:state,serverNow:now});
-    }
-
-    if (
-      url.pathname === '/_internal/zone-spin-box' &&
-      request.method === 'POST'
-    ) {
-      let body;
-      try { body=await request.json(); }
-      catch (_) { return Response.json({ok:false,error:'Invalid JSON'},{status:400}); }
-
-      const uid=String(body?.uid||'');
-      const now=Date.now();
-      if (!uid || uid.length>128) {
-        return Response.json({ok:false,error:'Invalid Lucky Box request'},{status:400});
-      }
-      if (!this.ownsZoneSession(body,uid))
-        return Response.json({ok:false,error:'Session no longer owned'},{status:403});
-
-      const reward=secureLuckyReward();
+      if (!uid || uid.length>128) return Response.json({ok:false,error:'Invalid Lucky Box request'},{status:400});
+      const position=this.economyPosition(body,uid);
+      if (!position) return Response.json({ok:false,error:'Session no longer owned'},{status:403});
       let result;
-      try {
-        result=this.ctx.storage.transactionSync(()=>{
-          const row=this.sql.exec(
-            'SELECT next_spawn_at,cycle,claimed_uid,claim_expires_at FROM voxel_lucky_box WHERE id=1'
-          ).toArray()[0];
-          if (!row) return {ok:false,error:'Lucky Box state missing'};
-          if (Number(row.next_spawn_at||0)>now) return {ok:false,error:'Lucky Box is cooling down'};
-          if (row.claimed_uid!==uid || Number(row.claim_expires_at||0)<=now) {
-            return {ok:false,error:'Lucky Box claim expired'};
-          }
+      try { result=this.economy.claimBox({uid,position,requestId:body.requestId}); }
+      catch (_) { return Response.json({ok:false,error:'Lucky Box storage unavailable'},{status:500}); }
+      if (!result.ok) result.box=this.boxSnapshot();
+      if (result.box && !result.replayed) this.publishBox(result.box,result.serverNow);
+      if (result.claimed && !result.replayed) this.ctx.waitUntil(this.scheduleEconomyAlarm());
+      return Response.json(result,{status:result.ok ? 200 : result.status||409});
+    }
 
-          this.sql.exec(
-            'UPDATE voxel_scores SET score=score+?,updated_at=? WHERE uid=?',
-            reward,now,uid
-          );
-          const score=Number(
-            this.sql.exec('SELECT score FROM voxel_scores WHERE uid=?',uid).toArray()[0]?.score||0
-          );
-          const nextSpawnAt=now+LUCKY_BOX_RESPAWN_MS;
-          const nextCycle=Number(row.cycle||0)+1;
-          this.sql.exec(
-            `UPDATE voxel_lucky_box
-             SET next_spawn_at=?,cycle=?,claimed_uid=NULL,claim_expires_at=0
-             WHERE id=1`,
-            nextSpawnAt,nextCycle
-          );
-          return {ok:true,reward,score,nextSpawnAt,nextCycle};
-        });
-      } catch (_) {
-        return Response.json({ok:false,error:'Lucky Box storage unavailable'},{status:500});
+    if (url.pathname==='/_internal/zone-spin-box' && request.method==='POST') {
+      let body;
+      try { body=await request.json(); }
+      catch (_) { return Response.json({ok:false,error:'Invalid JSON'},{status:400}); }
+      const uid=String(body?.uid||'');
+      if (!uid || uid.length>128) return Response.json({ok:false,error:'Invalid Lucky Box request'},{status:400});
+      if (!this.ownsZoneSession(body,uid)) return Response.json({ok:false,error:'Session no longer owned'},{status:403});
+      let result;
+      try { result=this.economy.spinBox({uid,requestId:body.requestId}); }
+      catch (_) { return Response.json({ok:false,error:'Lucky Box storage unavailable'},{status:500}); }
+      if (result.ok) {
+        result.leaderboard=this.top();
+        if (!result.replayed) {
+          this.publishBox(result.box,result.serverNow);
+          const event={type:WS_MESSAGE.LEADERBOARD,top:result.leaderboard};
+          this.broadcast(event);
+          this.ctx.waitUntil(this.sendAllZones(event));
+          this.ctx.waitUntil(this.scheduleEconomyAlarm());
+        }
       }
-
-      if (!result?.ok) return Response.json(result,{status:409});
-
-      const box=this.boxSnapshot(now);
-      const leaderboard=this.top();
-      await this.sendAllZones({type:WS_MESSAGE.BOX_STATE,box,serverNow:now});
-      await this.sendAllZones({type:WS_MESSAGE.LEADERBOARD,top:leaderboard});
-
-      return Response.json({
-        ok:true,reward:result.reward,score:result.score,box,leaderboard,serverNow:now
-      });
+      return Response.json(result,{status:result.ok ? 200 : result.status||409});
     }
 
     if (
@@ -922,115 +822,46 @@ export class GameRoom {
     this.broadcast({type:WS_MESSAGE.LEADERBOARD,top:this.top()});
   }
 
-  boxSnapshot(now = Date.now()) {
-    let row = this.sql.exec(
-      'SELECT next_spawn_at, cycle, claimed_uid, claim_expires_at FROM voxel_lucky_box WHERE id=1'
-    ).toArray()[0] || { next_spawn_at:0, cycle:0, claimed_uid:null, claim_expires_at:0 };
+  boxSnapshot(now=Date.now()) { return this.economy.boxSnapshot(now); }
 
-    if (row.claimed_uid && Number(row.claim_expires_at || 0) <= now && Number(row.next_spawn_at || 0) <= now) {
-      this.sql.exec('UPDATE voxel_lucky_box SET claimed_uid=NULL, claim_expires_at=0 WHERE id=1');
-      row = { ...row, claimed_uid:null, claim_expires_at:0 };
-    }
-
-    const cycle = Number(row.cycle || 0);
-    const pos = luckyBoxPosition(cycle);
-    const nextSpawnAt = Number(row.next_spawn_at || 0);
-    const claimExpiresAt = Number(row.claim_expires_at || 0);
-    const claimed = Boolean(row.claimed_uid && claimExpiresAt > now);
-
-    return {
-      active: nextSpawnAt <= now && !claimed,
-      x: pos.x,
-      z: pos.z,
-      nextSpawnAt,
-      cycle,
-      claimed,
-      claimExpiresAt,
-      serverNow: now
-    };
-  }
-
-  handleCollectBox(ws,p) {
-    if (!this.ownsSession(ws,p)) return;
-    const now = Date.now();
-    const snap = this.boxSnapshot(now);
-    if (!snap.active) {
-      this.send(ws,{type:WS_MESSAGE.BOX_STATE,box:snap,serverNow:now});
-      return;
-    }
-    if (Math.hypot(p.x-snap.x,p.z-snap.z) > 2.8 || p.y > 3.2) return;
-
-    let claimed = false;
-    try {
-      claimed = this.ctx.storage.transactionSync(() => {
-        const row = this.sql.exec(
-          'SELECT next_spawn_at, claimed_uid, claim_expires_at FROM voxel_lucky_box WHERE id=1'
-        ).toArray()[0];
-        if (!row) return false;
-        if (Number(row.next_spawn_at || 0) > now) return false;
-        if (row.claimed_uid && Number(row.claim_expires_at || 0) > now && row.claimed_uid !== p.uid) return false;
-        this.sql.exec(
-          'UPDATE voxel_lucky_box SET claimed_uid=?, claim_expires_at=? WHERE id=1',
-          p.uid, now + LUCKY_BOX_CLAIM_MS
-        );
-        return true;
-      });
-    } catch (_) { return; }
-
-    const state = this.boxSnapshot(now);
-    this.broadcast({type:WS_MESSAGE.BOX_STATE,box:state,serverNow:now});
-    if (claimed) this.send(ws,{type:WS_MESSAGE.BOX_SPIN_READY,box:state,serverNow:now});
-  }
-
-  handleSpinBox(ws,p) {
-    if (!this.ownsSession(ws,p)) return;
-    const now = Date.now();
-    const reward = secureLuckyReward();
+  handleCollectBox(ws,p,m={}) {
+    if (!this.ownsSession(ws,p)) return false;
     let result;
-
-    try {
-      result = this.ctx.storage.transactionSync(() => {
-        const row = this.sql.exec(
-          'SELECT next_spawn_at, cycle, claimed_uid, claim_expires_at FROM voxel_lucky_box WHERE id=1'
-        ).toArray()[0];
-        if (!row) return {ok:false,message:'Lucky Box state missing'};
-        if (Number(row.next_spawn_at || 0) > now) return {ok:false,message:'Lucky Box is cooling down'};
-        if (row.claimed_uid !== p.uid || Number(row.claim_expires_at || 0) <= now) {
-          return {ok:false,message:'Lucky Box claim expired'};
-        }
-
-        this.sql.exec(
-          'UPDATE voxel_scores SET score=score+?, updated_at=? WHERE uid=?',
-          reward, now, p.uid
-        );
-        const score = Number(this.sql.exec(
-          'SELECT score FROM voxel_scores WHERE uid=?', p.uid
-        ).toArray()[0]?.score || 0);
-
-        const nextSpawnAt = now + LUCKY_BOX_RESPAWN_MS;
-        const nextCycle = Number(row.cycle || 0) + 1;
-        this.sql.exec(
-          'UPDATE voxel_lucky_box SET next_spawn_at=?, cycle=?, claimed_uid=NULL, claim_expires_at=0 WHERE id=1',
-          nextSpawnAt, nextCycle
-        );
-        return {ok:true,reward,score,nextSpawnAt,nextCycle};
-      });
-    } catch (_) {
-      this.send(ws,{type:WS_MESSAGE.BOX_ERROR,message:'Lucky Box storage unavailable'});
-      return;
+    try { result=this.economy.claimBox({uid:p.uid,position:p,requestId:m.requestId}); }
+    catch (_) { this.send(ws,{type:WS_MESSAGE.SERVER_ERROR,message:'Lucky Box storage unavailable',requestId:m.requestId}); return false; }
+    if (!result.ok) {
+      this.send(ws,{type:WS_MESSAGE.BOX_STATE,box:this.boxSnapshot(),serverNow:Date.now(),requestId:m.requestId,claimed:false});
+      return false;
     }
-
-    if (!result?.ok) {
-      this.send(ws,{type:WS_MESSAGE.BOX_ERROR,message:result?.message || 'Lucky Box spin failed'});
-      this.send(ws,{type:WS_MESSAGE.BOX_STATE,box:this.boxSnapshot(now),serverNow:now});
-      return;
-    }
-
-    this.send(ws,{type:WS_MESSAGE.BOX_REWARD,reward:result.reward,score:result.score,serverNow:now});
-    this.broadcast({type:WS_MESSAGE.BOX_STATE,box:this.boxSnapshot(now),serverNow:now});
-    this.broadcast({type:WS_MESSAGE.LEADERBOARD,top:this.top()});
+    if (!result.replayed) this.publishBox(result.box,result.serverNow);
+    if (result.claimed && !result.replayed) this.ctx.waitUntil(this.scheduleEconomyAlarm());
+    if (result.claimed) this.send(ws,{type:WS_MESSAGE.BOX_SPIN_READY,box:result.box,serverNow:result.serverNow,
+      receipt:result.receipt,replayed:result.replayed,requestId:m.requestId});
+    else this.send(ws,{type:WS_MESSAGE.BOX_STATE,box:result.box,serverNow:result.serverNow,requestId:m.requestId,claimed:false});
+    return result.claimed===true;
   }
 
+  handleSpinBox(ws,p,m={}) {
+    if (!this.ownsSession(ws,p)) return false;
+    let result;
+    try { result=this.economy.spinBox({uid:p.uid,requestId:m.requestId}); }
+    catch (_) { this.send(ws,{type:WS_MESSAGE.BOX_ERROR,message:'Lucky Box storage unavailable',requestId:m.requestId}); return false; }
+    if (!result.ok) {
+      this.send(ws,{type:WS_MESSAGE.BOX_ERROR,message:result.error||'Lucky Box spin failed',requestId:m.requestId});
+      this.send(ws,{type:WS_MESSAGE.BOX_STATE,box:this.boxSnapshot(),serverNow:Date.now()});
+      return false;
+    }
+    this.send(ws,{type:WS_MESSAGE.BOX_REWARD,reward:result.reward,score:result.score,serverNow:result.serverNow,
+      receipt:result.receipt,replayed:result.replayed,requestId:m.requestId});
+    if (!result.replayed) {
+      this.publishBox(result.box,result.serverNow);
+      const event={type:WS_MESSAGE.LEADERBOARD,top:this.top()};
+      this.broadcast(event);
+      this.ctx.waitUntil(this.sendAllZones(event));
+      this.ctx.waitUntil(this.scheduleEconomyAlarm());
+    }
+    return true;
+  }
 
   handleMove(ws,p,m) {
     if (!this.ownsSession(ws,p)) return;
@@ -1058,53 +889,26 @@ export class GameRoom {
   }
 
   async handleCollect(ws,p,m) {
-    if (!this.ownsSession(ws,p)) return;
+    if (!this.ownsSession(ws,p)) return false;
     const now=Date.now(), id=m.id;
-    if (!Number.isInteger(id) || id<0 || id>=COINS.length || now-p.lastCollect<150) return;
-    p.lastCollect=now; ws.serializeAttachment(p);
-    const visibleRow = this.sql.exec(
-      'SELECT cycle FROM voxel_coins WHERE id=?', id
-    ).toArray()[0];
-    const visibleCycle = Number(visibleRow?.cycle || 0);
-    const {x,z} = coinPosition(id, visibleCycle);
-    if (Math.hypot(p.x-x,p.z-z)>2.35 || p.y>2.6) return;
+    if (!Number.isInteger(id) || id<0 || id>=COINS.length || now-p.lastCollect<150) return false;
+    p.lastCollect=now;
+    ws.serializeAttachment(p);
     let result;
-    try {
-      result=this.ctx.storage.transactionSync(()=>{
-        const row=this.sql.exec(
-          'SELECT respawn_at, cycle FROM voxel_coins WHERE id=?', id
-        ).toArray()[0];
-        const activeAfter=Number(row?.respawn_at)||0;
-        if (activeAfter>now) return {activeAfter};
-        const nextCycle=(Number(row?.cycle)||0)+1;
-        const respawnAt=now+RESPAWN_MS;
-        this.sql.exec(
-          'INSERT INTO voxel_coins(id,respawn_at,cycle) VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET respawn_at=excluded.respawn_at, cycle=excluded.cycle',
-          id, respawnAt, nextCycle
-        );
-        const coinEntitlement = this.sql.exec(
-          'SELECT coin_expires FROM voxel_entitlements WHERE uid=?',
-          p.uid
-        ).toArray()[0];
-
-        const coinReward =
-          Number(coinEntitlement?.coin_expires || 0) > now ? 2 : 1;
-
-        this.sql.exec(
-          'UPDATE voxel_scores SET score=score+?, updated_at=? WHERE uid=?',
-          coinReward, now, p.uid
-        );
-        const score=this.sql.exec('SELECT score FROM voxel_scores WHERE uid=?',p.uid).toArray()[0].score;
-        return {respawnAt,score,cycle:nextCycle};
-      });
-    } catch (_) { this.send(ws,{type:WS_MESSAGE.SERVER_ERROR,message:'Score storage unavailable'}); return; }
-    if (result.activeAfter) {
-      this.send(ws,{type:WS_MESSAGE.COIN_STATE,id,respawnAt:result.activeAfter,serverNow:now}); return;
+    try { result=this.economy.collectCoin({uid:p.uid,id,position:p,requestId:m.requestId,now}); }
+    catch (_) { this.send(ws,{type:WS_MESSAGE.SERVER_ERROR,message:'Score storage unavailable',requestId:m.requestId}); return false; }
+    if (!result.ok) {
+      this.send(ws,{...this.economy.coinEvent(id,now),type:WS_MESSAGE.COIN_STATE,requestId:m.requestId});
+      return false;
     }
-    const nextPos=coinPosition(id,Number(result.cycle)||0);
-    this.broadcast({type:WS_MESSAGE.COIN_COLLECTED,id,x:nextPos.x,z:nextPos.z,cycle:result.cycle,respawnAt:result.respawnAt,serverNow:now});
-    this.send(ws,{type:WS_MESSAGE.SCORE,score:result.score});
-    this.broadcast({type:WS_MESSAGE.LEADERBOARD,top:this.top()});
+    if (!result.collected) {
+      this.send(ws,{...this.economy.coinEvent(id,now),type:WS_MESSAGE.COIN_STATE,requestId:m.requestId});
+      return false;
+    }
+    if (!result.replayed) this.publishCoin(result);
+    else this.send(ws,result.event);
+    this.send(ws,{type:WS_MESSAGE.SCORE,score:result.score,requestId:m.requestId,receipt:result.receipt,replayed:result.replayed});
+    return true;
   }
 
   async webSocketClose(ws) {

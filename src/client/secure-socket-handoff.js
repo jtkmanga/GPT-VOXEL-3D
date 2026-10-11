@@ -430,7 +430,7 @@
                     void secureBeginZoneHandoff(message);
                     break;
                 case protocol.WS_MESSAGE.SCORE:
-                    state.score = Number(message.score) || 0;
+                    state.score = Math.max(Number(state.score) || 0, Number(message.score) || 0);
                     updateScoreDisplay();
                     break;
                 case protocol.WS_MESSAGE.LEADERBOARD:
@@ -440,19 +440,29 @@
                     const id = Number(message?.id);
                     if (Number.isInteger(id) && id >= 0 && id < coins.length) {
                         const coin = coins[id];
+                        if (message.requestId && coin._collectActionRequestId &&
+                            message.requestId !== coin._collectActionRequestId &&
+                            Number(coin._collectPendingUntil || 0) > 0) break;
+                        if (Number.isSafeInteger(message.cycle) && Number.isSafeInteger(coin.serverCycle) &&
+                            message.cycle < coin.serverCycle) break;
                         coin._collectPendingUntil = 0;
                         if (message.collected) {
                             if (Number.isFinite(Number(message.score))) {
-                                state.score = Number(message.score);
+                                state.score = Math.max(Number(state.score) || 0, Number(message.score));
                                 updateScoreDisplay();
                             }
                             if (message.event) secureUpdateCoinState(message.event);
                         } else {
-                            if (message.serverNow) secureSetServerNow(message.serverNow);
-                            const activeAfter = Number(message.activeAfter) || 0;
-                            coin.respawnTime = activeAfter;
-                            coin.active = activeAfter <= secureNow();
-                            coin.mesh.visible = coin.active;
+                            if (message.requestId === coin._collectActionRequestId) coin._collectActionRequestId = null;
+                            if (message.event) {
+                                secureUpdateCoinState(message.event);
+                            } else {
+                                if (message.serverNow) secureSetServerNow(message.serverNow);
+                                const activeAfter = Number(message.activeAfter) || 0;
+                                coin.respawnTime = activeAfter;
+                                coin.active = activeAfter <= secureNow();
+                                coin.mesh.visible = coin.active;
+                            }
                         }
                     }
                     break;
@@ -462,22 +472,46 @@
                     secureUpdateCoinState(message);
                     break;
                 case protocol.WS_MESSAGE.BOX_STATE:
+                    if (message.requestId && message.claimed === false &&
+                        message.requestId === luckyBox?._claimActionRequestId) {
+                        luckyBox._claimActionRequestId = null;
+                        luckyBox._actionCycle = null;
+                    }
                     secureApplyLuckyBoxState(message.box || message.luckyBox || message, message.serverNow);
                     break;
                 case protocol.WS_MESSAGE.BOX_SPIN_READY:
+                    if (message.requestId && luckyBox?._claimActionRequestId &&
+                        message.requestId !== luckyBox._claimActionRequestId) break;
                     secureApplyLuckyBoxState(message.box || message.luckyBox || null, message.serverNow);
                     triggerLuckyBoxModal();
                     break;
-                case protocol.WS_MESSAGE.BOX_REWARD:
+                case protocol.WS_MESSAGE.BOX_REWARD: {
                     if (message.serverNow) secureSetServerNow(message.serverNow);
                     if (Number.isFinite(Number(message.score))) {
-                        state.score = Number(message.score);
+                        state.score = Math.max(Number(state.score) || 0, Number(message.score));
                         updateScoreDisplay();
+                    }
+                    if (message.requestId && luckyBox?._spinActionRequestId &&
+                        message.requestId !== luckyBox._spinActionRequestId) break;
+                    if (luckyBox) {
+                        if ((message.receipt && message.receipt === luckyBox._lastRewardReceipt) ||
+                            (message.requestId && message.requestId === luckyBox._lastRewardRequestId)) break;
+                        luckyBox._lastRewardReceipt = message.receipt || null;
+                        luckyBox._lastRewardRequestId = message.requestId || null;
+                        luckyBox._spinPendingRequestId = null;
                     }
                     secureAnimateWheelToReward(Number(message.reward) || 0);
                     break;
+                }
                 case protocol.WS_MESSAGE.BOX_ERROR:
                     console.warn('Lucky Box:', message.message || message);
+                    if (luckyBox?._spinPendingRequestId &&
+                        (!message.requestId || message.requestId === luckyBox._spinPendingRequestId)) {
+                        luckyBox._spinPendingRequestId = null;
+                        state.wheelSpinning = false;
+                        document.getElementById('btn-spin-wheel').classList.remove('hidden');
+                        document.getElementById('wheel-result-msg').innerText = 'Server ยังไม่ยืนยันผล กรุณาลองอีกครั้ง';
+                    }
                     break;
                 case protocol.WS_MESSAGE.HANDOFF_RESUMED:
                     // An ACK owns only the currently pending transfer. A late ACK

@@ -2531,9 +2531,9 @@ return { MOVEMENT, validMovementInput, integrateMovement };
                 camera.lookAt(smoothCamTarget);
 
                 coins.forEach((coin) => {
-                    // Firebase เป็นตัวกลางของสถานะ แต่การกลับมาแสดงผลหลัง 1 นาที
-                    // ต้องทำได้ทันทีในเครื่องนี้โดยไม่ต้องรอ snapshot ใหม่
-                    if (!coin.active && coin.respawnTime > 0 && nowMs >= coin.respawnTime) {
+                    // Project only the cooldown supplied by the authoritative
+                    // room, using its clock offset rather than device time.
+                    if (!coin.active && coin.respawnTime > 0 && secureNow() >= coin.respawnTime) {
                         coin.active = true;
                         coin.mesh.visible = true;
                         coin.respawnTime = 0;
@@ -3021,19 +3021,26 @@ return { MOVEMENT, validMovementInput, integrateMovement };
         function secureApplyCoinSnapshot(serverCoins = [], serverNow = null) {
             if (serverNow) secureSetServerNow(serverNow);
             const now = serverNow ? Number(serverNow) : secureNow();
-
-            coins.forEach(c => {
-                c.serverId = null;
-                c.active = false;
-                c.mesh.visible = false;
-            });
-
-            if (!Array.isArray(serverCoins)) return;
-
-            serverCoins.forEach(data => {
+            const entries = new Map();
+            if (Array.isArray(serverCoins)) serverCoins.forEach(data => {
                 const id = Number(data?.id);
                 if (!Number.isInteger(id) || id < 0 || id >= coins.length) return;
-                const coin = coins[id];
+                entries.set(id, data);
+            });
+
+            coins.forEach((coin, id) => {
+                const data = entries.get(id);
+                if (!data) {
+                    coin.serverId = null;
+                    coin.active = false;
+                    coin.mesh.visible = false;
+                    return;
+                }
+                const cycle = Number(data.cycle) || 0;
+                if (Number.isSafeInteger(coin.serverCycle) && cycle < coin.serverCycle) return;
+                if (coin.serverCycle !== cycle) coin._collectActionRequestId = null;
+                coin.serverCycle = cycle;
+                coin._collectPendingUntil = 0;
                 coin.serverId = id;
                 coin.id = `server_coin_${id}`;
                 coin.mesh.position.x = Number(data.x) || 0;
@@ -3048,8 +3055,19 @@ return { MOVEMENT, validMovementInput, integrateMovement };
         function secureUpdateCoinState(message) {
             const id = Number(message?.id);
             if (!Number.isInteger(id) || id < 0 || id >= coins.length) return;
-            if (message?.serverNow) secureSetServerNow(message.serverNow);
             const coin = coins[id];
+            if (message?.requestId && coin._collectActionRequestId &&
+                message.requestId !== coin._collectActionRequestId &&
+                Number(coin._collectPendingUntil || 0) > 0) return;
+            const cycle = Number(message?.cycle);
+            if (Number.isSafeInteger(cycle) && cycle >= 0) {
+                if (Number.isSafeInteger(coin.serverCycle) && cycle < coin.serverCycle) return;
+                if (coin.serverCycle !== cycle) coin._collectActionRequestId = null;
+                coin.serverCycle = cycle;
+            }
+            if (message?.serverNow) secureSetServerNow(message.serverNow);
+            if (message?.type === "coin_state" &&
+                message.requestId === coin._collectActionRequestId) coin._collectActionRequestId = null;
             coin.serverId = id;
             if (Number.isFinite(Number(message?.x)) && Number.isFinite(Number(message?.z))) {
                 coin.mesh.position.x = Number(message.x);
@@ -3493,7 +3511,7 @@ return { MOVEMENT, validMovementInput, integrateMovement };
                     void secureBeginZoneHandoff(message);
                     break;
                 case "score":
-                    state.score = Number(message.score) || 0;
+                    state.score = Math.max(Number(state.score) || 0, Number(message.score) || 0);
                     updateScoreDisplay();
                     break;
                 case "leaderboard":
@@ -3503,19 +3521,29 @@ return { MOVEMENT, validMovementInput, integrateMovement };
                     const id = Number(message?.id);
                     if (Number.isInteger(id) && id >= 0 && id < coins.length) {
                         const coin = coins[id];
+                        if (message.requestId && coin._collectActionRequestId &&
+                            message.requestId !== coin._collectActionRequestId &&
+                            Number(coin._collectPendingUntil || 0) > 0) break;
+                        if (Number.isSafeInteger(message.cycle) && Number.isSafeInteger(coin.serverCycle) &&
+                            message.cycle < coin.serverCycle) break;
                         coin._collectPendingUntil = 0;
                         if (message.collected) {
                             if (Number.isFinite(Number(message.score))) {
-                                state.score = Number(message.score);
+                                state.score = Math.max(Number(state.score) || 0, Number(message.score));
                                 updateScoreDisplay();
                             }
                             if (message.event) secureUpdateCoinState(message.event);
                         } else {
-                            if (message.serverNow) secureSetServerNow(message.serverNow);
-                            const activeAfter = Number(message.activeAfter) || 0;
-                            coin.respawnTime = activeAfter;
-                            coin.active = activeAfter <= secureNow();
-                            coin.mesh.visible = coin.active;
+                            if (message.requestId === coin._collectActionRequestId) coin._collectActionRequestId = null;
+                            if (message.event) {
+                                secureUpdateCoinState(message.event);
+                            } else {
+                                if (message.serverNow) secureSetServerNow(message.serverNow);
+                                const activeAfter = Number(message.activeAfter) || 0;
+                                coin.respawnTime = activeAfter;
+                                coin.active = activeAfter <= secureNow();
+                                coin.mesh.visible = coin.active;
+                            }
                         }
                     }
                     break;
@@ -3525,22 +3553,46 @@ return { MOVEMENT, validMovementInput, integrateMovement };
                     secureUpdateCoinState(message);
                     break;
                 case "box_state":
+                    if (message.requestId && message.claimed === false &&
+                        message.requestId === luckyBox?._claimActionRequestId) {
+                        luckyBox._claimActionRequestId = null;
+                        luckyBox._actionCycle = null;
+                    }
                     secureApplyLuckyBoxState(message.box || message.luckyBox || message, message.serverNow);
                     break;
                 case "box_spin_ready":
+                    if (message.requestId && luckyBox?._claimActionRequestId &&
+                        message.requestId !== luckyBox._claimActionRequestId) break;
                     secureApplyLuckyBoxState(message.box || message.luckyBox || null, message.serverNow);
                     triggerLuckyBoxModal();
                     break;
-                case "box_reward":
+                case "box_reward": {
                     if (message.serverNow) secureSetServerNow(message.serverNow);
                     if (Number.isFinite(Number(message.score))) {
-                        state.score = Number(message.score);
+                        state.score = Math.max(Number(state.score) || 0, Number(message.score));
                         updateScoreDisplay();
+                    }
+                    if (message.requestId && luckyBox?._spinActionRequestId &&
+                        message.requestId !== luckyBox._spinActionRequestId) break;
+                    if (luckyBox) {
+                        if ((message.receipt && message.receipt === luckyBox._lastRewardReceipt) ||
+                            (message.requestId && message.requestId === luckyBox._lastRewardRequestId)) break;
+                        luckyBox._lastRewardReceipt = message.receipt || null;
+                        luckyBox._lastRewardRequestId = message.requestId || null;
+                        luckyBox._spinPendingRequestId = null;
                     }
                     secureAnimateWheelToReward(Number(message.reward) || 0);
                     break;
+                }
                 case "box_error":
                     console.warn('Lucky Box:', message.message || message);
+                    if (luckyBox?._spinPendingRequestId &&
+                        (!message.requestId || message.requestId === luckyBox._spinPendingRequestId)) {
+                        luckyBox._spinPendingRequestId = null;
+                        state.wheelSpinning = false;
+                        document.getElementById('btn-spin-wheel').classList.remove('hidden');
+                        document.getElementById('wheel-result-msg').innerText = 'Server ยังไม่ยืนยันผล กรุณาลองอีกครั้ง';
+                    }
                     break;
                 case "handoff_resumed":
                     // An ACK owns only the currently pending transfer. A late ACK
@@ -3981,6 +4033,15 @@ return { MOVEMENT, validMovementInput, integrateMovement };
             coins.forEach(c => { c.active = false; c.mesh.visible = false; });
         };
 
+        let secureEconomyRequestCounter = 0;
+
+        function secureEconomyRequestId(kind) {
+            const nonce = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+                ? crypto.randomUUID()
+                : `${Date.now().toString(36)}-${(++secureEconomyRequestCounter).toString(36)}-${Math.random().toString(36).slice(2)}`;
+            return `${kind}:${nonce}`;
+        }
+
         collectCoin = function(coin) {
             if (secureHandoffInProgress || !coin || !coin.active || !secureGameReady || !secureGameSocket || secureGameSocket.readyState !== WebSocket.OPEN) return;
             const id = Number(coin.serverId);
@@ -3993,6 +4054,11 @@ return { MOVEMENT, validMovementInput, integrateMovement };
             // server-authoritative. If the server rejects/times out, restore it.
             const requestId = Number(coin._collectRequestId || 0) + 1;
             coin._collectRequestId = requestId;
+            const uid = String(auth.currentUser?.uid || '');
+            if (!coin._collectActionRequestId || coin._collectActionUid !== uid) {
+                coin._collectActionRequestId = secureEconomyRequestId('coin');
+                coin._collectActionUid = uid;
+            }
             coin._collectPendingUntil = now + 2500;
             coin.active = false;
             coin.mesh.visible = false;
@@ -4000,7 +4066,8 @@ return { MOVEMENT, validMovementInput, integrateMovement };
             try {
                 secureGameSocket.send(JSON.stringify({
                     type: "collect",
-                    id
+                    id,
+                    requestId: coin._collectActionRequestId
                 }));
             } catch (_) {
                 coin._collectPendingUntil = 0;
@@ -4041,7 +4108,6 @@ return { MOVEMENT, validMovementInput, integrateMovement };
         // Lucky Box is fully server-authoritative in this build.
         // The Worker owns: one-box state, claim locking, 4-hour respawn and reward RNG.
         function secureApplyLuckyBoxState(raw = null, serverNow = null) {
-            if (serverNow) secureSetServerNow(serverNow);
             if (!raw || typeof raw !== 'object') return;
 
             if (!luckyBox || !luckyBox.mesh) {
@@ -4056,14 +4122,24 @@ return { MOVEMENT, validMovementInput, integrateMovement };
                     spawnCycle: 0,
                     collecting: false,
                     claimExpiresAt: 0,
-                    claimed: false
+                    claimed: false,
+                    serverActive: false
                 };
             }
 
+            const cycle = Number(raw.cycle ?? raw.spawnCycle ?? 0) || 0;
+            if (cycle < luckyBox.spawnCycle) return;
+            if (serverNow) secureSetServerNow(serverNow);
+            if (luckyBox.claimed && !raw.claimed && raw.active && cycle === luckyBox.spawnCycle) {
+                // The server released the previous claim. Contact now is a new
+                // logical attempt, rather than a replay of its expired receipt.
+                luckyBox._actionCycle = null;
+            }
             luckyBox.nextSpawnTimestamp = Number(raw.nextSpawnAt ?? raw.nextSpawnTimestamp ?? 0) || 0;
-            luckyBox.spawnCycle = Number(raw.cycle ?? raw.spawnCycle ?? 0) || 0;
+            luckyBox.spawnCycle = cycle;
             luckyBox.claimExpiresAt = Number(raw.claimExpiresAt ?? 0) || 0;
             luckyBox.claimed = Boolean(raw.claimed);
+            luckyBox.serverActive = Boolean(raw.active);
             luckyBox.collecting = false;
 
             const x = Number(raw.x);
@@ -4075,7 +4151,7 @@ return { MOVEMENT, validMovementInput, integrateMovement };
             const now = secureNow();
             const claimStillActive = luckyBox.claimed && luckyBox.claimExpiresAt > now;
             const waitingRespawn = luckyBox.nextSpawnTimestamp > now;
-            luckyBox.active = Boolean(raw.active) && !claimStillActive && !waitingRespawn;
+            luckyBox.active = luckyBox.serverActive && !claimStillActive && !waitingRespawn;
             luckyBox.mesh.visible = luckyBox.active;
             secureUpdateLuckyBoxTimer();
         }
@@ -4106,18 +4182,31 @@ return { MOVEMENT, validMovementInput, integrateMovement };
                 return;
             }
 
-            luckyBox.claimed = false;
-            luckyBox.active = true;
-            if (luckyBox.mesh) luckyBox.mesh.visible = true;
-            timerEl.innerText = 'พร้อมเปิด!';
+            // A clock reaching zero cannot create an authoritative spawn or
+            // release a claim. The room publishes its persisted active state.
+            luckyBox.active = Boolean(luckyBox.serverActive) && !luckyBox.claimed;
+            if (luckyBox.mesh) luckyBox.mesh.visible = luckyBox.active;
+            timerEl.innerText = luckyBox.active ? 'พร้อมเปิด!' : 'กำลังรอสถานะจาก Server...';
         }
 
         function secureRequestLuckyBoxCollect() {
             if (secureHandoffInProgress || !luckyBox || !luckyBox.active || luckyBox.collecting) return;
             if (!secureGameReady || !secureGameSocket || secureGameSocket.readyState !== WebSocket.OPEN) return;
+            const uid = String(auth.currentUser?.uid || '');
+            if (!luckyBox._claimActionRequestId || luckyBox._actionCycle !== luckyBox.spawnCycle || luckyBox._actionUid !== uid) {
+                luckyBox._actionCycle = luckyBox.spawnCycle;
+                luckyBox._actionUid = uid;
+                luckyBox._claimActionRequestId = secureEconomyRequestId('box-claim');
+                luckyBox._spinActionRequestId = null;
+            }
             luckyBox.collecting = true;
             setTimeout(() => { if (luckyBox) luckyBox.collecting = false; }, 1200);
-            secureGameSocket.send(JSON.stringify({ type: "collect_box" }));
+            try {
+                secureGameSocket.send(JSON.stringify({ type: "collect_box",
+                    requestId: luckyBox._claimActionRequestId }));
+            } catch (_) {
+                luckyBox.collecting = false;
+            }
         }
 
         spawnLuckyBoxes = function() {
@@ -4133,7 +4222,8 @@ return { MOVEMENT, validMovementInput, integrateMovement };
                 spawnCycle: 0,
                 collecting: false,
                 claimExpiresAt: 0,
-                claimed: false
+                claimed: false,
+                serverActive: false
             };
             luckyBoxServerRef = null;
             const timerEl = document.getElementById('hud-box-timer');
@@ -4155,7 +4245,7 @@ return { MOVEMENT, validMovementInput, integrateMovement };
         };
 
         spinWheel = function() {
-            if (state.wheelSpinning || secureHandoffInProgress) return;
+            if (state.wheelSpinning || secureHandoffInProgress || !luckyBox) return;
             if (!secureGameReady || !secureGameSocket || secureGameSocket.readyState !== WebSocket.OPEN) {
                 alert('Game Server หลุด กรุณาเข้าเกมใหม่');
                 return;
@@ -4163,7 +4253,22 @@ return { MOVEMENT, validMovementInput, integrateMovement };
             state.wheelSpinning = true;
             document.getElementById('btn-spin-wheel').classList.add('hidden');
             document.getElementById('wheel-result-msg').innerText = 'กำลังขอผลสุ่มจาก Server...';
-            secureGameSocket.send(JSON.stringify({ type: "spin_box" }));
+            if (!luckyBox._spinActionRequestId) luckyBox._spinActionRequestId = secureEconomyRequestId('box-spin');
+            const requestId = luckyBox._spinActionRequestId;
+            luckyBox._spinPendingRequestId = requestId;
+            const allowRetry = () => {
+                if (luckyBox?._spinPendingRequestId !== requestId) return;
+                luckyBox._spinPendingRequestId = null;
+                state.wheelSpinning = false;
+                document.getElementById('btn-spin-wheel').classList.remove('hidden');
+                document.getElementById('wheel-result-msg').innerText = 'ยังไม่ได้รับผลจาก Server กรุณาลองอีกครั้ง';
+            };
+            try {
+                secureGameSocket.send(JSON.stringify({ type: "spin_box", requestId }));
+                setTimeout(allowRetry, 2700);
+            } catch (_) {
+                allowRetry();
+            }
         };
         function secureAnimateWheelToReward(rewardValue) {
             const selectedIdx = WHEEL_ITEMS.findIndex(item => item.value === rewardValue);

@@ -250,6 +250,27 @@ function createHarness(options = {}) {
       if (!instances.has(name)) {
         const storage = createStorage();
         allStores.add(storage);
+        // Faithful local Durable Object alarm adapter: schedule against the
+        // server clock, retain the storage timestamp through instance restart,
+        // and invoke the actual current Worker alarm handler at delivery.
+        let alarmAt = null, alarmTimer = null;
+        storage.getAlarm = async () => alarmAt;
+        storage.deleteAlarm = async () => {
+          if (alarmTimer !== null) timers.delete(alarmTimer);
+          alarmAt = alarmTimer = null;
+        };
+        storage.setAlarm = async value => {
+          const timestamp = value instanceof Date ? value.getTime() : Number(value);
+          if (!Number.isFinite(timestamp) || timestamp <= 0) throw Error('Invalid alarm timestamp');
+          if (alarmTimer !== null) timers.delete(alarmTimer);
+          alarmAt = timestamp;
+          alarmTimer = setTimer(async () => {
+            alarmAt = alarmTimer = null;
+            const current = instances.get(name)?.instance;
+            if (typeof current?.alarm !== 'function') throw Error('Missing actual Durable Object alarm handler');
+            await current.alarm();
+          }, Math.max(0, timestamp - currentTime));
+        };
         const ctx = {
           id: { name }, storage, sockets: [],
           blockConcurrencyWhile: callback => Promise.resolve().then(callback),

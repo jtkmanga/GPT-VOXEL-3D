@@ -9,7 +9,7 @@ const { ROOT, moduleGraph, walk } = require('../../scripts/rebuild/source-view.c
 const { wireInventory } = require('./wire-inventory.cjs');
 const { createHarness } = require('./harness.cjs');
 
-test('P2 active client and Worker retain the baseline 28-type canonical wire vocabulary', async () => {
+test('P2 active client and Worker retain the baseline 28-type canonical wire vocabulary', async t => {
   const protocol = await import(pathToFileURL(path.join(ROOT, 'src/shared/protocol.mjs')));
   const baseline = execFileSync('git', ['show', '0acbdf43a94c9c228e07957cf2828c1c99a6e83a:worker.js'], { encoding: 'utf8' });
   const html = execFileSync('git', ['show', '0acbdf43a94c9c228e07957cf2828c1c99a6e83a:index.html'], { encoding: 'utf8' });
@@ -26,9 +26,26 @@ test('P2 active client and Worker retain the baseline 28-type canonical wire voc
   ...wireInventory(client, { messages: protocol.WS_MESSAGE })];
   assert.ok(authored.every(ref => ref.key && protocol.WS_MESSAGE[ref.key] === ref.value));
   assert.deepEqual([...new Set(authored.map(ref => ref.value))].sort(), vocabulary);
+  // P4 returns coin packets from EconomyStore.coinEvent and forwards them
+  // through result.event. The local AST extractor cannot trace that value
+  // across a module boundary. Prove the original send contract on the actual
+  // Worker and a connected peer rather than require an inline object literal.
+  const h = createHarness();
+  t.after(() => h.close());
+  const collector = await h.connect({ uid: 'synthetic-wire-collector' });
+  const observer = await h.connect({ uid: 'synthetic-wire-observer' });
+  observer.clear();
+  const coin = h.room().coinSnapshot()[0];
+  h.place(collector, { x: coin.x, y: 0, z: coin.z, r: 0 });
+  await collector.send({ type: protocol.WS_MESSAGE.COLLECT, id: coin.id });
+  const observed = new Set(observer.messages().map(message => message.type));
+  assert.equal(observer.messages(protocol.WS_MESSAGE.COIN_COLLECTED).length, 1);
+  assert.equal(observer.messages(protocol.WS_MESSAGE.COIN_COLLECTED)[0].respawnAt, h.now() + 60_000);
+  assert.equal(h.room().sql.exec('SELECT score FROM voxel_scores WHERE uid=?', 'synthetic-wire-collector').toArray()[0].score, 1);
   for (const value of vocabulary) for (const role of ['send', 'dispatch']) {
     if (original.some(ref => ref.value === value && ref.role === role)) {
-      assert.ok(authored.some(ref => ref.value === value && ref.role === role),
+      assert.ok(authored.some(ref => ref.value === value && ref.role === role) ||
+        (role === 'send' && observed.has(value)),
         `Retain baseline ${role} contract for ${value}`);
     }
   }
