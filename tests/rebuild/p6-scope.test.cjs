@@ -12,4 +12,3 @@ test('P6 retains canonical physics, economy, catalog, Firebase verifier and wire
     assert.equal(fs.readFileSync(file,'utf8'),execFileSync('git',['show',`${P5}:${file}`],{encoding:'utf8'}),file);
   }
 });
-
