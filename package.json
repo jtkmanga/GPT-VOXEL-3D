@@ -9,6 +9,10 @@
     "check:syntax": "node scripts/rebuild/check-syntax.cjs",
     "check:static": "node scripts/rebuild/check-static.cjs",
     "bundle:dry-run": "WRANGLER_SEND_METRICS=false wrangler deploy --dry-run --outdir work/bundle",
+    "staging:check": "node scripts/rebuild/check-staging.cjs --allow-unconfigured",
+    "staging:prepare": "node scripts/rebuild/prepare-staging.cjs --unconfigured",
+    "staging:dry-run": "WRANGLER_SEND_METRICS=false wrangler deploy --dry-run --config work/staging/prepared/wrangler.jsonc --outdir work/bundle-staging",
+    "staging:browser": "python tests/rebuild/p9-browser.py",
     "gate:test": "npm test && npm run check:static && npm run check:client && npm run check:syntax && git diff --check && npm run bundle:dry-run && python tests/rebuild/p1-browser.py"
   },
   "devDependencies": {

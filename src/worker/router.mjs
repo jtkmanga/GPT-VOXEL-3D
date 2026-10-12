@@ -1,14 +1,22 @@
 import { corsHeaders, jsonResponse, handleVerifySlip, handleGetEntitlements, handlePaymentWebhook } from './http.mjs';
 import { normalizeZoneId } from './spatial.mjs';
+import { stagingContext, stagingError, stagingAsset } from './staging-boundary.mjs';
 
 const worker = {
   async fetch(request,env) {
     const url=new URL(request.url);
+    const staging=stagingContext(request,env);
+    if (staging.error) return stagingError(staging);
+
+    if (staging.enabled && url.pathname==='/staging-config') {
+      if (request.method!=='GET') return new Response('Method not allowed',{status:405});
+      return Response.json(staging.config,{headers:{'Cache-Control':'no-store'}});
+    }
 
     if (url.pathname==='/payments/webhook') return handlePaymentWebhook(request,env);
 
     if (url.pathname==='/health')
-      return new Response('VOXEL RUN v4 online',
+      return new Response(staging.enabled ? 'GPT-VOXEL-3D staging online' : 'VOXEL RUN v4 online',
         {headers:{'content-type':'text/plain; charset=utf-8'}});
 
     if (url.pathname==='/entitlements') {
@@ -28,6 +36,8 @@ const worker = {
     }
 
     if (url.pathname==='/verify-slip') {
+      if (staging.enabled) return Response.json({ok:false,error:'Real payment verification is disabled in staging'},
+        {status:503,headers:{'Cache-Control':'no-store'}});
       if (request.method==='OPTIONS')
         return new Response(null,{
           status:204,
@@ -41,6 +51,12 @@ const worker = {
         },405);
 
       return handleVerifySlip(request,env);
+    }
+
+    if (staging.enabled && !['/play','/entitlements','/payments/webhook','/verify-slip','/health','/staging-config'].includes(url.pathname)) {
+      if (url.pathname.startsWith('/_internal') || request.headers.get('Upgrade')?.toLowerCase()==='websocket')
+        return new Response('Not found',{status:404});
+      return stagingAsset(request,env);
     }
 
     if (

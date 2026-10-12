@@ -35,15 +35,15 @@ function classicMovementKernel() {
   return `const movement = (() => {\n${source}\nreturn { ${exports.join(', ')} };\n})();\n`;
 }
 
-async function buildClient() {
+async function buildClient({ transformSource = (_file, source) => source, prependScript = '', appendScript = '' } = {}) {
   const entry = await import(pathToFileURL(path.join(ROOT, 'src/client/entry.mjs')));
   const roots = { config: entry.config, protocol: entry.protocol, catalog: entry.catalog };
   const source = entry.CLIENT_SOURCES.map(file => {
     const absolute = path.resolve(ROOT, 'src/client', file);
     if (!absolute.startsWith(path.join(ROOT, 'src/client') + path.sep)) throw Error('Invalid client source path');
-    return fs.readFileSync(absolute, 'utf8');
+    return transformSource(file, fs.readFileSync(absolute, 'utf8'));
   }).join('');
-  const script = classicMovementKernel() + materialize(source, roots);
+  const script = prependScript + classicMovementKernel() + materialize(source + appendScript, roots);
   const template = fs.readFileSync(path.join(ROOT, 'src/client/index.template.html'), 'utf8');
   if (template.split(PLACEHOLDER).length !== 2) throw Error('Client template must have exactly one script placeholder');
   return template.replace(PLACEHOLDER, script);

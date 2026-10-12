@@ -133,6 +133,10 @@ function createStorage() {
 }
 
 function createHarness(options = {}) {
+  // Explicit synthetic staging origin; the default keeps every existing
+  // P0-P8 fixture request unchanged. This does not relax Worker validation.
+  const workerOrigin = options.workerOrigin ?? 'https://rebuild-worker.invalid';
+  const tokenProject = options.defaultTokenProject ?? PROJECT_ID;
   let currentTime = options.now ?? 1_900_000_000_000;
   let uuidCounter = 0;
   let randomState = options.randomSeed ?? 0x12345678;
@@ -299,7 +303,7 @@ function createHarness(options = {}) {
     const now = Math.floor(currentTime / 1000);
     const header = { alg: 'RS256', kid: fixture.kid, ...headerOverrides };
     const claims = {
-      aud: PROJECT_ID, iss: `https://securetoken.google.com/${PROJECT_ID}`,
+      aud: tokenProject, iss: `https://securetoken.google.com/${tokenProject}`,
       sub: uid, exp: now + 3600, iat: now - 1, auth_time: now - 1, ...overrides
     };
     const content = [header, claims].map(value => Buffer.from(JSON.stringify(value)).toString('base64url')).join('.');
@@ -308,14 +312,14 @@ function createHarness(options = {}) {
   async function request(pathname, init = {}) {
     const headers = new Headers(init.headers);
     if (!headers.has('Origin')) headers.set('Origin', env.ALLOWED_ORIGIN);
-    return runtime.worker.fetch(new Request(`https://rebuild-worker.invalid${pathname}`, { ...init, headers }), env);
+    return runtime.worker.fetch(new Request(new URL(pathname, workerOrigin), { ...init, headers }), env);
   }
   async function open(pathname = '/play') {
     const response = await request(pathname, { headers: { Upgrade: 'websocket' } });
     if (response.status !== 101) throw Error(`Local WebSocket upgrade rejected: ${response.status} ${await response.text()}`);
     const client = response.webSocket;
     const server = client.peer;
-    const params = new URL(`https://rebuild-worker.invalid${pathname}`).searchParams;
+    const params = new URL(pathname, workerOrigin).searchParams;
     const zoneId = params.get('zone');
     const roomName = params.get('server') === 'vip1' ? 'vip1-v2-demo' : 'free-v2-demo';
     const instance = zoneId === null ? env.ROOM.object(roomName).instance : env.ZONE.object(`free-zone-${zoneId}`).instance;

@@ -43,6 +43,14 @@ export function jsonResponse(request, env, body, status = 200) {
   });
 }
 
+// A same-origin browser GET can omit Origin. Staging's explicit host guard
+// still fences it; bearer identity remains mandatory. Legacy CORS is unchanged.
+export function allowedRequestOrigin(request, env) {
+  if (!env.ALLOWED_ORIGIN || request.headers.get('Origin') === env.ALLOWED_ORIGIN) return true;
+  return env.APP_ENV === 'staging' && !request.headers.has('Origin') &&
+    new URL(request.url).origin === env.STAGING_WORKER_ORIGIN;
+}
+
 export async function handleVerifySlip(request, env) {
   if (
     env.ALLOWED_ORIGIN &&
@@ -279,10 +287,7 @@ export async function handleVerifySlip(request, env) {
 
 
 export async function handleGetEntitlements(request, env) {
-  if (
-    env.ALLOWED_ORIGIN &&
-    request.headers.get('Origin') !== env.ALLOWED_ORIGIN
-  ) {
+  if (!allowedRequestOrigin(request, env)) {
     return jsonResponse(request, env, {
       ok: false,
       error: 'Origin not allowed'

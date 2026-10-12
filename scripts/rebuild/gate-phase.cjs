@@ -3,7 +3,7 @@
 const { spawnSync } = require('node:child_process');
 const { mkdirSync, writeFileSync } = require('node:fs');
 const phase = process.argv[2];
-if (!/^P[2-8]$/.test(phase || '') || process.argv.length !== 3) throw Error('Usage: node scripts/rebuild/gate-phase.cjs P2..P8');
+if (!/^P[2-9]$/.test(phase || '') || process.argv.length !== 3) throw Error('Usage: node scripts/rebuild/gate-phase.cjs P2..P9');
 const directory = `work/gates/${phase}`;
 mkdirSync(directory, { recursive: true });
 const checks = [
@@ -18,6 +18,14 @@ const checks = [
   ['secret-config', process.execPath, ['scripts/rebuild/check-secrets.cjs']]
 ];
 if (phase === 'P8') checks.push(['load-evidence', process.execPath, ['scripts/rebuild/load-evidence.cjs']]);
+if (phase === 'P9') checks.push(
+  ['p8-evidence', process.execPath, ['scripts/rebuild/check-p8-evidence.cjs']],
+  ['staging-isolation', process.execPath, ['scripts/rebuild/check-staging.cjs', '--allow-unconfigured']],
+  ['staging-prepare', process.execPath, ['scripts/rebuild/prepare-staging.cjs', '--unconfigured']],
+  ['staging-assets', process.execPath, ['scripts/rebuild/check-staging.cjs', '--config', 'work/staging/prepared/wrangler.jsonc', '--allow-unconfigured', '--require-assets']],
+  ['staging-dry-run', 'npm', ['run', 'staging:dry-run']],
+  ['staging-browser', 'python', ['tests/rebuild/p9-browser.py']]
+);
 const outputs = {};
 for (const [name, command, args] of checks) {
   const result = spawnSync(command, args, { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
@@ -38,12 +46,15 @@ const nodePass = [...outputs.regression.matchAll(/ℹ pass (\d+)/g)].reduce((sum
 const legacyPass = [...outputs.regression.matchAll(/^PASS unchanged local legacy test:/gm)].length;
 const browserPass = Number(outputs.browser.match(/browser cases: (\d+) passed \/ 0 failed \/ 0 skipped/)?.[1]);
 if (!nodePass || legacyPass !== 2 || browserPass !== 8) throw Error('Incomplete regression/browser evidence');
+const stagingBrowserPass = phase === 'P9' ? Number(outputs['staging-browser'].match(/P9 browser cases: (\d+) passed \/ 0 failed \/ 0 skipped/)?.[1]) : 0;
+if (phase === 'P9' && stagingBrowserPass !== 11) throw Error('Incomplete staging browser evidence');
 const summary = {
-  phase, passed: nodePass + legacyPass + browserPass, failed: 0, skipped: 0,
+  phase, passed: nodePass + legacyPass + browserPass + stagingBrowserPass, failed: 0, skipped: 0,
   node: nodePass, legacy: legacyPass, browser: browserPass,
   staticAssertions: [...outputs.regression.matchAll(/^OK\s+/gm)].length,
   syntaxUnits: Number(outputs.syntax.match(/syntax: (\d+)/)?.[1]),
   checks: checks.map(([name]) => name)
 };
+if (phase === 'P9') summary.stagingBrowser = stagingBrowserPass;
 writeFileSync(`${directory}/summary.json`, `${JSON.stringify(summary, null, 2)}\n`);
 console.log(JSON.stringify(summary));
