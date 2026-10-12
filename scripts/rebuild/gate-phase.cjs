@@ -2,8 +2,18 @@
 // Local verification only. No staging, commit, remote write or deployment.
 const { spawnSync } = require('node:child_process');
 const { mkdirSync, writeFileSync } = require('node:fs');
+const path = require('node:path');
 const phase = process.argv[2];
-if (!/^P[2-9]$/.test(phase || '') || process.argv.length !== 3) throw Error('Usage: node scripts/rebuild/gate-phase.cjs P2..P9');
+let loadReport;
+if (process.argv.length === 5 && phase === 'P8' && process.argv[3] === '--load-report') {
+  loadReport = path.resolve(process.argv[4]);
+  const relative = path.relative(path.resolve('work'), loadReport);
+  if (!relative || relative.startsWith('..') || path.isAbsolute(relative))
+    throw Error('Fresh P8 load evidence must stay in ignored work/');
+} else if (process.argv.length !== 3) {
+  throw Error('Usage: node scripts/rebuild/gate-phase.cjs P2..P9 [P8 only: --load-report work/load/report.json]');
+}
+if (!/^P[2-9]$/.test(phase || '')) throw Error('Unknown verification phase');
 const directory = `work/gates/${phase}`;
 mkdirSync(directory, { recursive: true });
 const checks = [
@@ -17,7 +27,11 @@ const checks = [
   ['browser', 'python', ['tests/rebuild/p1-browser.py']],
   ['secret-config', process.execPath, ['scripts/rebuild/check-secrets.cjs']]
 ];
-if (phase === 'P8') checks.push(['load-evidence', process.execPath, ['scripts/rebuild/load-evidence.cjs']]);
+// A historical report must never be relabeled as a measurement of newer code.
+// An explicit fresh report still goes through every original assertion,
+// including exact equality to the current Worker/shared source fingerprint.
+if (phase === 'P8') checks.push(['load-evidence', process.execPath,
+  ['scripts/rebuild/load-evidence.cjs', ...(loadReport ? [loadReport] : [])]]);
 if (phase === 'P9') checks.push(
   ['p8-evidence', process.execPath, ['scripts/rebuild/check-p8-evidence.cjs']],
   ['staging-isolation', process.execPath, ['scripts/rebuild/check-staging.cjs', '--allow-unconfigured']],
@@ -56,5 +70,6 @@ const summary = {
   checks: checks.map(([name]) => name)
 };
 if (phase === 'P9') summary.stagingBrowser = stagingBrowserPass;
+if (loadReport) summary.loadReport = path.relative(process.cwd(), loadReport);
 writeFileSync(`${directory}/summary.json`, `${JSON.stringify(summary, null, 2)}\n`);
 console.log(JSON.stringify(summary));
