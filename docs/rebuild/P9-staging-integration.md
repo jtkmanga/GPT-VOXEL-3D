@@ -139,6 +139,24 @@ resources. Its exact schema is:
 }
 ```
 
+If Firebase is ready before the Cloudflare staging origin is selected, save only
+`apiKey`, `authDomain`, `projectId` and `appId` to ignored
+`work/staging/firebase-public.json`, then run:
+
+```sh
+node scripts/rebuild/check-staging-firebase.cjs --config work/staging/firebase-public.json
+```
+
+This uses the same strict Firebase validation as the complete manifest, without
+test allowances or fabricated Worker origins. It rejects additional fields and
+does not contact Firebase, prove API-key ownership or establish live Google
+sign-in. The public fields may fill the Firebase section of
+`work/staging/public-manifest.template.json`; missing Worker placeholders must
+remain explicit. That template is incomplete and cannot pass configured staging
+preparation. Keep generated staging assets disabled until the approved actual
+Worker name and HTTPS origin are known. No Firebase Admin/service-account private
+credential is needed by the implemented ID-token verification boundary.
+
 These placeholders deliberately cannot pass configured validation. No real
 values are invented. With the actual public values locally supplied:
 

@@ -11,6 +11,27 @@ function text(value, expression, label) {
   return value;
 }
 
+// This independent check permits public Firebase preparation before a real
+// Cloudflare origin is known. It never marks a full staging manifest configured.
+export function validateStagingFirebasePublicConfig(value, { allowTest = false } = {}) {
+  record(value, ['apiKey', 'authDomain', 'projectId', 'appId', 'messagingSenderId'], 'public Firebase');
+  const projectId = text(value.projectId, /^[a-z][a-z0-9-]{4,28}[a-z0-9]$/, 'Firebase project ID');
+  if (!projectId.includes('staging')) throw new Error('Firebase project ID must explicitly identify staging');
+  if (value.authDomain !== `${projectId}.firebaseapp.com`) throw new Error('Firebase auth domain must match the staging project');
+  const apiKey = text(value.apiKey, allowTest ? /^(?:AIza[A-Za-z0-9_-]{35}|synthetic-public-staging-key)$/ : /^AIza[A-Za-z0-9_-]{35}$/, 'public Firebase API key');
+  const appId = text(value.appId, /^1:[0-9]+:web:[a-f0-9]{8,64}$/, 'public Firebase app ID');
+  if (apiKey === 'AIzaSyCwn4rJ48I_bsVI2Ez59szQJubShvhO1SE' ||
+      appId.startsWith('1:541211602508:') || value.messagingSenderId === '541211602508') {
+    throw new Error('Known production Firebase public configuration cannot be reused for staging');
+  }
+  const firebase = { apiKey, authDomain: value.authDomain, projectId, appId };
+  if (value.messagingSenderId !== undefined) {
+    firebase.messagingSenderId = text(value.messagingSenderId, /^[0-9]{1,24}$/, 'Firebase messaging sender ID');
+    if (firebase.messagingSenderId !== appId.split(':')[1]) throw new Error('Firebase public app and sender must identify the same staging project');
+  }
+  return Object.freeze(firebase);
+}
+
 export function validateStagingPublicConfig(value, { allowUnconfigured = false, allowTest = false } = {}) {
   if (allowUnconfigured && value?.configured === false) {
     record(value, ['environment', 'configured', 'authMode'], 'unconfigured staging');
@@ -30,22 +51,8 @@ export function validateStagingPublicConfig(value, { allowUnconfigured = false, 
     /^[a-z0-9-]+\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.workers\.dev$/.test(host);
   const testHost = allowTest && host === `${workerName}.invalid`;
   if (!safeWorkersHost && !testHost) throw new Error('Staging Worker origin must match its isolated Worker name');
-  record(value.firebase, ['apiKey', 'authDomain', 'projectId', 'appId', 'messagingSenderId'], 'public Firebase');
-  const projectId = text(value.firebase.projectId, /^[a-z][a-z0-9-]{4,28}[a-z0-9]$/, 'Firebase project ID');
-  if (!projectId.includes('staging')) throw new Error('Firebase project ID must explicitly identify staging');
-  if (value.firebase.authDomain !== `${projectId}.firebaseapp.com`) throw new Error('Firebase auth domain must match the staging project');
-  const apiKey = text(value.firebase.apiKey, allowTest ? /^(?:AIza[A-Za-z0-9_-]{35}|synthetic-public-staging-key)$/ : /^AIza[A-Za-z0-9_-]{35}$/, 'public Firebase API key');
-  const appId = text(value.firebase.appId, /^1:[0-9]+:web:[a-f0-9]{8,64}$/, 'public Firebase app ID');
-  if (apiKey === 'AIzaSyCwn4rJ48I_bsVI2Ez59szQJubShvhO1SE' ||
-      appId.startsWith('1:541211602508:') || value.firebase.messagingSenderId === '541211602508') {
-    throw new Error('Known production Firebase public configuration cannot be reused for staging');
-  }
-  const firebase = { apiKey, authDomain: value.firebase.authDomain, projectId, appId };
-  if (value.firebase.messagingSenderId !== undefined) {
-    firebase.messagingSenderId = text(value.firebase.messagingSenderId, /^[0-9]{1,24}$/, 'Firebase messaging sender ID');
-    if (firebase.messagingSenderId !== appId.split(':')[1]) throw new Error('Firebase public app and sender must identify the same staging project');
-  }
+  const firebase = validateStagingFirebasePublicConfig(value.firebase, { allowTest });
   if (value.authMode !== 'popup' && value.authMode !== 'redirect') throw new Error('Google auth mode must be popup or redirect');
   return Object.freeze({ environment: 'staging', workerName, workerOrigin: parsed.origin,
-    firebase: Object.freeze(firebase), authMode: value.authMode });
+    firebase, authMode: value.authMode });
 }
