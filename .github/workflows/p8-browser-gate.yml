@@ -2,6 +2,11 @@ name: P8 Browser Gate
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - rebuild-p0-p8
+    paths:
+      - ".github/workflows/p8-browser-gate.yml"
 
 permissions:
   contents: read
@@ -28,8 +33,31 @@ jobs:
       - name: Install repository dependencies
         run: npm ci
 
-      - name: Install Playwright Chromium
-        run: python -m playwright install --with-deps chromium
+      - name: Install Python Playwright
+        run: python -m pip install playwright==1.62.0
+
+      - name: Install Chromium and system dependencies
+        run: |
+          python -m playwright install --with-deps chromium
+
+      - name: Locate Chromium and provide expected executable path
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          PLAYWRIGHT_CHROMIUM="$(find "$HOME/.cache/ms-playwright" -type f \( -name chromium -o -name chrome \) -perm -111 2>/dev/null | head -n 1 || true)"
+
+          if [ -z "$PLAYWRIGHT_CHROMIUM" ]; then
+            echo "ERROR: Could not locate Playwright Chromium executable."
+            find "$HOME/.cache/ms-playwright" -maxdepth 4 -type f 2>/dev/null || true
+            exit 1
+          fi
+
+          echo "Found Chromium: $PLAYWRIGHT_CHROMIUM"
+          sudo ln -sf "$PLAYWRIGHT_CHROMIUM" /usr/bin/chromium
+
+          test -x /usr/bin/chromium
+          /usr/bin/chromium --version
 
       - name: Run original P8 browser/client gate
         run: python tests/rebuild/p1-browser.py
