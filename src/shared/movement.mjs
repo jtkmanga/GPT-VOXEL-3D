@@ -21,6 +21,23 @@ export function validMovementInput(input) {
     Math.hypot(input.x, input.z) <= 1 + 1e-9 && typeof input.jump === 'boolean');
 }
 
+// A staging batch preserves the ordered intervals the client actually
+// predicted. Durations describe intent history; only the server clock grants
+// simulation time. No position, velocity, entitlement or timestamp is accepted.
+export function validMovementFrames(frames) {
+  if (!Array.isArray(frames) || frames.length < 1 || frames.length > 64) return false;
+  let elapsed = 0;
+  for (const frame of frames) {
+    if (!frame || typeof frame !== 'object' || Array.isArray(frame) ||
+        Object.keys(frame).length !== 2 || !Object.hasOwn(frame, 'input') ||
+        !Object.hasOwn(frame, 'delta') || !validMovementInput(frame.input) ||
+        !Number.isFinite(frame.delta) || frame.delta < 0 || frame.delta > .1) return false;
+    elapsed += frame.delta;
+    if (elapsed > MOVEMENT.maxElapsedSeconds + 1e-9) return false;
+  }
+  return true;
+}
+
 function sweepAxis(start, end, other, axis, obstacles) {
   const min = axis === 'x' ? 'minX' : 'minZ';
   const max = axis === 'x' ? 'maxX' : 'maxZ';

@@ -1,6 +1,6 @@
 import { WS_MESSAGE } from '../shared/protocol.mjs';
 import { SERVER_COIN_COUNT } from '../shared/config.mjs';
-import { validMovementInput } from '../shared/movement.mjs';
+import { validMovementInput, validMovementFrames } from '../shared/movement.mjs';
 
 // Limits apply to individual sockets and use only server time. The mutable
 // bucket state lives in the Durable Object WebSocket attachment so hibernation
@@ -16,7 +16,7 @@ export const SECURITY = {
 
 const incomingFields = new Map([
   [WS_MESSAGE.AUTH, ['token', 'name', 'protocol', 'handoffToken', 'resumeToken', 'seq']],
-  [WS_MESSAGE.MOVE, ['input', 'protocol', 'seq']],
+  [WS_MESSAGE.MOVE, ['input', 'frames', 'protocol', 'seq']],
   [WS_MESSAGE.COLLECT, ['id', 'x', 'y', 'z', 'r', 'protocol', 'seq']],
   [WS_MESSAGE.COLLECT_BOX, ['protocol', 'seq']],
   [WS_MESSAGE.SPIN_BOX, ['protocol', 'seq']],
@@ -91,7 +91,8 @@ export function parseFrame(message, attachment, expectedProtocol) {
     if (Object.hasOwn(packet, 'resumeToken') &&
         (typeof packet.resumeToken !== 'string' || !packet.resumeToken || packet.resumeToken.length > 128)) return failure('Invalid resume token');
   } else if (packet.type === WS_MESSAGE.MOVE) {
-    if (!Number.isSafeInteger(packet.seq) || packet.seq < 0 || !validMovementInput(packet.input))
+    if (!Number.isSafeInteger(packet.seq) || packet.seq < 0 || !validMovementInput(packet.input) ||
+        (Object.hasOwn(packet, 'frames') && !validMovementFrames(packet.frames)))
       return failure('Invalid movement intent');
   } else if (packet.type === WS_MESSAGE.HANDOFF_RESUME) {
     if (!validPosition(packet, false) ||

@@ -6,7 +6,7 @@
 // and P2 runtime suite. P8 additionally reruns the unchanged P4 Lucky Box
 // product tests on P4 while strengthening their active collection-time gates.
 // This is a Git checkpoint, never an alternate implementation or recovery file.
-const { spawnSync } = require('node:child_process');
+const { spawnSync, execFileSync } = require('node:child_process');
 const { mkdirSync, mkdtempSync, rmSync } = require('node:fs');
 const path = require('node:path');
 
@@ -18,7 +18,11 @@ const CHECKPOINTS = [
   { phase: 'P4', revision: '149ecd9f4c617dd432e3536443be7b3081827c9b', tests: ['p4-scope.test.cjs'], behaviorTests: ['p4-economy.test.cjs', 'p4-client.test.cjs'] },
   { phase: 'P5', revision: '0200876db8a6d26c6ce372264c37bfbdca29262c', tests: ['p5-scope.test.cjs'] },
   { phase: 'P6', revision: '33ace23c05875734eda909973b446a376bf307ae', tests: ['p6-scope.test.cjs'] },
-  { phase: 'P7', revision: '5d5c7a499d872f1ca7ed9762860ceb4d887f0701', tests: ['p7-scope.test.cjs'] }
+  { phase: 'P7', revision: '5d5c7a499d872f1ca7ed9762860ceb4d887f0701', tests: ['p7-scope.test.cjs'] },
+  // The first staging scope proof asserts the untouched P8 core. Preserve
+  // that complete proof on its actual checkpoint; subsequent runtime fixes
+  // are exercised by the active behavior and staging regression suites.
+  { phase: 'P9', revision: 'bc50e2ef03eadd5bb001e9d928dd78f24d9a03c9', tests: ['p9-scope.test.cjs'] }
 ];
 const HISTORICAL_TESTS = CHECKPOINTS.flatMap(checkpoint => checkpoint.tests);
 
@@ -54,7 +58,8 @@ function runCheckpoint({ phase, revision, tests, behaviorTests = [] }) {
         // The archived tree is itself the test worktree root. Otherwise Git
         // discovers the enclosing live checkout and interprets `ls-tree`
         // pathspecs relative to work/checkpoints/<phase>/run-*.
-        GIT_DIR: path.join(ROOT, '.git'), GIT_WORK_TREE: checkpoint
+        GIT_DIR: execFileSync('git', ['rev-parse', '--absolute-git-dir'], { cwd: ROOT, encoding: 'utf8' }).trim(),
+        GIT_WORK_TREE: checkpoint
       }
     });
     successful(result, `Complete unchanged historical ${phase} assertions`);
@@ -72,4 +77,4 @@ if (require.main === module) {
   catch (error) { console.error(error); process.exitCode = 1; }
 }
 
-module.exports = { runHistory, HISTORICAL_TESTS, CHECKPOINTS };
+module.exports = { runHistory, runCheckpoint, HISTORICAL_TESTS, CHECKPOINTS };

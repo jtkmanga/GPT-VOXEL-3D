@@ -39,6 +39,66 @@ startGame = async function() {
     return stagingAuthoritativeStart();
 };
 
+// Staging sends the exact ordered prediction intervals, rather than asking
+// authority to apply the newest input to the preceding network-time window.
+// Sequence ACKs therefore retire the same work on both sides of the socket.
+let stagingPredictionResetPending = true;
+const stagingResetPrediction = typeof secureResetPrediction === 'function' ? secureResetPrediction : null;
+if (stagingResetPrediction) secureResetPrediction = function(position, motion = {}) {
+    const reset = stagingResetPrediction(position, motion);
+    if (reset) stagingPredictionResetPending = true;
+    return reset;
+};
+function stagingUnsentMovementFrames() {
+    return securePendingFrames.filter(frame => frame.seq === secureInputSequence);
+}
+syncMyPlayerData = function(force = false) {
+    if (!STAGING_CLIENT_ENABLED || !state.isPlaying || secureHandoffInProgress || !secureGameReady ||
+        !secureGameSocket || secureGameSocket.readyState !== WebSocket.OPEN) return false;
+    const now = Date.now();
+    if (!force && now - secureLastMoveSentAt < config.MOVE_TICK_MS) return false;
+    const input = state.isPaused ? { x: 0, z: 0, jump: false } : secureMovementIntent();
+    const predicted = stagingUnsentMovementFrames();
+    const frames = predicted.length
+        ? predicted.map(frame => ({ input: { ...frame.input }, delta: frame.delta }))
+        : [{ input, delta: 0 }];
+    if (!movement.validMovementFrames(frames)) return false;
+    const seq = secureInputSequence;
+    try {
+        secureGameSocket.send(JSON.stringify({ type: protocol.WS_MESSAGE.MOVE, input, seq, frames }));
+    } catch (_) { return false; }
+    secureInputSequence++;
+    secureLastMoveSentAt = now;
+    securePendingInputs.push({ seq, input, jumpGeneration: secureJumpGeneration });
+    if (securePendingInputs.length > 64) securePendingInputs.shift();
+    return true;
+};
+function secureFlushMovementForPickup() {
+    if (!STAGING_CLIENT_ENABLED || !state.isPlaying || secureHandoffInProgress || !secureGameReady ||
+        !secureGameSocket || secureGameSocket.readyState !== WebSocket.OPEN) return false;
+    return stagingUnsentMovementFrames().length === 0 || syncMyPlayerData(true);
+}
+const stagingPredictMovement = typeof securePredictMovement === 'function' ? securePredictMovement : null;
+if (stagingPredictMovement) securePredictMovement = function(delta) {
+    if (!STAGING_CLIENT_ENABLED || !secureGameReady || secureHandoffInProgress || !secureGameSocket ||
+        secureGameSocket.readyState !== WebSocket.OPEN) return;
+    // Reset/spawn/handoff authority starts a new prediction timeline. The
+    // render delta from before that reset cannot claim pre-session movement.
+    const elapsed = stagingPredictionResetPending ? 0
+        : Math.min(.1, Math.max(0, Number.isFinite(delta) ? delta : 0));
+    stagingPredictionResetPending = false;
+    const unsent = stagingUnsentMovementFrames();
+    const pendingSeconds = unsent.reduce((total, frame) => total + frame.delta, 0);
+    if (unsent.length >= 63 || pendingSeconds + elapsed > .5 + 1e-9) {
+        if (!syncMyPlayerData(true)) return;
+    }
+    stagingPredictMovement(elapsed);
+    const next = stagingUnsentMovementFrames();
+    if (next.length >= 48 || next.reduce((total, frame) => total + frame.delta, 0) >= .45) {
+        syncMyPlayerData(true);
+    }
+};
+
 let stagingForegroundRefresh = null;
 function stagingClearInput() {
     for (const key of Object.keys(keys)) keys[key] = false;

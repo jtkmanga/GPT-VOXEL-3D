@@ -526,6 +526,23 @@ function validMovementInput(input) {
     Math.hypot(input.x, input.z) <= 1 + 1e-9 && typeof input.jump === 'boolean');
 }
 
+// A staging batch preserves the ordered intervals the client actually
+// predicted. Durations describe intent history; only the server clock grants
+// simulation time. No position, velocity, entitlement or timestamp is accepted.
+function validMovementFrames(frames) {
+  if (!Array.isArray(frames) || frames.length < 1 || frames.length > 64) return false;
+  let elapsed = 0;
+  for (const frame of frames) {
+    if (!frame || typeof frame !== 'object' || Array.isArray(frame) ||
+        Object.keys(frame).length !== 2 || !Object.hasOwn(frame, 'input') ||
+        !Object.hasOwn(frame, 'delta') || !validMovementInput(frame.input) ||
+        !Number.isFinite(frame.delta) || frame.delta < 0 || frame.delta > .1) return false;
+    elapsed += frame.delta;
+    if (elapsed > MOVEMENT.maxElapsedSeconds + 1e-9) return false;
+  }
+  return true;
+}
+
 function sweepAxis(start, end, other, axis, obstacles) {
   const min = axis === 'x' ? 'minX' : 'minZ';
   const max = axis === 'x' ? 'maxX' : 'maxZ';
@@ -607,7 +624,7 @@ function integrateMovement(state, input, elapsedSeconds, options = {}) {
   return result;
 }
 
-return { MOVEMENT, validMovementInput, integrateMovement };
+return { MOVEMENT, validMovementInput, validMovementFrames, integrateMovement };
 })();
 
         // --- FIREBASE REAL GOOGLE AUTHENTICATION & DATABASE CONFIGURATION ---
@@ -3067,6 +3084,13 @@ return { MOVEMENT, validMovementInput, integrateMovement };
             });
         }
 
+        function secureApplyCoinRetryDelay(coin, message) {
+            const retryAfterMs = Number(message?.retryAfterMs);
+            if (!Number.isFinite(retryAfterMs) || retryAfterMs <= 0) return;
+            coin._collectRetryAt = Math.max(Number(coin._collectRetryAt) || 0,
+                Date.now() + Math.min(150, retryAfterMs));
+        }
+
         function secureUpdateCoinState(message) {
             const id = Number(message?.id);
             if (!Number.isInteger(id) || id < 0 || id >= coins.length) return;
@@ -3081,6 +3105,7 @@ return { MOVEMENT, validMovementInput, integrateMovement };
                 coin.serverCycle = cycle;
             }
             if (message?.serverNow) secureSetServerNow(message.serverNow);
+            secureApplyCoinRetryDelay(coin, message);
             if (message?.type === "coin_state" &&
                 message.requestId === coin._collectActionRequestId) coin._collectActionRequestId = null;
             coin.serverId = id;
@@ -3547,6 +3572,7 @@ return { MOVEMENT, validMovementInput, integrateMovement };
                             Number(coin._collectPendingUntil || 0) > 0) break;
                         if (Number.isSafeInteger(message.cycle) && Number.isSafeInteger(coin.serverCycle) &&
                             message.cycle < coin.serverCycle) break;
+                        secureApplyCoinRetryDelay(coin, message);
                         coin._collectPendingUntil = 0;
                         if (message.collected) {
                             if (Number.isFinite(Number(message.score))) {
@@ -3560,7 +3586,8 @@ return { MOVEMENT, validMovementInput, integrateMovement };
                                 secureUpdateCoinState(message.event);
                             } else {
                                 if (message.serverNow) secureSetServerNow(message.serverNow);
-                                const activeAfter = Number(message.activeAfter) || 0;
+                                const activeAfter = Object.hasOwn(message, 'activeAfter')
+                                    ? Number(message.activeAfter) || 0 : Number(coin.respawnTime) || 0;
                                 coin.respawnTime = activeAfter;
                                 coin.active = activeAfter <= secureNow();
                                 coin.mesh.visible = coin.active;
@@ -4111,7 +4138,11 @@ return { MOVEMENT, validMovementInput, integrateMovement };
             if (!Number.isInteger(id)) return;
 
             const now = Date.now();
-            if (Number(coin._collectPendingUntil || 0) > now) return;
+            if (Number(coin._collectPendingUntil || 0) > now || Number(coin._collectRetryAt || 0) > now) return;
+
+            // Ordered movement frames reach authority before contact. The
+            // pickup still contains no client position, distance or score.
+            if (typeof secureFlushMovementForPickup === 'function' && secureFlushMovementForPickup() === false) return;
 
             // Immediate visual prediction: hide on contact, but score remains
             // server-authoritative. If the server rejects/times out, restore it.

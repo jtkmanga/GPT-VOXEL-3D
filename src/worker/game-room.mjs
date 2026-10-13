@@ -1120,7 +1120,7 @@ export class GameRoom {
   handleMove(ws,p,m) {
     if (!this.ownsSession(ws,p)) return;
     const now=Date.now();
-    if (now-p.last<MOVE_TICK_MS) {
+    if (m.frames === undefined && now-p.last<MOVE_TICK_MS) {
       this.send(ws,{type:WS_MESSAGE.MOVE,player:this.publicPlayer(p),ack:m.seq,applied:false,
         movement:publicMovement(p),velocity:{x:p.motion.vx,y:p.motion.vy,z:p.motion.vz},
         grounded:p.motion.grounded,serverNow:now});
@@ -1145,14 +1145,20 @@ export class GameRoom {
   async handleCollect(ws,p,m) {
     if (!this.ownsSession(ws,p)) return false;
     const now=Date.now(), id=m.id;
-    if (!Number.isInteger(id) || id<0 || id>=COINS.length || now-p.lastCollect<150) return false;
+    if (!Number.isInteger(id) || id<0 || id>=COINS.length) return false;
+    if (now-p.lastCollect<150) {
+      this.send(ws,{...this.economy.coinEvent(id,now),type:WS_MESSAGE.COIN_STATE,
+        requestId:m.requestId,retryAfterMs:Math.min(150,150-(now-p.lastCollect))});
+      return false;
+    }
     p.lastCollect=now;
     ws.serializeAttachment(p);
     let result;
     try { result=this.economy.collectCoin({uid:p.uid,id,position:p,requestId:m.requestId,now}); }
     catch (_) { this.send(ws,{type:WS_MESSAGE.SERVER_ERROR,message:'Score storage unavailable',requestId:m.requestId}); return false; }
     if (!result.ok) {
-      this.send(ws,{...this.economy.coinEvent(id,now),type:WS_MESSAGE.COIN_STATE,requestId:m.requestId});
+      this.send(ws,{...this.economy.coinEvent(id,now),type:WS_MESSAGE.COIN_STATE,
+        requestId:m.requestId,retryAfterMs:150});
       return false;
     }
     if (!result.collected) {

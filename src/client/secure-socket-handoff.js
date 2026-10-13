@@ -451,6 +451,7 @@
                             Number(coin._collectPendingUntil || 0) > 0) break;
                         if (Number.isSafeInteger(message.cycle) && Number.isSafeInteger(coin.serverCycle) &&
                             message.cycle < coin.serverCycle) break;
+                        secureApplyCoinRetryDelay(coin, message);
                         coin._collectPendingUntil = 0;
                         if (message.collected) {
                             if (Number.isFinite(Number(message.score))) {
@@ -464,7 +465,8 @@
                                 secureUpdateCoinState(message.event);
                             } else {
                                 if (message.serverNow) secureSetServerNow(message.serverNow);
-                                const activeAfter = Number(message.activeAfter) || 0;
+                                const activeAfter = Object.hasOwn(message, 'activeAfter')
+                                    ? Number(message.activeAfter) || 0 : Number(coin.respawnTime) || 0;
                                 coin.respawnTime = activeAfter;
                                 coin.active = activeAfter <= secureNow();
                                 coin.mesh.visible = coin.active;

@@ -50,7 +50,11 @@
             if (!Number.isInteger(id)) return;
 
             const now = Date.now();
-            if (Number(coin._collectPendingUntil || 0) > now) return;
+            if (Number(coin._collectPendingUntil || 0) > now || Number(coin._collectRetryAt || 0) > now) return;
+
+            // Ordered movement frames reach authority before contact. The
+            // pickup still contains no client position, distance or score.
+            if (typeof secureFlushMovementForPickup === 'function' && secureFlushMovementForPickup() === false) return;
 
             // Immediate visual prediction: hide on contact, but score remains
             // server-authoritative. If the server rejects/times out, restore it.

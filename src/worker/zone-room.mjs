@@ -229,7 +229,8 @@ export class ZoneRoom {
             return;
           }
           Object.assign(p,{x:source.x,y:source.y,z:source.z,r:source.r,
-            motion:{...source.motion,clock:Date.now()},at:Date.now(),last:Date.now()});
+            // Position rollback cannot refund time already spent crossing.
+            motion:{...source.motion,clock:Date.now(),credit:0},at:Date.now(),last:Date.now()});
           const checkpoint=await checkpointPlayer(this,ws,p);
           if (!checkpoint?.ok || ws.readyState!==1) {
             ws.close(1008,'Handoff cancellation ownership rejected');
@@ -664,7 +665,7 @@ export class ZoneRoom {
         position:p.handoffPending.position});
       return;
     }
-    if (now-p.last<MOVE_TICK_MS) {
+    if (m.frames === undefined && now-p.last<MOVE_TICK_MS) {
       this.sendMovementAck(ws,p,m.seq,now,false);
       return;
     }
@@ -795,7 +796,12 @@ export class ZoneRoom {
   async handleCollect(ws,p,m) {
     const now=Date.now();
     const id=Number(m?.id);
-    if (!Number.isInteger(id) || id<0 || id>=COINS.length || now-Number(p.lastCollect||0)<150) return false;
+    if (!Number.isInteger(id) || id<0 || id>=COINS.length) return false;
+    if (now-Number(p.lastCollect||0)<150) {
+      this.send(ws,{type:WS_MESSAGE.COIN_COLLECT_RESULT,id,collected:false,
+        serverNow:now,requestId:m.requestId,retryAfterMs:Math.min(150,150-(now-Number(p.lastCollect||0)))});
+      return false;
+    }
 
     // Collection uses the latest server simulation state. Legacy contact
     // coordinates remain accepted by the schema but cannot move a player.
@@ -817,7 +823,8 @@ export class ZoneRoom {
         if (response.status>=500) this.send(ws,{type:WS_MESSAGE.SERVER_ERROR,message:'Score storage unavailable',requestId:m.requestId});
         else this.send(ws,{type:WS_MESSAGE.COIN_COLLECT_RESULT,id,collected:false,
           activeAfter:Number(result?.activeAfter)||0,serverNow:Date.now(),requestId:m.requestId,
-          event:result?.event||null,cycle:result?.cycle});
+          event:result?.event||null,cycle:result?.cycle,
+          retryAfterMs:Math.min(150,Math.max(0,150-(Date.now()-now)))});
         return false;
       }
 

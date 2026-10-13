@@ -163,6 +163,13 @@
             });
         }
 
+        function secureApplyCoinRetryDelay(coin, message) {
+            const retryAfterMs = Number(message?.retryAfterMs);
+            if (!Number.isFinite(retryAfterMs) || retryAfterMs <= 0) return;
+            coin._collectRetryAt = Math.max(Number(coin._collectRetryAt) || 0,
+                Date.now() + Math.min(150, retryAfterMs));
+        }
+
         function secureUpdateCoinState(message) {
             const id = Number(message?.id);
             if (!Number.isInteger(id) || id < 0 || id >= coins.length) return;
@@ -177,6 +184,7 @@
                 coin.serverCycle = cycle;
             }
             if (message?.serverNow) secureSetServerNow(message.serverNow);
+            secureApplyCoinRetryDelay(coin, message);
             if (message?.type === protocol.WS_MESSAGE.COIN_STATE &&
                 message.requestId === coin._collectActionRequestId) coin._collectActionRequestId = null;
             coin.serverId = id;
