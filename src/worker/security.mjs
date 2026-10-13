@@ -15,7 +15,7 @@ export const SECURITY = {
 };
 
 const incomingFields = new Map([
-  [WS_MESSAGE.AUTH, ['token', 'name', 'protocol', 'handoffToken', 'resumeToken', 'seq']],
+  [WS_MESSAGE.AUTH, ['token', 'name', 'protocol', 'handoffToken', 'resumeToken', 'seq', 'continuousHandoff']],
   [WS_MESSAGE.MOVE, ['input', 'frames', 'protocol', 'seq']],
   [WS_MESSAGE.COLLECT, ['id', 'x', 'y', 'z', 'r', 'protocol', 'seq']],
   [WS_MESSAGE.COLLECT_BOX, ['protocol', 'seq']],
@@ -90,6 +90,8 @@ export function parseFrame(message, attachment, expectedProtocol) {
         (typeof packet.handoffToken !== 'string' || !packet.handoffToken || packet.handoffToken.length > 256)) return failure('Invalid handoff token');
     if (Object.hasOwn(packet, 'resumeToken') &&
         (typeof packet.resumeToken !== 'string' || !packet.resumeToken || packet.resumeToken.length > 128)) return failure('Invalid resume token');
+    if (Object.hasOwn(packet, 'continuousHandoff') && typeof packet.continuousHandoff !== 'boolean')
+      return failure('Invalid handoff mode');
   } else if (packet.type === WS_MESSAGE.MOVE) {
     if (!Number.isSafeInteger(packet.seq) || packet.seq < 0 || !validMovementInput(packet.input) ||
         (Object.hasOwn(packet, 'frames') && !validMovementFrames(packet.frames)))

@@ -50,6 +50,19 @@ async function handleFrame(room, ws, raw, protocol, dispatch) {
     await dispatch(packet, player);
     return;
   }
+  // The staging handoff barrier owns the source cutover. Frames arriving
+  // afterward remain unacknowledged work for the target, never source writes.
+  if (player.handoffPending?.continuousHandoff && player.handoffPending.sealed &&
+      packet.type !== WS_MESSAGE.HANDOFF_CANCEL) {
+    if (packet.type === WS_MESSAGE.MOVE && typeof room.sendMovementAck === 'function') {
+      room.sendMovementAck(ws, player, player.motion?.seq, Date.now(), false,
+        { continuousHandoff: true, sealed: true });
+    } else {
+      room.send(ws, { type: WS_MESSAGE.SERVER_ERROR, message: 'Zone ownership is transferring',
+        continuousHandoff: true, sealed: true, requestId: packet.requestId });
+    }
+    return;
+  }
   if (!player.uid || Math.floor(Date.now() / 1000) >= player.exp) {
     ws.close(1008, 'Sign in required'); return;
   }
@@ -91,6 +104,9 @@ async function handleFrame(room, ws, raw, protocol, dispatch) {
   }
   ws.serializeAttachment(player);
   const completed = await dispatch(packet, player);
+  // The continuous transfer commits its position, lease and world snapshot
+  // together. Another RPC here would unnecessarily hold queued target input.
+  if (completed?.checkpointed === true) return;
   player = room.player(ws);
   // A failed persistence attempt must remain retryable. Completed same-socket
   // repeats stay silent; the economy ledger fences retries after reconnect.
@@ -137,6 +153,18 @@ export function enqueueFrame(room, ws, raw, protocol, dispatch) {
   queues.set(ws, current);
   return current.finally(() => {
     pendingFrames.set(ws, Math.max(0, (pendingFrames.get(ws) || 1) - 1));
+    if (queues.get(ws) === current) queues.delete(ws);
+  });
+}
+
+// Private Durable Object requests use the same transport queue as gameplay.
+// A seal therefore observes every earlier accepted frame and prevents a
+// delayed source checkpoint from racing the ownership CAS.
+export function enqueueSocketBarrier(ws, operation) {
+  const previous = queues.get(ws) || Promise.resolve();
+  const current = previous.then(operation);
+  queues.set(ws, current);
+  return current.finally(() => {
     if (queues.get(ws) === current) queues.delete(ws);
   });
 }

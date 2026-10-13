@@ -5,9 +5,10 @@ import { normalizePlayerName, normalizeZoneId, adjacentZoneIds, zonesAreAdjacent
 import { COINS } from './world.mjs';
 import { verifyFirebaseIdToken } from './firebase-auth.mjs';
 import { SECURITY, scheduleAuthDeadline, clearAuthDeadline } from './security.mjs';
-import { enqueueFrame, sessionMetadata, checkpointPlayer } from './room-security.mjs';
+import { enqueueFrame, enqueueSocketBarrier, sessionMetadata, checkpointPlayer } from './room-security.mjs';
 import { initializeMotion, applyMovementIntent, publicMovement } from './movement.mjs';
 import { ZoneVisibility } from './zone-visibility.mjs';
+import { handoffMotion, handoffPosition } from './handoff-continuity.mjs';
 
 // Phase 2A movement-zone Durable Object.
 // World state, scores, payments, coins and Lucky Box remain authoritative in GameRoom.
@@ -24,6 +25,7 @@ export class ZoneRoom {
   player(ws) { return ws.deserializeAttachment(); }
   sockets() { return this.ctx.getWebSockets(); }
   activePlayer(p) { return Boolean(p?.uid && !p.revoked && !p.sessionClosed && !p.handoffResume &&
+    !p.handoffPending?.sealed &&
     Number(p.exp)>Math.floor(Date.now()/1000) && Number(p.resumeExpiresAt)>Date.now()); }
   count() { return this.sockets().filter(ws=>this.activePlayer(this.player(ws))).length; }
   sessionOwner() { return 'zone:'+this.currentZoneId(); }
@@ -111,8 +113,97 @@ export class ZoneRoom {
     return this.visibility.initial(ws,p);
   }
 
+  continuityState(p) {
+    return {continuousHandoff:true,position:handoffPosition(p),motion:handoffMotion(p.motion),
+      movement:publicMovement(p),ack:p.motion.seq,lastSequence:Math.max(p.motion.seq,
+        Number.isSafeInteger(p.lastSequence) ? p.lastSequence : -1),
+      checkpointRevision:Number(p.checkpointRevision)||0,zone:p.zoneId,serverNow:Date.now()};
+  }
+
+  async cancelContinuousTicket(ws,p) {
+    const pending=p.handoffPending;
+    if (!pending?.continuousHandoff || !pending.token) return false;
+    const response=await this.env.ROOM.getByName('free-v2-demo').fetch(
+      new Request('https://internal/_internal/cancel-zone-handoff',{
+        method:'POST',headers:{'content-type':'application/json'},
+        body:JSON.stringify({uid:p.uid,sessionId:p.sessionId,owner:this.sessionOwner(),token:pending.token})
+      }));
+    const result=await response.json();
+    p=this.player(ws);
+    if (!response.ok || !result?.ok || !p || p.revoked || ws.readyState!==1 ||
+        p.handoffPending?.token!==pending.token) return false;
+    p.handoffPending=null;
+    p.continuousCancelled=true;
+    p.motion.credit=0;
+    // Cancellation does not integrate input. Retain the last simulation clock
+    // so valid in-flight frames can spend newly elapsed server time once.
+    ws.serializeAttachment(p);
+    return true;
+  }
+
+  async handoffBarrier(request,unseal=false) {
+    if (this.env.APP_ENV!=='staging') return Response.json({ok:false},{status:404});
+    let body;
+    try { body=await request.json(); }
+    catch (_) { return Response.json({ok:false,error:'Invalid JSON'},{status:400}); }
+    const ws=this.sockets().find(socket=>{
+      const p=this.player(socket);
+      return p?.uid===body?.uid && p.sessionId===body?.sessionId &&
+        p.handoffPending?.token===body?.token;
+    });
+    if (!ws) return Response.json({ok:false,error:'Handoff source unavailable'},{status:409});
+    return enqueueSocketBarrier(ws,async()=>{
+      try {
+        let p=this.player(ws);
+        const pending=p?.handoffPending;
+        if (!pending?.continuousHandoff || pending.token!==body.token ||
+            pending.zone!==body.toZone || p.uid!==body.uid || p.sessionId!==body.sessionId ||
+            p.revoked || p.sessionClosed || ws.readyState!==1 ||
+            Number(p.exp)<=Math.floor(Date.now()/1000) || Number(pending.expiresAt)<=Date.now())
+          return Response.json({ok:false,error:'Handoff source unavailable'},{status:409});
+        const owned=await this.sessionCall('validate',{
+          uid:p.uid,sessionId:p.sessionId,owner:this.sessionOwner()});
+        p=this.player(ws);
+        if (!owned?.ok || !p || p.revoked || p.sessionClosed || ws.readyState!==1 ||
+            p.handoffPending?.token!==body.token)
+          return Response.json({ok:false,error:'Source session not owned'},{status:409});
+        if (unseal) {
+          p.handoffPending.sealed=false;
+          ws.serializeAttachment(p);
+          this.broadcastNearby({type:WS_MESSAGE.JOIN,player:this.publicPlayer(p),count:this.count()},p,ws);
+          this.ctx.waitUntil(this.flushBorderSnapshot(true));
+          return Response.json({ok:true,...this.continuityState(p)});
+        }
+        const currentZone=zoneFromPosition(p.x,p.z);
+        if (currentZone!==body.toZone) {
+          const cancelled=await this.cancelContinuousTicket(ws,p);
+          if (!cancelled) return Response.json({ok:false,error:'Handoff route cancellation unavailable'},{status:409});
+          p=this.player(ws);
+          return Response.json({ok:false,...this.continuityState(p),
+            cancelledToSource:currentZone===p.zoneId,
+            ...(currentZone!==p.zoneId ? {retargetZone:currentZone} : {}),
+            error:'Authoritative handoff route changed'},{status:409});
+        }
+        const state=this.continuityState(p);
+        p.handoffPending.sealed=true;
+        ws.serializeAttachment(p);
+        this.visibility.leave(p,ws);
+        this.ctx.waitUntil(this.flushBorderSnapshot(true,ws));
+        return Response.json({ok:true,...state,uid:p.uid,sessionId:p.sessionId,
+          fromZone:p.zoneId,toZone:body.toZone,token:body.token});
+      } catch (_) {
+        return Response.json({ok:false,error:'Handoff source unavailable'},{status:503});
+      }
+    });
+  }
+
   async fetch(request) {
     const url=new URL(request.url);
+
+    if (url.pathname==='/_internal/staging-handoff-seal' && request.method==='POST')
+      return this.handoffBarrier(request);
+    if (url.pathname==='/_internal/staging-handoff-unseal' && request.method==='POST')
+      return this.handoffBarrier(request,true);
 
     if (url.pathname==='/_internal/session-revoke' && request.method==='POST') {
       let body;
@@ -123,6 +214,8 @@ export class ZoneRoom {
       for (const ws of this.sockets()) {
         const p=this.player(ws);
         if ((p?.uid||p?.pendingUid)!==body.uid || (p.sessionId||p.pendingSessionId)!==body.sessionId) continue;
+        if (body.handoffToken!==undefined && (this.env.APP_ENV!=='staging' ||
+            !p.handoffPending?.sealed || p.handoffPending.token!==body.handoffToken)) continue;
         if (this.activePlayer(p)) this.broadcastNearby({
           type:WS_MESSAGE.LEAVE,id:p.id,count:Math.max(0,this.count()-1)
         },p,ws);
@@ -223,14 +316,27 @@ export class ZoneRoom {
             ws.close(1008,'Handoff cancellation rejected');
             return;
           }
-          const source=p.handoffPending?.source;
-          if (!source || zoneFromPosition(source.x,source.z)!==p.zoneId) {
-            ws.close(1011,'Handoff source unavailable');
-            return;
+          if (pending.continuousHandoff) {
+            p.continuousCancelled=true;
+            p.motion.credit=0;
+            // Preserve the last integrated clock; cancellation cannot consume
+            // the elapsed interval backing still-unacknowledged frames.
+            if (p.handoffPending.sealed) {
+              p.handoffPending.sealed=false;
+              ws.serializeAttachment(p);
+              this.broadcastNearby({type:WS_MESSAGE.JOIN,player:this.publicPlayer(p),count:this.count()},p,ws);
+              this.ctx.waitUntil(this.flushBorderSnapshot(true));
+            }
+          } else {
+            const source=p.handoffPending?.source;
+            if (!source || zoneFromPosition(source.x,source.z)!==p.zoneId) {
+              ws.close(1011,'Handoff source unavailable');
+              return;
+            }
+            Object.assign(p,{x:source.x,y:source.y,z:source.z,r:source.r,
+              // Position rollback cannot refund time already spent crossing.
+              motion:{...source.motion,clock:Date.now(),credit:0},at:Date.now(),last:Date.now()});
           }
-          Object.assign(p,{x:source.x,y:source.y,z:source.z,r:source.r,
-            // Position rollback cannot refund time already spent crossing.
-            motion:{...source.motion,clock:Date.now(),credit:0},at:Date.now(),last:Date.now()});
           const checkpoint=await checkpointPlayer(this,ws,p);
           if (!checkpoint?.ok || ws.readyState!==1) {
             ws.close(1008,'Handoff cancellation ownership rejected');
@@ -246,6 +352,7 @@ export class ZoneRoom {
       ws.serializeAttachment(p);
       this.send(ws,{type:WS_MESSAGE.HANDOFF_CANCELLED,zone:p.zoneId,serverNow:Date.now(),
         position:{x:p.x,y:p.y,z:p.z,r:p.r},movement:publicMovement(p),
+        ...(pending?.continuousHandoff || p.continuousCancelled ? {continuousHandoff:true,ack:p.motion.seq} : {}),
         nextSequence:Math.max(Number.isSafeInteger(p.lastSequence) ? p.lastSequence : -1,
           Number.isSafeInteger(p.motion?.seq) ? p.motion.seq : -1)+1});
       return;
@@ -348,7 +455,8 @@ export class ZoneRoom {
             body:JSON.stringify({
               uid:verified.uid,
               token:handoffToken,
-              toZone:zoneId
+              toZone:zoneId,
+              continuousHandoff:this.env.APP_ENV==='staging' && m.continuousHandoff===true
             })
           })
         );
@@ -448,8 +556,10 @@ export class ZoneRoom {
       last:0,
       lastCollect:0,
       handoffPending:null,
+      continuousHandoff:this.env.APP_ENV==='staging' && m.continuousHandoff===true,
       handoffResume: handoff ? {
         token:handoffToken,
+        continuousHandoff:handoff.continuousHandoff===true,
         anchorX:spawnX,
         anchorY:spawnY,
         anchorZ:spawnZ,
@@ -473,6 +583,7 @@ export class ZoneRoom {
       protocol:PROTOCOL_VERSION.ZONE_ROOM,
       phase:'2B1',
       handoff:Boolean(handoff),
+      ...(p.continuousHandoff ? {continuousHandoff:true} : {}),
       fromZone:handoff?.fromZone||null,
       zone:zoneId,
       id,
@@ -514,6 +625,8 @@ export class ZoneRoom {
       ws.close(1008,'Handoff resume window expired');
       return;
     }
+
+    if (resume.continuousHandoff) return this.handleContinuousResume(ws,p,m);
 
     // The signed, one-use server ticket fixes the transfer position. Legacy
     // coordinate fields are compatibility hints, never simulation authority.
@@ -644,12 +757,97 @@ export class ZoneRoom {
     this.ctx.waitUntil(this.flushBorderSnapshot(true));
   }
 
+  async handleContinuousResume(ws,p,m) {
+    const resume=p.handoffResume;
+    const source=this.env.ZONE.getByName(`free-zone-${resume.fromZone}`);
+    const identity={uid:p.uid,sessionId:p.sessionId,token:resume.token,toZone:p.zoneId};
+    let sealed=false, transferred;
+    try {
+      const response=await source.fetch(new Request('https://zone.internal/_internal/staging-handoff-seal',{
+        method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(identity)}));
+      const snapshot=await response.json();
+      p=this.player(ws);
+      if (!response.ok || !snapshot?.ok) {
+        this.send(ws,{type:WS_MESSAGE.HANDOFF_RESUME_ERROR,message:snapshot?.error||'Handoff source unavailable',
+          ...(snapshot?.continuousHandoff ? {continuousHandoff:true,position:snapshot.position,
+            movement:snapshot.movement,ack:snapshot.ack,zone:snapshot.zone,
+            cancelledToSource:snapshot.cancelledToSource,retargetZone:snapshot.retargetZone} : {})});
+        ws.close(1008,'Handoff source unavailable');
+        return;
+      }
+      sealed=true;
+      if (snapshot.uid!==identity.uid || snapshot.sessionId!==identity.sessionId ||
+          snapshot.token!==identity.token || snapshot.fromZone!==resume.fromZone ||
+          snapshot.toZone!==identity.toZone || !snapshot.continuousHandoff)
+        throw Error('Invalid authoritative handoff source');
+      const position=handoffPosition(snapshot.position), motion=handoffMotion(snapshot.motion);
+      if (zoneFromPosition(position.x,position.z)!==p.zoneId ||
+          snapshot.ack!==motion.seq || !Number.isSafeInteger(snapshot.lastSequence) ||
+          snapshot.lastSequence<motion.seq || snapshot.lastSequence<0 ||
+          ws.readyState!==1 || p.revoked || !p.handoffResume ||
+          p.handoffResume.token!==resume.token || Date.now()>=resume.deadline ||
+          Number(p.exp)<=Math.floor(Date.now()/1000))
+        throw Error('Handoff source no longer available');
+      const committed=await this.env.ROOM.getByName('free-v2-demo').fetch(
+        new Request('https://internal/_internal/staging-handoff-commit',{
+          method:'POST',headers:{'content-type':'application/json'},
+          body:JSON.stringify({uid:p.uid,sessionId:p.sessionId,fromOwner:'zone:'+resume.fromZone,
+            toOwner:this.sessionOwner(),handoffToken:resume.token,playerId:p.id,position,exp:p.exp})}));
+      transferred=await committed.json();
+      p=this.player(ws);
+      if (!committed.ok || !transferred?.ok) throw Error('Handoff ownership rejected');
+      if (ws.readyState!==1 || !p || p.revoked || !p.handoffResume ||
+          p.handoffResume.token!==resume.token || Date.now()>=resume.deadline ||
+          Number(p.exp)<=Math.floor(Date.now()/1000)) throw Error('Handoff target no longer available');
+      const worldState=transferred.worldState;
+      if (!worldState?.ok || !Array.isArray(worldState.coins) || worldState.coins.length!==COINS.length ||
+          !worldState.luckyBox || !Number.isSafeInteger(worldState.score) || !Array.isArray(worldState.leaderboard))
+        throw Error('Handoff world state unavailable');
+      Object.assign(p,position,{motion,lastSequence:snapshot.lastSequence,at:Date.now(),last:Date.now(),
+        resumeToken:transferred.resumeToken,resumeExpiresAt:transferred.resumeExpiresAt,
+        checkpointRevision:transferred.checkpointRevision,handoffPending:null,handoffResume:null});
+      ws.serializeAttachment(p);
+      this.send(ws,{type:WS_MESSAGE.HANDOFF_RESUMED,...position,position,zone:p.zoneId,
+        continuousHandoff:true,session:sessionMetadata(p),movement:publicMovement(p),
+        ack:motion.seq,serverNow:Date.now()});
+      // Only the acknowledged target may project the committed shared state.
+      this.send(ws,{type:WS_MESSAGE.COIN_STATE,coins:worldState.coins,serverNow:worldState.serverNow});
+      this.send(ws,{type:WS_MESSAGE.BOX_STATE,box:worldState.luckyBox,serverNow:worldState.serverNow});
+      this.send(ws,{type:WS_MESSAGE.SCORE,score:worldState.score,serverNow:worldState.serverNow});
+      this.send(ws,{type:WS_MESSAGE.LEADERBOARD,top:worldState.leaderboard,serverNow:worldState.serverNow});
+      // The source is already sealed and the coordinator durably owns its
+      // exact-generation eviction. Transport closure cannot stall target input.
+      this.ctx.waitUntil(this.sessionCall('revoke',{uid:p.uid,sessionId:p.sessionId,
+        owner:'zone:'+resume.fromZone,handoffToken:resume.token}).catch(()=>{/* Durable retry remains scheduled. */}));
+      this.broadcastNearby({type:WS_MESSAGE.JOIN,player:this.publicPlayer(p),count:this.count()},p,ws);
+      this.broadcastNearby({type:WS_MESSAGE.MOVE,player:this.publicPlayer(p)},p,ws);
+      this.ctx.waitUntil(this.sendInitialGhostSnapshots(ws,p));
+      this.ctx.waitUntil(this.flushBorderSnapshot(true));
+      return {checkpointed:true};
+    } catch (_) {
+      if (transferred?.ok) {
+        try { await this.sessionCall('release',{uid:identity.uid,sessionId:identity.sessionId,owner:this.sessionOwner()}); }
+        catch (_) { /* A failed CAS cannot release a successor generation. */ }
+        this.ctx.waitUntil(this.sessionCall('revoke',{uid:identity.uid,sessionId:identity.sessionId,
+          owner:'zone:'+resume.fromZone,handoffToken:resume.token}).catch(()=>{}));
+      } else if (sealed) {
+        // Only a still-owning source can unseal; an ambiguous committed CAS
+        // must never reactivate a stale generation.
+        try { await source.fetch(new Request('https://zone.internal/_internal/staging-handoff-unseal',{
+          method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(identity)})); }
+        catch (_) { /* Client cancellation and durable expiry remain fenced. */ }
+      }
+      this.send(ws,{type:WS_MESSAGE.HANDOFF_RESUME_ERROR,message:'Handoff authority unavailable'});
+      ws.close(1011,'Handoff authority unavailable');
+    }
+  }
+
   async handleMove(ws,p,m) {
     const now=Date.now();
     const speedActive=Number(p.speedExpires||0)>now;
     // Once a ticket is issued, freeze its authoritative anchor until transfer
     // or cancellation. Source packets cannot invalidate an in-flight ticket.
-    if (p.handoffPending?.token) {
+    if (p.handoffPending?.token && !p.handoffPending.continuousHandoff) {
       if (Number(p.handoffPending.expiresAt)<=now) {
         this.send(ws,{type:WS_MESSAGE.HANDOFF_ERROR,message:'Zone handoff expired'});
         ws.close(1008,'Zone handoff expired');
@@ -665,6 +863,11 @@ export class ZoneRoom {
         position:p.handoffPending.position});
       return;
     }
+    if (p.handoffPending?.continuousHandoff && Number(p.handoffPending.expiresAt)<=now) {
+      this.send(ws,{type:WS_MESSAGE.HANDOFF_ERROR,message:'Zone handoff expired'});
+      ws.close(1008,'Zone handoff expired');
+      return;
+    }
     if (m.frames === undefined && now-p.last<MOVE_TICK_MS) {
       this.sendMovementAck(ws,p,m.seq,now,false);
       return;
@@ -673,9 +876,26 @@ export class ZoneRoom {
     if (!applyMovementIntent(p,m,speedActive ? MOVEMENT.entitledSpeed : MOVEMENT.speed,now)) return;
     const {x,y,z,r}=p;
     ws.serializeAttachment(p);
+    const authoritativeZone=zoneFromPosition(x,z);
+    if (this.env.APP_ENV==='staging' && p.continuousHandoff && authoritativeZone &&
+        authoritativeZone!==p.zoneId && !zonesAreAdjacent(p.zoneId,authoritativeZone)) {
+      // A delayed target must not leave a source owning an unrelated region.
+      // Keep the established adjacent-zone security fence and fail closed.
+      this.send(ws,{type:WS_MESSAGE.HANDOFF_ERROR,message:'Zone transition exceeded adjacent ownership'});
+      await this.endSession(ws,1008,'Zone transition exceeded adjacent ownership');
+      return;
+    }
     this.sendMovementAck(ws,p,m.seq,now);
 
-    const requestedZone=zoneFromPosition(x,z);
+    // Warmup keeps the original owner and ticket while valid movement continues.
+    // Cutover validates the latest route in the serialized source seal.
+    if (p.handoffPending?.continuousHandoff) {
+      this.broadcastNearby({type:WS_MESSAGE.MOVE,player:this.publicPlayer(p)},p,ws);
+      this.ctx.waitUntil(this.visibility.refresh(ws));
+      this.ctx.waitUntil(this.flushBorderSnapshot(false));
+      return;
+    }
+    const requestedZone=authoritativeZone;
     if (!requestedZone) return;
 
     if (requestedZone!==p.zoneId) {
@@ -697,6 +917,7 @@ export class ZoneRoom {
 
       p.handoffPending={
         creating:true,
+        continuousHandoff:this.env.APP_ENV==='staging' && p.continuousHandoff===true && m.frames!==undefined,
         zone:requestedZone,
         position:{x,y,z,r},
         source,
@@ -716,6 +937,7 @@ export class ZoneRoom {
               playerId:p.id,
               fromZone:p.zoneId,
               toZone:requestedZone,
+              continuousHandoff:p.handoffPending.continuousHandoff===true,
               x,y,z,r
             })
           })
@@ -727,6 +949,7 @@ export class ZoneRoom {
         if (!p?.uid) return;
         p.handoffPending={
           creating:false,
+          continuousHandoff:result.continuousHandoff===true,
           zone:requestedZone,
           token:String(result.token),
           expiresAt:Number(result.expiresAt)||0,
@@ -741,7 +964,8 @@ export class ZoneRoom {
           zone:requestedZone,
           handoffToken:p.handoffPending.token,
           expiresAt:p.handoffPending.expiresAt,
-          position:p.handoffPending.position
+          position:p.handoffPending.position,
+          ...(p.handoffPending.continuousHandoff ? {continuousHandoff:true} : {})
         });
       } catch (_) {
         p=this.player(ws);
@@ -763,7 +987,8 @@ export class ZoneRoom {
       player:this.publicPlayer(p)
     },p,ws);
 
-    await this.visibility.refresh(ws);
+    if (this.env.APP_ENV==='staging' && p.continuousHandoff) this.ctx.waitUntil(this.visibility.refresh(ws));
+    else await this.visibility.refresh(ws);
     this.ctx.waitUntil(this.flushBorderSnapshot(false));
   }
 
@@ -780,10 +1005,10 @@ export class ZoneRoom {
     return state;
   }
 
-  sendMovementAck(ws,p,seq,now=Date.now(),applied=true) {
+  sendMovementAck(ws,p,seq,now=Date.now(),applied=true,extra={}) {
     this.send(ws,{type:WS_MESSAGE.MOVE,player:this.publicPlayer(p),ack:seq,applied,
       movement:publicMovement(p),velocity:{x:p.motion.vx,y:p.motion.vy,z:p.motion.vz},
-      grounded:p.motion.grounded,serverNow:now});
+      grounded:p.motion.grounded,serverNow:now,...extra});
   }
 
   async checkpointEconomy(ws,p) {

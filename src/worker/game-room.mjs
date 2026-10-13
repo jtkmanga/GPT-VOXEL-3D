@@ -12,6 +12,7 @@ import { initializeMotion, applyMovementIntent, publicMovement } from './movemen
 import { EconomyStore } from './economy.mjs';
 import { VipStore } from './vip-store.mjs';
 import { validVipUid, VIP_PRODUCT, normalizePaymentEvent, paymentEventFingerprint } from './payment-events.mjs';
+import { handoffPosition } from './handoff-continuity.mjs';
 
 export class GameRoom {
   constructor(ctx,env) {
@@ -183,16 +184,7 @@ export class GameRoom {
     if (!['acquire','validate','checkpoint','release','transfer'].includes(action))
       throw Error('Invalid session action');
     if (this.serverScope==='vip1') return this.vipSessionCall(action,payload);
-    const result=action==='transfer' ? this.ctx.storage.transactionSync(()=>{
-      const grant=this.sql.exec('SELECT * FROM voxel_handoff_grants WHERE token=?',payload?.handoffToken||'').toArray()[0];
-      if (!grant || grant.status!=='pending' || Number(grant.expires_at)<=Date.now() ||
-          grant.uid!==payload.uid || grant.session_id!==payload.sessionId ||
-          grant.from_owner!==payload.fromOwner || grant.to_owner!==payload.toOwner)
-        return {ok:false,error:'Handoff grant unavailable'};
-      const transfer=this.sessions.transfer(payload);
-      if (transfer.ok) this.sql.exec("UPDATE voxel_handoff_grants SET status='complete' WHERE token=? AND status='pending'",grant.token);
-      return transfer;
-    }) : action==='acquire' ? this.ctx.storage.transactionSync(()=>{
+    const result=action==='transfer' ? this.transferHandoff(payload) : action==='acquire' ? this.ctx.storage.transactionSync(()=>{
       const acquired=this.sessions.acquire(payload);
       if (acquired.ok && acquired.previousOwner && acquired.previousSessionId)
         this.sql.exec(`INSERT OR IGNORE INTO voxel_session_revocations
@@ -208,19 +200,65 @@ export class GameRoom {
     }
     return result;
   }
+  transferHandoff(payload) {
+    return this.ctx.storage.transactionSync(()=>{
+      const grant=this.sql.exec('SELECT * FROM voxel_handoff_grants WHERE token=?',payload?.handoffToken||'').toArray()[0];
+      if (!grant || grant.status!=='pending' || Number(grant.expires_at)<=Date.now() ||
+          grant.uid!==payload.uid || grant.session_id!==payload.sessionId ||
+          grant.from_owner!==payload.fromOwner || grant.to_owner!==payload.toOwner)
+        return {ok:false,error:'Handoff grant unavailable'};
+      const transfer=this.sessions.transfer(payload);
+      if (transfer.ok) this.sql.exec("UPDATE voxel_handoff_grants SET status='complete' WHERE token=? AND status='pending'",grant.token);
+      return transfer;
+    });
+  }
+  completeStagingHandoff(payload) {
+    if (this.env.APP_ENV!=='staging' || this.serverScope!=='free1' ||
+        !String(payload?.handoffToken||'').startsWith('continuous:') ||
+        !Number.isSafeInteger(payload?.exp) || payload.exp<=Math.floor(Date.now()/1000))
+      return {ok:false,error:'Staging handoff unavailable'};
+    const position=handoffPosition(payload.position);
+    const fromZone=typeof payload.fromOwner==='string' && normalizeZoneId(payload.fromOwner.slice(5));
+    const toZone=typeof payload.toOwner==='string' && normalizeZoneId(payload.toOwner.slice(5));
+    if (!fromZone || payload.fromOwner!==`zone:${fromZone}` || !toZone ||
+        payload.toOwner!==`zone:${toZone}` || !zonesAreAdjacent(fromZone,toZone) ||
+        zoneFromPosition(position.x,position.z)!==toZone)
+      return {ok:false,error:'Invalid staging handoff route'};
+    return this.ctx.storage.transactionSync(()=>{
+      const transfer=this.transferHandoff({...payload,position});
+      if (!transfer.ok) return transfer;
+      const checkpoint=this.sessions.checkpoint({uid:payload.uid,sessionId:payload.sessionId,
+        owner:payload.toOwner,position,exp:payload.exp,revision:Number(transfer.checkpointRevision)+1});
+      if (!checkpoint.ok) throw Error('Staging handoff checkpoint unavailable');
+      // Queue exact-generation eviction durably before returning the ACK data.
+      // Source sealing already fences gameplay while delivery retries run.
+      const now=Date.now();
+      this.sql.exec(`INSERT OR IGNORE INTO voxel_session_revocations
+        (uid,session_id,owner,expires_at,next_attempt_at) VALUES (?,?,?,?,?)`,
+      payload.uid,payload.sessionId,`sealed:${fromZone}|${payload.handoffToken}`,now+SESSION_TTL_MS,now+1000);
+      return {...transfer,resumeExpiresAt:checkpoint.resumeExpiresAt,
+        checkpointRevision:checkpoint.checkpointRevision,worldState:{ok:true,
+          coins:this.coinSnapshot(),luckyBox:this.boxSnapshot(),score:this.economy.score(payload.uid),
+          leaderboard:this.top(),serverNow:now}};
+    });
+  }
   async retireOwner(payload) {
-    const {uid,sessionId,owner}=payload||{};
+    const {uid,sessionId,owner,handoffToken}=payload||{};
     const zone=typeof owner==='string' && owner.startsWith('zone:') && normalizeZoneId(owner.slice(5));
     if (typeof uid!=='string' || !uid || uid.length>128 || typeof sessionId!=='string' ||
         !sessionId || sessionId.length>256 || (owner!=='room' && (!zone || owner!==`zone:${zone}`)))
       return {ok:false,error:'Invalid session revocation'};
+    if (handoffToken!==undefined && (this.env.APP_ENV!=='staging' || !zone ||
+        typeof handoffToken!=='string' || !handoffToken.startsWith('continuous:') || handoffToken.length>128))
+      return {ok:false,error:'Invalid staging session revocation'};
+    const revocationOwner=handoffToken ? `sealed:${zone}|${handoffToken}` : owner;
     this.sql.exec(`INSERT OR IGNORE INTO voxel_session_revocations
       (uid,session_id,owner,expires_at,next_attempt_at) VALUES (?,?,?,?,?)`,
-    uid,sessionId,owner,Date.now()+SESSION_TTL_MS,Date.now()+1000);
+    uid,sessionId,revocationOwner,Date.now()+SESSION_TTL_MS,Date.now()+1000);
     await this.scheduleEconomyAlarm();
-    const result=await this.revokeOwner(payload);
+    const result=await this.revokeOwner({uid,sessionId,owner:revocationOwner});
     if (!result?.ok) throw Error('Session revocation unavailable');
-    this.sql.exec('DELETE FROM voxel_session_revocations WHERE uid=? AND session_id=? AND owner=?',uid,sessionId,owner);
+    this.sql.exec('DELETE FROM voxel_session_revocations WHERE uid=? AND session_id=? AND owner=?',uid,sessionId,revocationOwner);
     await this.scheduleEconomyAlarm();
     return result;
   }
@@ -242,11 +280,13 @@ export class GameRoom {
         typeof sessionId!=='string' || !sessionId || sessionId.length>256)
       return {ok:false,error:'Invalid session revocation'};
     if (owner==='room') return this.revokeSession({uid,sessionId});
-    const zoneId=typeof owner==='string' && owner.startsWith('zone:') && normalizeZoneId(owner.slice(5));
-    if (!zoneId || owner!==`zone:${zoneId}`) return {ok:false,error:'Invalid session owner'};
+    const sealed=this.env.APP_ENV==='staging' && typeof owner==='string' && /^sealed:([0-9],[0-9])\|(continuous:[a-f0-9-]{36})$/.exec(owner);
+    const zoneId=sealed ? normalizeZoneId(sealed[1]) :
+      typeof owner==='string' && owner.startsWith('zone:') && normalizeZoneId(owner.slice(5));
+    if (!zoneId || (!sealed && owner!==`zone:${zoneId}`)) return {ok:false,error:'Invalid session owner'};
     const response=await this.env.ZONE.getByName(`free-zone-${zoneId}`).fetch(
       new Request('https://zone.internal/_internal/session-revoke',{
-        method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({uid,sessionId})
+        method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({uid,sessionId,...(sealed ? {handoffToken:sealed[2]} : {})})
       })
     );
     const result=await response.json();
@@ -513,6 +553,18 @@ export class GameRoom {
 
     const url = new URL(request.url);
 
+    if (url.pathname==='/_internal/staging-handoff-commit' && request.method==='POST') {
+      if (this.env.APP_ENV!=='staging') return Response.json({ok:false},{status:404});
+      let payload;
+      try { payload=await request.json(); }
+      catch (_) { return Response.json({ok:false,error:'Invalid JSON'},{status:400}); }
+      try {
+        const result=this.completeStagingHandoff(payload);
+        if (result.ok) this.ctx.waitUntil(this.scheduleEconomyAlarm());
+        return Response.json(result,{status:result.ok ? 200 : 409});
+      } catch (_) { return Response.json({ok:false,error:'Staging handoff unavailable'},{status:503}); }
+    }
+
     if (url.pathname==='/_internal/configure-scope' && request.method==='POST') {
       let body;
       try { body=await request.json(); } catch (_) { return Response.json({ok:false,error:'Invalid JSON'},{status:400}); }
@@ -721,7 +773,8 @@ export class GameRoom {
 
       const now=Date.now();
       const expiresAt=now+12000;
-      const token=crypto.randomUUID();
+      const continuousHandoff=this.env.APP_ENV==='staging' && body.continuousHandoff===true;
+      const token=(continuousHandoff ? 'continuous:' : '')+crypto.randomUUID();
       this.sql.exec('DELETE FROM voxel_zone_handoffs WHERE expires_at<=?',now);
       this.sql.exec('DELETE FROM voxel_handoff_grants WHERE expires_at<=?',now);
       this.sql.exec(
@@ -731,7 +784,7 @@ export class GameRoom {
         token,uid,playerId,fromZone,toZone,x,y,z,r,expiresAt,now,sessionId
       );
 
-      return Response.json({ok:true,token,expiresAt,toZone});
+      return Response.json({ok:true,token,expiresAt,toZone,...(continuousHandoff ? {continuousHandoff:true} : {})});
     }
 
     if (
@@ -759,7 +812,9 @@ export class GameRoom {
         ).toArray()[0];
 
         if (!row || row.uid!==uid || row.to_zone!==toZone || Number(row.expires_at||0)<=now ||
-            !this.sessions.validate({uid,sessionId:row.session_id,owner:`zone:${row.from_zone}`})) {
+            !this.sessions.validate({uid,sessionId:row.session_id,owner:`zone:${row.from_zone}`}) ||
+            (this.env.APP_ENV==='staging' &&
+              token.startsWith('continuous:')!==(body.continuousHandoff===true))) {
           return null;
         }
 
@@ -775,7 +830,8 @@ export class GameRoom {
           sessionId:String(row.session_id),
           expiresAt:Number(row.expires_at),
           x:Number(row.x),y:Number(row.y),z:Number(row.z),r:Number(row.r),
-          createdAt:Number(row.created_at)||now
+          createdAt:Number(row.created_at)||now,
+          ...(this.env.APP_ENV==='staging' && token.startsWith('continuous:') ? {continuousHandoff:true} : {})
         };
       });
 

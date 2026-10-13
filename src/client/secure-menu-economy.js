@@ -45,7 +45,9 @@
         }
 
         collectCoin = function(coin) {
-            if (secureHandoffInProgress || !coin || !coin.active || !secureGameReady || !secureGameSocket || secureGameSocket.readyState !== WebSocket.OPEN) return;
+            const socket = typeof secureHandoffEconomySocket === 'function' ? secureHandoffEconomySocket() : secureGameSocket;
+            if ((secureHandoffInProgress && !(typeof secureHandoffEconomySocket === 'function' && socket)) ||
+                !coin || !coin.active || !secureGameReady || !socket || socket.readyState !== WebSocket.OPEN) return;
             const id = Number(coin.serverId);
             if (!Number.isInteger(id)) return;
 
@@ -70,7 +72,7 @@
             coin.mesh.visible = false;
 
             try {
-                secureGameSocket.send(JSON.stringify({
+                socket.send(JSON.stringify({
                     type: protocol.WS_MESSAGE.COLLECT,
                     id,
                     requestId: coin._collectActionRequestId

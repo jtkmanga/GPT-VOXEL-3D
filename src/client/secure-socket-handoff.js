@@ -63,7 +63,8 @@
         function securePredictMovement(delta) {
             // Lost connections and provisional handoffs cannot advance a player.
             // Camera and rendering continue while authority is being recovered.
-            if (!secureGameReady || secureHandoffInProgress || !secureGameSocket ||
+            if (!secureGameReady || (secureHandoffInProgress &&
+                !(typeof secureContinuousHandoffPredictionAllowed === 'function' && secureContinuousHandoffPredictionAllowed())) || !secureGameSocket ||
                 secureGameSocket.readyState !== WebSocket.OPEN) return;
             const input = secureMovementIntent();
             input.jump = secureJumpIntent;
@@ -214,6 +215,7 @@
             secureCancelReconnect();
             if (secureActiveHandoff) {
                 secureActiveHandoff.cancelled = true;
+                if (typeof secureAbortContinuousHandoff === 'function') secureAbortContinuousHandoff(secureActiveHandoff, reason);
                 if (secureActiveHandoff.source) secureClientSockets.add(secureActiveHandoff.source);
                 if (secureActiveHandoff.target) secureClientSockets.add(secureActiveHandoff.target);
             }
@@ -366,10 +368,14 @@
                 case protocol.WS_MESSAGE.WELCOME: {
                     if (message.serverNow) secureSetServerNow(message.serverNow);
                     const isSmoothHandoffWelcome = Boolean(message.handoff) && secureHandoffInProgress;
+                    const isContinuousHandoffWelcome = isSmoothHandoffWelcome &&
+                        typeof secureContinuousHandoffDefersWelcomeWorld === 'function' && secureContinuousHandoffDefersWelcomeWorld();
                     secureCurrentZoneId = secureNormalizeZoneId(message.zone) || secureCurrentZoneId;
                     state.serverPlayerId = String(message.id || '');
-                    state.score = Number(message.score) || 0;
-                    updateScoreDisplay();
+                    if (!isContinuousHandoffWelcome) {
+                        state.score = Number(message.score) || 0;
+                        updateScoreDisplay();
+                    }
 
                     // Login/resume starts from persisted authority. A provisional
                     // target welcome keeps rendering stable until ownership ACK.
@@ -391,7 +397,10 @@
                         }
                     });
 
-                    if (isSmoothHandoffWelcome) {
+                    if (isContinuousHandoffWelcome) {
+                        // Keep the owning source's live world state. The target's
+                        // fresh commit snapshot arrives with its ownership ACK.
+                    } else if (isSmoothHandoffWelcome) {
                         // Refresh global world UI outside the critical handoff path so
                         // 200 coin mesh updates cannot create a visible boundary hitch.
                         requestAnimationFrame(() => {
@@ -530,7 +539,13 @@
                     // cannot revive a timed-out/cancelled provisional socket.
                     if (!secureHandoffInProgress || !secureHandoffResumeResolve) break;
                     if (message.serverNow) secureSetServerNow(message.serverNow);
-                    if (typeof secureResetPrediction === 'function') {
+                    if (typeof secureContinuousHandoffRequiresAck === 'function' && secureContinuousHandoffRequiresAck()) {
+                        if (message.continuousHandoff !== true || !secureApplyContinuousHandoffAck(message)) {
+                            secureAbortClientConnections('Invalid continuous handoff authority', 1008);
+                            secureReturnToMenu();
+                            break;
+                        }
+                    } else if (typeof secureResetPrediction === 'function') {
                         secureResetPrediction(message.position || message, message.movement || message.motion);
                     }
                     if (typeof secureTrackAuthenticatedSocket === 'function' && secureGameSocket) {
@@ -547,12 +562,21 @@
                     secureHandoffResumeTimer = null;
                     const err = new Error(message.message || 'Target Zone ปฏิเสธตำแหน่งต่อเนื่อง');
                     err.retryable = Boolean(message.retryable);
+                    if (message.continuousHandoff) {
+                        err.continuousHandoff = true;
+                        err.cancelledToSource = Boolean(message.cancelledToSource);
+                        err.retargetZone = secureNormalizeZoneId(message.retargetZone);
+                    }
                     if (secureHandoffResumeReject) secureHandoffResumeReject(err);
                     secureHandoffResumeResolve = null;
                     secureHandoffResumeReject = null;
                     break;
                 }
                 case protocol.WS_MESSAGE.HANDOFF_CANCELLED:
+                    if (typeof secureContinuousHandoffRequiresAck === 'function' && secureContinuousHandoffRequiresAck()) {
+                        if (message.continuousHandoff === true) secureApplyContinuousHandoffCancel(message);
+                        break;
+                    }
                     if (message.serverNow) secureSetServerNow(message.serverNow);
                     if (message.position && typeof secureResetPrediction === 'function') {
                         const nextSequence = secureInputSequence;
@@ -611,6 +635,7 @@
                 const ws = new WebSocket(secureZoneSocketUrl(normalizedZone, serverId));
                 ws.secureAuthenticatedUid = uid;
                 ws.secureServerId = serverId;
+                if (typeof secureContinuousHandoffSocketOpened === 'function') secureContinuousHandoffSocketOpened(ws, handoffToken);
                 if (typeof secureRegisterClientSocket === 'function') secureRegisterClientSocket(ws);
                 let welcomed = false;
                 let settled = false;
@@ -643,6 +668,9 @@
                         protocol: serverId === 'vip1' ? protocol.PROTOCOL_VERSION.LEGACY_ROOM : protocol.PROTOCOL_VERSION.ZONE_ROOM,
                         name: String(state.playerName || 'Player').trim().slice(0, 12)
                     };
+                    if (typeof secureUseContinuousHandoff === 'function' && secureUseContinuousHandoff(serverId)) {
+                        authMessage.continuousHandoff = true;
+                    }
                     if (handoffToken) authMessage.handoffToken = String(handoffToken);
                     else if (typeof secureGetResumeTicket === 'function') {
                         const ticket = secureGetResumeTicket(normalizedZone, uid, serverId);
@@ -722,7 +750,11 @@
                         return;
                     }
 
-                    if (ws === secureGameSocket) secureHandleSocketMessage(message);
+                    const handoffDispatch = typeof secureDispatchContinuousHandoffSocket === 'function'
+                        ? secureDispatchContinuousHandoffSocket(ws, message) : null;
+                    if (handoffDispatch === true || (handoffDispatch !== false && ws === secureGameSocket)) {
+                        secureHandleSocketMessage(message);
+                    }
                 };
 
                 ws.onerror = () => {
@@ -733,6 +765,7 @@
                     clearTimeout(timer);
                     if (typeof secureUnregisterClientSocket === 'function') secureUnregisterClientSocket(ws);
                     if (typeof secureClearSocketRefresh === 'function') secureClearSocketRefresh(ws);
+                    if (typeof secureContinuousHandoffSocketClosed === 'function') secureContinuousHandoffSocketClosed(ws, event);
                     if (!welcomed && !settled) {
                         settled = true;
                         reject(new Error(`Zone Server ปิดการเชื่อมต่อ (${event.code})`));
@@ -790,13 +823,14 @@
 
             let lastError = null;
             for (let attempt = 0; attempt < 3; attempt++) {
+                const continuous = typeof secureContinuousHandoffPredictionAllowed === 'function' && secureContinuousHandoffPredictionAllowed();
                 const liveZone = secureZoneFromPosition(playerPos.x, playerPos.z);
-                if (liveZone === fromZone) {
+                if (!continuous && liveZone === fromZone) {
                     const cancelled = new Error('ผู้เล่นกลับเข้า Zone เดิมระหว่าง handoff');
                     cancelled.cancelledToSource = true;
                     throw cancelled;
                 }
-                if (liveZone && liveZone !== targetZone) {
+                if (!continuous && liveZone && liveZone !== targetZone) {
                     const movedTooFar = new Error('ผู้เล่นเคลื่อนผ่าน Zone เป้าหมายระหว่าง handoff');
                     movedTooFar.retryable = false;
                     throw movedTooFar;
@@ -805,7 +839,7 @@
                 const ackPromise = secureWaitForHandoffResumeAck(3200);
                 ws.send(JSON.stringify({
                     type: protocol.WS_MESSAGE.HANDOFF_RESUME,
-                    input: { x: 0, z: 0, jump: false }
+                    input: continuous ? secureMovementIntent() : { x: 0, z: 0, jump: false }
                 }));
 
                 try {
@@ -837,9 +871,13 @@
             const operation = typeof secureStartHandoffOperation === 'function' ? secureStartHandoffOperation(oldSocket) : null;
             let targetSocket = null;
             secureHandoffInProgress = true;
+            if (operation && typeof secureBeginContinuousHandoff === 'function') {
+                secureBeginContinuousHandoff(operation, message, fromZone, targetZone);
+            }
 
-            // Rendering continues while the target acquires ownership. Prediction
-            // pauses at the authoritative border; resume cannot supply a position.
+            // The staging source continues validated prediction and input while
+            // the target authenticates. Legacy clients retain the paused path.
+            // In either mode, resume cannot supply an authoritative position.
             try {
                 const result = await secureOpenZoneSocket(targetZone, handoffToken, false);
                 if (operation) secureRequireHandoffOperation(operation);
@@ -873,6 +911,10 @@
                 // Account/menu cancellation permanently fences this continuation.
                 // It must not restore an old account's source or a newer game.
                 if (operation && !secureHandoffOperationIsCurrent(operation)) return;
+                if (operation?.continuous && typeof secureCancelContinuousHandoff === 'function') {
+                    await secureCancelContinuousHandoff(operation, targetSocket, fromZone, err);
+                    return;
+                }
                 console.warn('Smooth zone handoff interrupted:', err);
 
                 if (err?.cancelledToSource && oldSocket && oldSocket.readyState === WebSocket.OPEN) {
@@ -942,6 +984,7 @@
                     secureReturnToMenu();
                 }
             } finally {
+                if (operation && typeof secureFinishContinuousHandoff === 'function') secureFinishContinuousHandoff(operation);
                 if (operation) secureFinishHandoffOperation(operation);
             }
         }
