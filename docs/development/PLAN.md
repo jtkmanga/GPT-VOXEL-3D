@@ -52,4 +52,5 @@ item. Never substitute local results for live gates above.
 - DONE D005: combined lost-ACK/reconnect/restart/respawn coin regression; 29 economy tests passed locally.
 - DONE D006: reproduced and fixed remote labels visible through map geometry; regression and full local npm test passed. Browser/mobile validation remains pending.
 - DONE D007: reusable per-frame nearby shortlist, wall/tree and cleanup regressions; 22 client checks and full npm test passed. Operation counts only, not mobile FPS.
-- NEXT D008: compare shortlisted and exhaustive occlusion for range boundaries, large/scaled geometry and generated-map seeds; fix reproduced false negatives.
+- DONE D008: exhaustive-ray equivalence at range boundaries and transformed geometry plus 192 generated-map comparisons; 24 client checks passed, no defect reproduced.
+- NEXT D009: audit and fix static-map geometry/material lifetime on rebuild, with shared-resource ownership and cleanup regressions.

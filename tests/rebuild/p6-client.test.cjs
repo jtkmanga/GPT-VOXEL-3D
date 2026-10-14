@@ -277,3 +277,87 @@ test('D007 static map cleanup empties the reusable shortlist and tree-sized geom
   f.update(); assert.equal(tag.style.display, 'block');
   trunk.geometry.dispose(); trunk.material.dispose();
 });
+
+// Independent exhaustive oracle: no shortlist or bounding-distance selection.
+function exhaustiveNameOcclusion(context, position) {
+  const origin = context.camera.getWorldPosition(new THREE.Vector3());
+  const head = position.clone().add(new THREE.Vector3(0, 2.75, 0));
+  const direction = head.sub(origin), distance = direction.length();
+  const ray = new THREE.Raycaster(origin, direction.normalize(), 0, Math.max(0, distance - .01));
+  return context.staticMapObjects.some(object => {
+    if (!object || !object.visible) return false;
+    object.updateWorldMatrix(true, false);
+    return ray.intersectObject(object, false).length > 0;
+  });
+}
+
+function assertNameMatchesExhaustive(f, id, label) {
+  const position = f.context.otherPlayers[id].mesh.position;
+  const head = position.clone().add(new THREE.Vector3(0, 2.75, 0));
+  f.context.camera.lookAt(head); f.context.camera.updateMatrixWorld(true);
+  const blocked = exhaustiveNameOcclusion(f.context, position);
+  const inRange = f.context.playerPos.distanceTo(position) <= 28;
+  f.update();
+  assert.equal(f.context.otherPlayers[id].nameTagEl.style.display,
+    inRange && !blocked ? 'block' : 'none', label);
+  return blocked;
+}
+
+test('D008 shortlist agrees with exhaustive rays at range boundaries and for large transformed geometry', () => {
+  const f = nameplateFixture(); f.add('target', 0, -28);
+  const position = f.context.otherPlayers.target.mesh.position;
+  const wall = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 1), new THREE.MeshBasicMaterial());
+  // The center lies outside the query radius, but the scaled wall spans the ray.
+  wall.position.set(100, 4, 0); wall.scale.set(110, 8, 1);
+  f.context.staticMapObjects.push(wall);
+  for (const distance of [27.999, 28, 28.001]) {
+    position.z = -distance;
+    assert.equal(assertNameMatchesExhaustive(f, 'target', `scaled wall at ${distance}`), true);
+    wall.visible = false;
+    assert.equal(assertNameMatchesExhaustive(f, 'target', `clear at ${distance}`), false);
+    wall.visible = true;
+  }
+  wall.position.set(0, 4, 0); wall.scale.set(10, 8, 2); wall.rotation.y = Math.PI / 4;
+  position.z = -28;
+  assert.equal(assertNameMatchesExhaustive(f, 'target', 'rotated nonuniform scale'), true);
+  wall.position.z = -40;
+  assert.equal(assertNameMatchesExhaustive(f, 'target', 'transformed wall beyond label'), false);
+  wall.geometry.dispose(); wall.material.dispose();
+});
+
+test('D008 authored seeded maps preserve exhaustive occlusion across buildings, windows and trees', () => {
+  let blocked = 0, clear = 0, comparisons = 0;
+  for (const seed of ['d008-city-a', 'd008-city-b', 'd008-city-c']) {
+    const f = nameplateFixture();
+    Object.assign(f.context, { scene: new THREE.Scene(), MAP_SIZE: 1500, buildings: [], trees: [] });
+    const authored = source('world.js');
+    const functions = acorn.parse(authored, { ecmaVersion: 'latest' }).body.filter(node =>
+      node.type === 'FunctionDeclaration' && ['createSeededRandom', 'buildVoxelStructures'].includes(node.id.name));
+    for (const node of functions) vm.runInContext(authored.slice(node.start, node.end), f.context);
+    f.context.mapRandom = f.context.createSeededRandom(seed);
+    f.context.buildVoxelStructures();
+    assert.ok(f.context.buildings.length > 0 && f.context.trees.length > 0);
+    const objects = f.context.staticMapObjects;
+    f.add('target', 0, 0);
+    const position = f.context.otherPlayers.target.mesh.position;
+    // Evenly sample the generated array, including its late tree entries.
+    for (let i = 0; i < 32; i++) {
+      const anchor = objects[Math.floor(i * (objects.length - 1) / 31)].position;
+      for (const offset of [0, 75]) {
+        position.set(anchor.x + offset, anchor.y - 2.75, anchor.z - 12);
+        f.context.playerPos.set(anchor.x + offset, anchor.y - 2.75, anchor.z + 5);
+        f.context.camera.position.set(anchor.x + offset, anchor.y, anchor.z + 18);
+        const result = assertNameMatchesExhaustive(f, 'target', `${seed} sample ${i} offset ${offset}`);
+        if (result) blocked++; else clear++;
+        comparisons++;
+      }
+    }
+    const geometries = new Set(objects.map(object => object.geometry));
+    const materials = new Set(objects.map(object => object.material));
+    for (const geometry of geometries) geometry.dispose();
+    for (const material of materials) material.dispose();
+  }
+  assert.equal(comparisons, 192);
+  assert.ok(blocked > 0, 'must exercise blocked rays');
+  assert.ok(clear > 0, 'must exercise clear rays');
+});

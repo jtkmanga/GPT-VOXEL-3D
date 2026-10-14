@@ -137,3 +137,18 @@ candidate at tests/rebuild/p6-client.test.cjs:102, blob
 token. Compared assignments privately with the prior audited source; no values
 printed or used. Current changed files pass check-secrets.cjs. No confirmed new
 privileged credential; existing account-setting and pattern limitations remain.
+
+## D008 increment — 2026-10-15
+
+Public source 250005dce44741de6e2a4587d40c903c8f662978 minus audited
+c73504c97d13b4c22d63f2c5cd0974f9f40b0c94: 15 objects (1 commit, 7 trees,
+7 blobs), no new archive members/gaps; all other advertised refs unchanged.
+Scanner exit 1 was reviewed: index.html:632, blob
+86130b08cc2e1122efa302fdf0919d5f167ae5ba, contains two detections of the
+unchanged Firebase public web configuration assignment, not private/admin/database
+credentials. tests/rebuild/p6-client.test.cjs:102, blob
+5d7a157e2719119bbbb4ca8c22cd5142920b7be4, is an unchanged synthetic token
+fixture. Compared privately against the prior audited source without printing
+values. Current changed files pass check-secrets.cjs. No confirmed new privileged
+credential; no credential use or account actions. Prior scan exclusions and
+account-setting limitations remain.

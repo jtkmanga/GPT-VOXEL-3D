@@ -2,9 +2,17 @@
 
 Updated: 2026-10-15 (Asia/Bangkok).
 Branch: `development/voxel-continuous`.
-Starting source commit: `c73504c97d13b4c22d63f2c5cd0974f9f40b0c94`.
-Task: D007 — share a conservative nearby occluder shortlist per frame.
+Starting source commit: `250005dce44741de6e2a4587d40c903c8f662978`.
+Task: D008 — validate shortlist equivalence against exhaustive occlusion.
 Status: completed; external D003 gates remain blocked.
+
+## D008 completed (2026-10-15)
+
+- Added two regressions to tests/rebuild/p6-client.test.cjs, with an independent exhaustive raycast oracle (no shortlist). The first covers 27.999/28/28.001 distance, a large nonuniformly scaled wall whose center is beyond the query radius, rotation and geometry beyond the target. The second runs the authored map generator with three deterministic seeds and compares 192 sampled camera/target pairs across its geometry, requiring both blocked and clear outcomes.
+- No disagreement or runtime defect reproduced. Gameplay source and generated client remain unchanged. Mutation check temporarily removed the object-radius contribution from shortlist selection; the new scaled-wall case failed as expected, then the original source was restored. No weakened assertions or committed mutation.
+- NODE_PATH=/workspace/scratch/e72adbdaf5bc/voxel-dev/node_modules node --test tests/rebuild/p6-client.test.cjs tests/rebuild/p8-client.test.cjs: 24 passed, zero failures/skips. node --check tests/rebuild/p6-client.test.cjs, check-secrets.cjs and git diff --check passed. Full npm test was not rerun for this test-only change; prior D007 full-suite evidence remains attached to its source revision.
+- Incremental scan: 15 objects (1 commit, 7 trees, 7 blobs), no new archive members/gaps. Three candidates reviewed as unchanged Firebase public web configuration (two matches on one assignment) and an unchanged synthetic token fixture; no confirmed privileged credential. Other advertised refs unchanged. Prior coverage limitations remain.
+- This is local Node VM/Three.js geometry evidence, not browser rendering, mobile FPS, live security or capacity evidence. External blockers unchanged; no production, payment, account or deployment action.
 
 ## D007 completed (2026-10-15)
 
@@ -106,7 +114,7 @@ Starting source: 0e3fcd1746cd0c55f011a2b8fda58d86a82e5284.
 
 ## Next bounded task
 
-D008: test conservative occluder selection at range boundaries, large/scaled geometry and generated-map seeds against the original exhaustive raycast result. Fix any reproduced false-negative visibility; retain pending live browser/mobile gates.
+D009: audit static-map resource lifetime during repeated rebuilds. Check whether removed building/window/tree meshes release owned geometries and shared materials exactly once without disposing resources still used by the retained scene; reproduce and fix any leak with lifecycle regressions. Live browser/mobile memory evidence remains separate.
 
 Deferred D003: verify generated staging client and existing browser scenarios with the
 available permitted browser tooling. Check tooling availability first. Preserve
