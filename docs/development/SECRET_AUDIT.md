@@ -94,3 +94,12 @@ All other advertised refs match S002. Prior current-file/archive coverage is reu
 not repeated. New tool tests use fabricated markers only. See AUDIT_TOOL.md.
 This does not extend prior pattern coverage retroactively or verify live account
 restrictions; S001/S002 limitations remain.
+
+## D004 incremental audit — 2026-10-15
+
+Public development source 9a45c879f81a106ca6fbf8a34fe105f42bb3c237 compared with
+7b7b64b4a7802d8ac80c743407cc458589c0c748: 14 new objects (1 commit, 7 trees,
+6 blobs), zero pattern findings/gaps/archive members. Other advertised refs
+match S002. Existing current blobs and archives reuse prior evidence. Working
+changes contain synthetic test identifiers only and passed check-secrets.cjs.
+Account-side restrictions and all previous scan limitations remain unverified.

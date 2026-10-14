@@ -2,9 +2,18 @@
 
 Updated: 2026-10-15 (Asia/Bangkok).
 Branch: `development/voxel-continuous`.
-Starting source commit: `7b7b64b4a7802d8ac80c743407cc458589c0c748`.
-Task: S003 — reproducible bounded Git/ZIP credential audit.
+Starting source commit: `9a45c879f81a106ca6fbf8a34fe105f42bb3c237`.
+Task: D004 — VIP expiry/reconnect boundary coverage.
 Status: completed; external D003 gates remain blocked.
+
+## D004 completed (2026-10-15)
+
+- Reviewed current VIP entitlement/seat/reconnect enforcement and existing P7 tests. No runtime defect reproduced in this scope.
+- Added two bundled-Worker regressions in tests/rebuild/p7-vip.test.cjs: disconnect with a saved ticket, verify entitlement active 1 ms before expiry, advance to exact expiry, optionally restart both coordinators, reject both resume-ticket and fresh VIP login, assert zero occupied seats, and allow the same identity into Free.
+- `NODE_PATH=/workspace/scratch/e72adbdaf5bc/voxel-dev/node_modules node --test tests/rebuild/p7-vip.test.cjs tests/rebuild/p7-client.test.cjs`: 42 passed, 0 failed/skipped. Uses synthetic identity, in-memory storage/transport and fabricated signed events; no provider calls or real payment adapter activation.
+- Incremental credential audit included 9a45c879f81a106ca6fbf8a34fe105f42bb3c237 and excluded 7b7b64b4a7802d8ac80c743407cc458589c0c748: 14 new objects (1 commit, 7 trees, 6 blobs), no findings/gaps/new archives. Other advertised refs unchanged. Prior audit limitations remain.
+- check-secrets.cjs, node --check on changed test and git diff --check passed before publication.
+- No gameplay implementation, production configuration, account permission or payment behavior was changed. Live/browser/mobile/capacity gates remain unverified.
 
 ## S003 completed (2026-10-15)
 
@@ -71,7 +80,7 @@ Starting source: 0e3fcd1746cd0c55f011a2b8fda58d86a82e5284.
 
 ## Next bounded task
 
-D004: review local VIP entitlement expiry/reconnect behavior with payment adapters disabled. Select one missing behavioral case or reproduce and fix a defect; do not use merchant or production credentials.
+D005: inspect coin pickup retry/idempotency across disconnect and coordinator restart. Add one missing combined regression or fix a reproduced defect using local fixtures only; preserve global coin budget and exact-once scoring.
 
 Deferred D003: verify generated staging client and existing browser scenarios with the
 available permitted browser tooling. Check tooling availability first. Preserve

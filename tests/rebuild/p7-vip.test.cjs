@@ -491,3 +491,39 @@ test('P7 repeated idle lease expiration cannot exhaust VIP transport soft cap', 
   const fresh = await h.connect({ server: 'vip1', uid: 'after-three-expired-cohorts' });
   assert.equal(fresh.messages('welcome').length, 1); assert.equal(h.room('vip1').sockets().length, 1);
 });
+
+for (const restart of [false, true]) {
+  test(`D004 VIP expiry denies a saved resume ticket at the exact boundary (restart=${restart})`, async t => {
+    const h = runtimeFixture(t), uid = 'synthetic-expiry-resume';
+    const end = h.now() + 1000;
+    const e = runtimeEvent(h, uid, {
+      periodStart: end - 30 * 24 * 60 * 60 * 1000, periodEnd: end
+    });
+    assert.equal((await webhook(h, e)).status, 200);
+    const first = await h.connect({ server: 'vip1', uid });
+    assert.equal(first.messages('welcome').length, 1);
+    const ticket = first.attachment().resumeToken;
+    assert.equal(h.room().vip.count(), 1);
+    await first.close();
+    await h.advance(999);
+    assert.equal(h.room().vip.entitlement(uid).active, true);
+    await h.advance(1);
+    if (restart) {
+      await h.restartRoom().ready;
+      await h.restartRoom({ server: 'vip1' }).ready;
+    }
+    assert.equal(h.room().vip.entitlement(uid).active, false);
+    const resumed = await h.open('/play?server=vip1');
+    await resumed.send({ type: 'auth', token: h.token(uid), name: 'Expired', resumeToken: ticket });
+    assert.equal(resumed.messages('welcome').length, 0);
+    assert.equal(resumed.client.closed, true);
+    assert.equal(h.room().vip.count(), 0);
+    const fresh = await h.connect({ server: 'vip1', uid });
+    assert.equal(fresh.messages('welcome').length, 0);
+    assert.equal(fresh.client.closed, true);
+    // An expired VIP membership must not prevent normal Free-world admission.
+    const free = await h.connect({ uid, zone: '5,5' });
+    assert.equal(free.messages('welcome').length, 1);
+    assert.equal(h.room().vip.count(), 0);
+  });
+}
