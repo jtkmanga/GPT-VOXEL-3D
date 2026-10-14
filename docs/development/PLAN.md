@@ -39,3 +39,13 @@ not a pass. Secret/account remediation never proceeds without owner approval.
 
 Security audit S001 was completed before D002; see SECRET_AUDIT.md. Reuse its
 scanned refs/object baseline for incremental audits, while preserving its limits.
+
+## Safe work while external gates are blocked
+
+Per owner instruction, keep the hourly task enabled; a blocked subtask does not
+pause the project. Skip unchanged external blockers and select a bounded local
+item. Never substitute local results for live gates above.
+
+- DONE S002: incrementally inspect the previously excluded advertised PR #1 refs and new documentation objects; record scope in SECRET_AUDIT.md.
+- NEXT S003: make the bounded incremental credential-audit procedure reproducible in development tooling, with synthetic tests for archive coverage and sanitized findings. Never include real credential values.
+- Then review local VIP entitlement expiry/reconnect coverage with payment adapters disabled; fix only reproduced defects and retain real sandbox lifecycle as a separate gate.

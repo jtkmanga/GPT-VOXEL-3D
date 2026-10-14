@@ -66,3 +66,21 @@ logs/artifacts, account-side secrets and live database permissions. No claim
 about those surfaces is made. Future runs should compare fetched refs to this
 baseline, scan newly reachable objects and changed archives, and avoid repeating
 this same full audit without a concrete coverage reason.
+
+## S002 incremental extension — 2026-10-14
+
+Source: bf8992ccafa386879b942789ea665f7d996c38b3.
+Fetched branch refs plus advertised PR #1 head (171a3a6c83ca1871819a9be9a683419fa2bea877)
+and merge (17c9dbf5a5f13f9ce83a1944f4d63f3593131288). Branch heads are unchanged
+except development as recorded above. No tag ref was returned by the refs inventory.
+The PR head was already covered by phase4a-vps; the synthetic merge was not.
+
+Compared the fetched object graph against the previous audited branch tips,
+including development at 093adf096e9f58007fce61f5dd2746612d7f4b25.
+Inspected 8 additional objects: 2 commits, 4 trees and 2 blobs. Scanned both blobs
+and commit messages with the retained custom provider/assignment patterns.
+No matches, new archives or archive-read gaps occurred in this increment.
+Existing current blobs/archives reuse S001 coverage rather than a repeated full scan.
+This closes the known PR #1 reachable-object exclusion only; all other S001
+limitations remain. Pattern coverage is bounded, not a guarantee of no secrets.
+No credentials were used and no account or production state was changed.
