@@ -1,12 +1,15 @@
 import { corsHeaders, jsonResponse, handleVerifySlip, handleGetEntitlements, handlePaymentWebhook } from './http.mjs';
 import { normalizeZoneId } from './spatial.mjs';
 import { stagingContext, stagingError, stagingAsset } from './staging-boundary.mjs';
+import { handle2c2pSandbox } from './twoc2p-sandbox.mjs';
 
 const worker = {
   async fetch(request,env) {
     const url=new URL(request.url);
     const staging=stagingContext(request,env);
     if (staging.error) return stagingError(staging);
+
+    if (url.pathname.startsWith('/payments/2c2p/')) return handle2c2pSandbox(request,env);
 
     if (staging.enabled && url.pathname==='/staging-config') {
       if (request.method!=='GET') return new Response('Method not allowed',{status:405});

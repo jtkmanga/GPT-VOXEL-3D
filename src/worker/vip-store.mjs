@@ -4,6 +4,33 @@ import { normalizePaymentEvent, validVipUid, VIP_PRODUCT } from './payment-event
 const generation = value => typeof value === 'string' && value.length > 0 && value.length <= 256;
 const denied = (error, status = 409, extra = {}) => ({ ok: false, error, status, ...extra });
 
+// Explicit application policy for the prepared Sandbox adapter. This is NOT a
+// claim about a merchant's RPP timezone or end-of-month behavior: activation is
+// separately gated on verification of that policy with the Sandbox merchant.
+export function sandboxCalendarPeriodEnd(start) {
+  if (!Number.isSafeInteger(start) || start < 0) throw Error('Invalid Sandbox calendar period');
+  const date = new Date(start);
+  if (!Number.isFinite(date.getTime()) || date.getUTCDate() > 28)
+    throw Error('Sandbox calendar anchor must be a UTC day from 1 to 28');
+  date.setUTCMonth(date.getUTCMonth() + 1);
+  if (!Number.isSafeInteger(date.getTime())) throw Error('Invalid Sandbox calendar period');
+  return date.getTime();
+}
+
+function verifiedSandboxCalendarEvent(raw, now = Date.now()) {
+  const keys = ['eventId', 'subscriptionId', 'uid', 'version', 'status', 'product',
+    'amount', 'currency', 'periodStart', 'periodEnd'];
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw) ||
+      Object.keys(raw).length !== keys.length || keys.some(key => !Object.hasOwn(raw, key)) ||
+      typeof raw.eventId !== 'string' || !/^2c2p:sandbox:[a-f0-9]{64}$/.test(raw.eventId) ||
+      typeof raw.subscriptionId !== 'string' || !/^2c2p:sandbox:[A-Za-z0-9]{1,20}$/.test(raw.subscriptionId) ||
+      !validVipUid(raw.uid) || raw.version !== 1 || raw.status !== 'active' ||
+      raw.product !== VIP_PRODUCT.id || raw.amount !== VIP_PRODUCT.amount || raw.currency !== 'THB' ||
+      raw.periodStart > now || raw.periodEnd !== sandboxCalendarPeriodEnd(raw.periodStart) ||
+      raw.periodEnd <= now) throw Error('Invalid verified Sandbox calendar event');
+  return Object.fromEntries(keys.map(key => [key, raw[key]]));
+}
+
 // One instance lives in the trusted logical-server coordinator. Entitlement,
 // concurrent capacity and seat generations share its SQLite transaction lock.
 export class VipStore {
@@ -71,6 +98,23 @@ export class VipStore {
     catch (_) { return denied('Invalid provider event', 400); }
     if (typeof fingerprint !== 'string' || !/^[a-f0-9]{64}$/.test(fingerprint))
       return denied('Invalid provider event fingerprint', 400);
+    return this.#applyNormalizedEvent(event, fingerprint);
+  }
+
+  // Only the private verified-invoice adapter calls this method. Browser flags,
+  // the generic webhook and client-supplied periods cannot enter this boundary.
+  // Legacy applyEvent retains its exact fixed-30-day schema and assertions.
+  applyVerifiedSandboxCalendarEvent({ event: input, fingerprint }) {
+    let event;
+    try { event = verifiedSandboxCalendarEvent(input); }
+    catch (_) { return denied('Invalid verified Sandbox calendar event', 400); }
+    if (typeof fingerprint !== 'string' || !/^[a-f0-9]{64}$/.test(fingerprint) ||
+        event.eventId !== `2c2p:sandbox:${fingerprint}`)
+      return denied('Invalid provider event fingerprint', 400);
+    return this.#applyNormalizedEvent(event, fingerprint);
+  }
+
+  #applyNormalizedEvent(event, fingerprint) {
     return this.ctx.storage.transactionSync(() => {
       const now = Date.now();
       const receipt = this.sql.exec('SELECT fingerprint,response_json FROM voxel_vip_events WHERE event_id=?',

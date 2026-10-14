@@ -13,6 +13,7 @@ import { EconomyStore } from './economy.mjs';
 import { VipStore } from './vip-store.mjs';
 import { validVipUid, VIP_PRODUCT, normalizePaymentEvent, paymentEventFingerprint } from './payment-events.mjs';
 import { handoffPosition } from './handoff-continuity.mjs';
+import { handle2c2pInternal } from './twoc2p-sandbox.mjs';
 
 export class GameRoom {
   constructor(ctx,env) {
@@ -552,6 +553,8 @@ export class GameRoom {
     await this.ready;
 
     const url = new URL(request.url);
+
+    if (url.pathname.startsWith('/_internal/2c2p/')) return handle2c2pInternal(request,this);
 
     if (url.pathname==='/_internal/staging-handoff-commit' && request.method==='POST') {
       if (this.env.APP_ENV!=='staging') return Response.json({ok:false},{status:404});
