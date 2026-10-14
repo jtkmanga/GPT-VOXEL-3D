@@ -1,10 +1,20 @@
 # Current development state
 
-Updated: 2026-10-14 (Asia/Bangkok).
+Updated: 2026-10-15 (Asia/Bangkok).
 Branch: `development/voxel-continuous`.
-Starting source commit: `bf8992ccafa386879b942789ea665f7d996c38b3`.
-Task: S002 — incremental reachable-object audit including PR #1.
+Starting source commit: `7b7b64b4a7802d8ac80c743407cc458589c0c748`.
+Task: S003 — reproducible bounded Git/ZIP credential audit.
 Status: completed; external D003 gates remain blocked.
+
+## S003 completed (2026-10-15)
+
+- Added scripts/rebuild/audit-git-secrets.py, a read-only standard-library tool using explicit included and previously audited excluded commit IDs. It never fetches, extracts archives or uses discovered credentials.
+- Findings omit matched values; Firebase public web configuration is labeled separately from credential candidates. ZIP recursion has cumulative byte/member/depth limits. Invalid/unsupported archives and shallow history fail closed. Excluded objects still require prior evidence; pattern scanning cannot certify absence of secrets.
+- Added tests/rebuild/test_audit_git_secrets.py: 10 synthetic regressions passed with zero skips. Covers redaction, classification, nested ZIP, resource limits, unsupported/corrupt archives, environment/header candidates, incremental exclusion and nonzero exit on findings.
+- Command: PYTHONDONTWRITEBYTECODE=1 python -m unittest discover -s tests/rebuild -p test_audit_git_secrets.py -v.
+- Incremental real-repository run: include starting source, exclude bf8992ccafa386879b942789ea665f7d996c38b3; 7 new objects (1 commit, 3 trees, 3 blobs), zero findings/gaps/new archive members. Other refs unchanged from S002.
+- Existing check-secrets.cjs passed after replacing a literal synthetic private-key marker with runtime construction and removing generated Python caches. Assertions and detections remain unchanged. git diff --check passed.
+- Only audit tooling/tests/docs changed; no gameplay/browser/live staging/capacity test claim. External blockers unchanged; scheduled work remains enabled.
 
 ## S002 completed (2026-10-14)
 
@@ -61,7 +71,7 @@ Starting source: 0e3fcd1746cd0c55f011a2b8fda58d86a82e5284.
 
 ## Next bounded task
 
-S003: implement reproducible incremental credential-audit tooling with synthetic regression tests and sanitized output. See the safe-work queue in PLAN.md. Do not repeat S002's unchanged object scan.
+D004: review local VIP entitlement expiry/reconnect behavior with payment adapters disabled. Select one missing behavioral case or reproduce and fix a defect; do not use merchant or production credentials.
 
 Deferred D003: verify generated staging client and existing browser scenarios with the
 available permitted browser tooling. Check tooling availability first. Preserve

@@ -47,5 +47,5 @@ pause the project. Skip unchanged external blockers and select a bounded local
 item. Never substitute local results for live gates above.
 
 - DONE S002: incrementally inspect the previously excluded advertised PR #1 refs and new documentation objects; record scope in SECRET_AUDIT.md.
-- NEXT S003: make the bounded incremental credential-audit procedure reproducible in development tooling, with synthetic tests for archive coverage and sanitized findings. Never include real credential values.
-- Then review local VIP entitlement expiry/reconnect coverage with payment adapters disabled; fix only reproduced defects and retain real sandbox lifecycle as a separate gate.
+- DONE S003: reproducible bounded Git/ZIP audit tool with 10 synthetic regression tests; see AUDIT_TOOL.md for usage and limits.
+- NEXT D004: review local VIP entitlement expiry/reconnect coverage with payment adapters disabled; fix only reproduced defects and retain real sandbox lifecycle as a separate gate.

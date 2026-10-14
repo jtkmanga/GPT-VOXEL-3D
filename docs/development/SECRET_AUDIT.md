@@ -84,3 +84,13 @@ Existing current blobs/archives reuse S001 coverage rather than a repeated full 
 This closes the known PR #1 reachable-object exclusion only; all other S001
 limitations remain. Pattern coverage is bounded, not a guarantee of no secrets.
 No credentials were used and no account or production state was changed.
+
+## S003 tooling and increment — 2026-10-15
+
+Source: 7b7b64b4a7802d8ac80c743407cc458589c0c748; visibility public.
+The new reproducible audit tool scanned the 7 objects added after bf8992c:
+1 commit, 3 trees, 3 blobs. No findings, archive members or gaps in this increment.
+All other advertised refs match S002. Prior current-file/archive coverage is reused,
+not repeated. New tool tests use fabricated markers only. See AUDIT_TOOL.md.
+This does not extend prior pattern coverage retroactively or verify live account
+restrictions; S001/S002 limitations remain.
