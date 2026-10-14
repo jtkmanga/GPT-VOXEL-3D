@@ -861,3 +861,47 @@ for (const cancellation of ['explicit', 'route reversal']) {
     assertIsolated(h);
   });
 }
+
+for (const restartCoordinator of [false, true]) {
+  test(`staging reconnect after committed continuous handoff preserves destination checkpoint (restart=${restartCoordinator})`, async t => {
+    const h = fixture(t), uid = `synthetic-cutover-reconnect-${restartCoordinator}`;
+    const { source, ticket } = await continuousCrossing(h, uid);
+    const originalId = source.attachment().id;
+    const target = await admitted(h, uid, '5,4', {
+      handoffToken: ticket.handoffToken, continuousHandoff: true
+    });
+    await target.send({ type: 'handoff_resume' });
+    assert.ok(last(target, 'handoff_resumed'));
+    assertOneOwner(h, uid, '5,4');
+    const saved = pose(target.attachment());
+    const priorSession = target.attachment().sessionId;
+    const savedRevision = session(h, uid).save_revision;
+    await target.close();
+    await h.advance(120001);
+    if (restartCoordinator) {
+      h.restartRoom();
+      await h.room().ready;
+    }
+    const before = session(h, uid);
+    const wrongZone = await authenticate(h, uid, '4,4', { continuousHandoff: true });
+    assert.equal(last(wrongZone, 'auth_error')?.resumeZone, '5,4');
+    assert.equal(wrongZone.messages('welcome').length, 0);
+    assert.deepEqual(session(h, uid), before, 'old-zone reconnect must not overwrite the destination checkpoint');
+    const restored = await admitted(h, uid, '5,4', { continuousHandoff: true });
+    assert.equal(restored.attachment().id, originalId);
+    assert.notEqual(restored.attachment().sessionId, priorSession);
+    assert.deepEqual(pose(restored.attachment()), saved);
+    assert.equal(session(h, uid).save_revision, savedRevision);
+    assertOneOwner(h, uid, '5,4');
+    const current = session(h, uid);
+    const replay = await authenticate(h, uid, '5,4', {
+      handoffToken: ticket.handoffToken, continuousHandoff: true
+    });
+    assert.equal(replay.messages('welcome').length, 0);
+    assert.equal(replay.client.closed, true);
+    assert.deepEqual(session(h, uid), current, 'a consumed predecessor ticket cannot replace the reconnected owner');
+    assert.equal(restored.client.closed, false);
+    assertOneOwner(h, uid, '5,4');
+    assertIsolated(h);
+  });
+}

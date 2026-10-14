@@ -2,18 +2,25 @@
 
 Updated: 2026-10-14 (Asia/Bangkok).
 Branch: `development/voxel-continuous`.
-Starting source commit: `5b49b8c013e556d768537fc7be7c046a88239507`.
-Task: S001 — public repository and reachable-history credential audit.
+Starting source commit: `0e3fcd1746cd0c55f011a2b8fda58d86a82e5284`.
+Task: D002 — local handoff/reconnect audit and added recovery coverage.
 Status: completed.
 
 ## Latest completed iteration
 
-- Confirmed repository is public via GitHub API.
-- Audited 96 reachable commits, 340 unique blobs and 62 ZIP member versions.
-- Found one distinct Firebase Web API key in current source and history; no value is included in reports. No privileged credential pattern was confirmed by the bounded scan. See SECRET_AUDIT.md for locations and limitations.
-- Updated the existing hourly task with current-head checks, no-duplicate-work rules, passing-check-only commits, secret handling, and the Final Review stop condition.
-- No game runtime source changed. No account setting, credential, production resource, main branch or deployment changed.
-- Documentation validation: required policies and links checked, diff whitespace check passed, existing credential/config scanner passed. The earlier runtime results below remain historical evidence, not a fresh live-environment test.
+D002: local staging handoff/reconnect regression audit, completed.
+Starting source: 0e3fcd1746cd0c55f011a2b8fda58d86a82e5284.
+
+- Reviewed existing source/destination authority and persisted reconnect path.
+- Ran 40 existing staging client/server, cancellation-budget and coin regressions: all passed.
+- Added two regressions to staging-zone-transition-server.test.cjs for reconnect after a committed continuous crossing, with and without coordinator restart. They assert destination pose/revision and player ID preservation, session rotation, nonmutating wrong-zone redirects, consumed-ticket rejection and one active owner.
+- Full affected server test file: 23 passed, 0 failed/skipped.
+- P6 identity plus P8 Lucky Box suites: 24 passed, 0 failed/skipped.
+- Across these runs: 66 distinct targeted cases passed (overlapping server cases are not counted twice).
+- Existing credential/config scanner and diff whitespace validation passed. No new credentials or privileged browser bindings.
+- No reproducible runtime defect was found in this scoped audit; no gameplay implementation was changed. The two new cases close a combined cutover/reconnect coverage gap.
+- All results use local transport/identity/storage fixtures; they do not establish real cloud recovery, browser behavior or capacity. No deploy, production change, account change or main merge.
+- S001 audit is committed in SECRET_AUDIT.md. Its source/ref baseline remains applicable; subsequent changes are documentation and synthetic tests only, scanned before publication.
 
 ## Observed
 
@@ -36,14 +43,15 @@ Status: completed.
 
 ## Next bounded task
 
-D002: inspect staging handoff/reconnect regressions for an uncovered,
-reproducible defect. Read existing tests before changing code. If no defect is
-found, document the scoped audit and proceed to the next plan item rather than
-inventing changes or duplicating the rebuild.
+D003: verify generated staging client and existing browser scenarios with the
+available permitted browser tooling. Check tooling availability first. Preserve
+all existing assertions; do not replace real browser evidence with static tests.
+If browser execution is unavailable, record the exact limitation and proceed
+only to other local work or authorized read-only staging inspection.
 
 ## External blockers / owner actions
 
-No owner action is needed for D002 local work. Firebase API restrictions, Security Rules and App Check have not been inspected in the account; this remains a release-review requirement. Live infrastructure access,
+No owner action is needed to inspect D003 tooling. Firebase API restrictions, Security Rules and App Check have not been inspected in the account; this remains a release-review requirement. Live infrastructure access,
 staging mutations, merchant sandbox activation and production deployment remain
 separate authorization boundaries. Scheduled task model selection is not exposed
 by the automation tool; GPT-6 Astra Medium cannot be guaranteed for future runs.
