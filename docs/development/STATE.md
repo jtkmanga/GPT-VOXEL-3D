@@ -2,9 +2,18 @@
 
 Updated: 2026-10-14 (Asia/Bangkok).
 Branch: `development/voxel-continuous`.
-Starting source commit: `0e3fcd1746cd0c55f011a2b8fda58d86a82e5284`.
-Task: D002 — local handoff/reconnect audit and added recovery coverage.
-Status: completed.
+Starting source commit: `093adf096e9f58007fce61f5dd2746612d7f4b25`.
+Task: D003 — staging client verification and browser tooling assessment.
+Status: blocked at browser/live-account gates; local verification passed.
+
+## D003 assessment (2026-10-14)
+
+- Source: 093adf096e9f58007fce61f5dd2746612d7f4b25; GitHub remains public. Other branch heads are unchanged from S001.
+- `NODE_PATH=/workspace/scratch/e72adbdaf5bc/voxel-dev/node_modules node --test tests/rebuild/p9-client.test.cjs`: 11 passed, 0 failed/skipped. Covers generated staging syntax/configuration isolation, disabled payments/auth scaffold and token/lifecycle guards. These are local Node tests, NOT a browser or live staging pass.
+- Existing `staging-zone-transition-browser.py` launches its own Chromium, installs fixtures/routes and advances application state through evaluate. The permitted Cloud Browser API has no equivalent browser launch, routing or mutable evaluation surface. Running the standalone Python browser controller is outside this run's permitted UI tooling. No assertion was removed or replaced.
+- Read-only Cloudflare navigation reached `https://dash.cloudflare.com/login`; no authenticated account/environment inventory is available. No credentials entered or permissions changed.
+- Incremental secret scan from S001 baseline to current HEAD inspected 17 new Git objects, no new archive members, no archive gaps. One assignment candidate is an existing synthetic server-test fixture; no confirmed new privileged credential. S001 exclusions still apply.
+- D003 remains incomplete. No deployment, production change, payment or resource creation occurred.
 
 ## Latest completed iteration
 
@@ -51,7 +60,7 @@ only to other local work or authorized read-only staging inspection.
 
 ## External blockers / owner actions
 
-No owner action is needed to inspect D003 tooling. Firebase API restrictions, Security Rules and App Check have not been inspected in the account; this remains a release-review requirement. Live infrastructure access,
+Cloudflare sign-in is required before read-only account inspection can continue. Browser regression execution additionally requires an approved browser environment supporting the existing harness. Pause scheduled retries at these unchanged blockers; resume after access/tooling is available. Firebase API restrictions, Security Rules and App Check have not been inspected in the account; this remains a release-review requirement. Live infrastructure access,
 staging mutations, merchant sandbox activation and production deployment remain
 separate authorization boundaries. Scheduled task model selection is not exposed
 by the automation tool; GPT-6 Astra Medium cannot be guaranteed for future runs.
