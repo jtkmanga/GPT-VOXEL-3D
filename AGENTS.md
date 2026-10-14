@@ -10,3 +10,7 @@
 - Use a fast-forward update with an expected branch SHA. On a changed head, re-read and reconcile; never force-push over another run.
 - Scheduled execution is bounded by the tools available in that run. Do not promise continuous compute or a particular model that the scheduler cannot select.
 - Only notify the owner for required account/permission approval or an unresolved blocker. Never send external messages on their behalf.
+
+- Before committing code, all applicable checks must pass. Failed changes stay local to development; never merge failing work.
+- Check repository visibility and the sanitized secret-audit record. Scan newly reachable Git objects, current files and archives; never print credential values or try them against providers. Findings must identify only type and location. Pause before account-impacting rotation, revocation, history rewrite or permission changes.
+- When every required plan gate is satisfied on the current source, mark READY_FOR_FINAL_REVIEW, stop editing code, notify the owner and pause the scheduled automation. Never merge or deploy without explicit approval.

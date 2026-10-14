@@ -27,3 +27,15 @@ to a new temporary directory. Its report identifies the source commit and dirty
 working-tree state. It does not run browser checks, deploy, verify live staging,
 or certify production readiness. Review logs privately; commit only sanitized
 results. Temporary logs are not durable evidence until summarized in GitHub.
+
+## Final Review stop condition
+
+Stop code changes only when current-source evidence covers all required local,
+browser, real staging, security, multiplayer/mobile, payment sandbox and capacity
+gates from the plan and no unresolved blocker remains. Set READY_FOR_FINAL_REVIEW
+and pause the scheduled task; owner authorization is still required for merge
+and production deployment. An unavailable test or fixture-only substitute is
+not a pass. Secret/account remediation never proceeds without owner approval.
+
+Security audit S001 was completed before D002; see SECRET_AUDIT.md. Reuse its
+scanned refs/object baseline for incremental audits, while preserving its limits.
