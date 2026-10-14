@@ -171,7 +171,7 @@ function nameplateFixture() {
     const entry = { mesh: { position: new THREE.Vector3(x, 0, z) }, nameTagEl: { style: {} } };
     otherPlayers[id] = entry; return entry.nameTagEl;
   }
-  const context = vm.createContext({ THREE, state, camera, playerPos, otherPlayers,
+  const context = vm.createContext({ THREE, state, camera, playerPos, otherPlayers, staticMapObjects: [],
     document: { getElementById(id) { assert.equal(id, 'player-nametag'); return localTag; } },
     renderer: { domElement: { getBoundingClientRect: () => ({ width: 800, height: 400, left: 20, top: 30 }) } }
   });
@@ -218,4 +218,17 @@ test('P6 display names normalize whitespace, remove control/direction text and c
   assert.equal(normalizePlayerName('', '\u0000\u202e  Safe\u200b  Name '), 'Safe Name');
   assert.equal(normalizePlayerName('', { name: 'Administrator' }), 'Player');
   assert.ok([...normalizePlayerName('  abcdefghijklmnop  ')].length <= 12);
+});
+
+ test('D006 remote nameplates hide behind map geometry and recover when the obstruction moves', () => {
+  const f = nameplateFixture(), tag = f.add('occluded', 0, -10);
+  const wall = new THREE.Mesh(new THREE.BoxGeometry(8, 12, 1), new THREE.MeshBasicMaterial());
+  wall.position.set(0, 4, 0); wall.updateMatrixWorld(true);
+  f.context.staticMapObjects.push(wall);
+  f.update(); assert.equal(tag.style.display, 'none');
+  wall.position.x = 40; wall.updateMatrixWorld(true);
+  f.update(); assert.equal(tag.style.display, 'block');
+  wall.position.set(0, 4, -20); wall.updateMatrixWorld(true);
+  f.update(); assert.equal(tag.style.display, 'block', 'geometry behind the name must not occlude it');
+  wall.geometry.dispose(); wall.material.dispose();
 });

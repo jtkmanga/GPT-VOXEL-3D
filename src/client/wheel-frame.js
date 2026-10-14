@@ -178,6 +178,26 @@
                     return;
                 }
 
+                // DOM labels have no depth buffer: explicitly test opaque map
+                // geometry between the camera and remote player's head.
+                if (extraDistanceCheck !== null && typeof staticMapObjects !== 'undefined') {
+                    const origin = camera.getWorldPosition(new THREE.Vector3());
+                    const direction = worldPos.clone().sub(origin);
+                    const length = direction.length();
+                    if (length > 0) {
+                        const ray = new THREE.Raycaster(origin, direction.normalize(), 0, Math.max(0, length - 0.01));
+                        const blocked = staticMapObjects.some(object => {
+                            if (!object || !object.visible) return false;
+                            object.updateWorldMatrix(true, false);
+                            return ray.intersectObject(object, false).length > 0;
+                        });
+                        if (blocked) {
+                            tag.style.display = 'none';
+                            return;
+                        }
+                    }
+                }
+
                 const x = (projected.x * 0.5 + 0.5) * canvasRect.width + canvasRect.left;
                 const y = (projected.y * -0.5 + 0.5) * canvasRect.height + canvasRect.top;
 

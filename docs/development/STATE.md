@@ -2,9 +2,19 @@
 
 Updated: 2026-10-15 (Asia/Bangkok).
 Branch: `development/voxel-continuous`.
-Starting source commit: `4441489f2b35e36217a8bc7a7a32f0569a3554c3`.
-Task: D005 — coin retry recovery across restart and respawn.
+Starting source commit: `6ea18e9a976a70d3911129b915509e8406db8934`.
+Task: D006 — fix remote nameplates visible through map geometry.
 Status: completed; external D003 gates remain blocked.
+
+## D006 completed (2026-10-15)
+
+- Reproduced a client defect: a nearby remote nameplate remained visible through an opaque wall. Existing code checked gameplay/pause, distance and projected screen bounds but not occlusion. New real Three.js geometry regression failed before the fix (block instead of none).
+- Added camera-to-label ray intersection against visible static map geometry, limited to the segment before the remote label and only after distance/frustum checks. Local label styling and menu/pause behavior are unchanged. Regenerated index.html from source.
+- Regression checks wall occlusion, recovery when the wall moves aside, and visibility when geometry lies behind the target. Existing plain-white/transparent-style, gameplay-only, range and markup-escaping assertions remain intact.
+- P6/P8 client suites: 20 passed, zero failed/skipped. Full npm test passed including historical and legacy suites. check-static.cjs, check-syntax.cjs and build-client.cjs --check passed. check-secrets.cjs and git diff --check passed before publication.
+- Initial build failed because this isolated checkout had no local acorn dependency; reran successfully with the existing NODE_PATH dependency directory. No packages or cloud resources were created.
+- Incremental audit: current source minus 4441489f2b35e36217a8bc7a7a32f0569a3554c3, 10 objects (1 commit/5 trees/4 blobs), zero findings/gaps/new archive members; other advertised refs unchanged. Existing public Firebase configuration is unchanged. Prior audit limits remain.
+- Local VM/Three.js tests establish logic only, not rendered browser/mobile evidence. Per-label map intersection work requires mobile performance assessment; D007 will bound this work locally before live checks. No production/deployment/account changes.
 
 ## D005 completed (2026-10-15)
 
@@ -88,7 +98,7 @@ Starting source: 0e3fcd1746cd0c55f011a2b8fda58d86a82e5284.
 
 ## Next bounded task
 
-D006: inspect nameplate visibility against the world-only, plain-white-text and nearby/line-of-sight requirements. Reuse existing tests, reproduce any concrete mismatch before changing source, and distinguish local client tests from visual browser/mobile evidence.
+D007: bound nameplate occlusion work using a reusable map occluder set or spatial shortlist; verify it preserves wall/tree occlusion and resets with map rebuild. Measure local operation counts, not claimed mobile FPS. Keep live browser/mobile validation pending.
 
 Deferred D003: verify generated staging client and existing browser scenarios with the
 available permitted browser tooling. Check tooling availability first. Preserve
