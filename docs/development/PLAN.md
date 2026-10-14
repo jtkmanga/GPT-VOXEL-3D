@@ -1,0 +1,29 @@
+# Development plan
+
+Continue the existing rebuild, not a new game. Base: rebuild-p0-p8 at
+0737017248bbc07e78749b297c384c0b1eceb1d8. Production main was observed at
+f98aa9a044616b1b965b889cf0c02a0d3b041f65.
+
+1. DONE: inventory existing branches, preserve rebuild work, create isolated development branch, reproduce local baseline, add verification runner and durable progress record.
+2. NEXT: audit existing staging source and regression tests for concrete gaps in movement/Zone handoff, shared coin pickup/respawn, single Lucky Box and reconnect. Fix only a reproduced defect; record evidence and run relevant suites.
+3. Verify the generated staging client and existing browser scenarios where the browser tooling permits. Keep browser and server-fixture results distinct.
+4. Read-only inventory of existing Cloudflare/Firebase staging after authorized access becomes available; compare deployed revision and isolation. Do not invent resources or assume older deployment notes are current.
+5. Live staging integration on verified isolated resources, subject to owner confirmation for external changes. Check real Google sign-in, two-player movement, reconnect, rewards, name visibility and mobile controls.
+6. VIP/payment lifecycle work stays disabled until sandbox merchant lifecycle requirements are verified; never spend money. Capacity validation requires a separate approved test target and budget. No 10,000-player production claim from local fixtures.
+7. Present evidence and remaining risks for explicit production release authorization. Passing tests alone is not deployment authorization.
+
+## Scheduled iteration
+
+Read current GitHub branch HEAD, AGENTS.md, STATE.md and PLAN.md. Choose one
+unfinished local code/test task. If another run has advanced HEAD, discard stale
+assumptions and reconcile. Publish a tested change plus updated STATE.md in a
+single commit using an expected-head lease. Do not keep committing identical
+status updates when blocked. Do not repeat a completed task unless changed code
+requires regression verification. A rejected lease must never be force-bypassed.
+
+`node scripts/rebuild/verify-development.cjs` runs the existing local suites and
+structural checks, stops on failure and writes private logs plus a JSON report
+to a new temporary directory. Its report identifies the source commit and dirty
+working-tree state. It does not run browser checks, deploy, verify live staging,
+or certify production readiness. Review logs privately; commit only sanitized
+results. Temporary logs are not durable evidence until summarized in GitHub.
