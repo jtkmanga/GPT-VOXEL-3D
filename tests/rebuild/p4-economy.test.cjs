@@ -638,3 +638,42 @@ test('P4/P8 a disconnected claimant releases spin ownership but preserves cooldo
     assert.equal(released.box.claimed, false);
   }
 });
+
+test('D005 lost coin acknowledgment replay after disconnect, restart and respawn cannot consume the new cycle', async t => {
+  const h = harness(t), uid = 'synthetic-d005-lost-ack';
+  let player = await authenticate(h, uid, '4,4');
+  const coin = h.room().coinSnapshot()[16];
+  const requestId = 'synthetic-d005-retry';
+  h.place(player, contact(coin));
+  await player.send({ type: 'collect', id: coin.id, requestId });
+  assert.equal(score(h, uid), 1);
+  const committed = coinRow(h, coin.id), receipts = actionCount(h);
+  const ticket = last(player, 'welcome').session.resumeToken;
+  // Model loss after the authoritative transaction: discard the received ACK,
+  // then reconnect with the same request ID rather than inventing a new action.
+  player.clear();
+  await player.close();
+  await h.restartRoom().ready;
+  player = await authenticate(h, uid, '4,4', ticket);
+  assert.equal(last(player, 'welcome').score, 1);
+  await h.setTime(committed.respawn_at);
+  const respawned = h.room().coinSnapshot()[coin.id];
+  h.place(player, contact(respawned));
+  await player.send({ type: 'collect', id: coin.id, requestId });
+  assert.equal(score(h, uid), 1);
+  assert.equal(actionCount(h), receipts);
+  assert.deepEqual(coinRow(h, coin.id), committed);
+  assert.equal(h.room().coinSnapshot().length, 200);
+  assert.equal(new Set(h.room().coinSnapshot().map(item => item.id)).size, 200);
+  // Another identity can win the new cycle even with an identical action ID;
+  // the old owner's receipt must neither award twice nor reserve the coin.
+  const otherUid = 'synthetic-d005-next-owner';
+  const other = await authenticate(h, otherUid, zoneAt(respawned));
+  h.place(other, contact(respawned));
+  await other.send({ type: 'collect', id: coin.id, requestId });
+  assert.equal(score(h, otherUid), 1);
+  assert.equal(score(h, uid), 1);
+  assert.equal(actionCount(h), receipts + 1);
+  assert.equal(coinRow(h, coin.id).cycle, committed.cycle + 1);
+  assert.equal(coinRow(h, coin.id).respawn_at, h.now() + COIN_RESPAWN);
+});

@@ -49,4 +49,5 @@ item. Never substitute local results for live gates above.
 - DONE S002: incrementally inspect the previously excluded advertised PR #1 refs and new documentation objects; record scope in SECRET_AUDIT.md.
 - DONE S003: reproducible bounded Git/ZIP audit tool with 10 synthetic regression tests; see AUDIT_TOOL.md for usage and limits.
 - DONE D004: two exact-expiry VIP resume/fresh-login denial regressions with/without coordinator restart; 42 P7 tests passed locally. Real sandbox lifecycle remains a separate gate.
-- NEXT D005: review local coin pickup retry/idempotency across disconnect and coordinator restart, preserving global budget and exact-once scoring.
+- DONE D005: combined lost-ACK/reconnect/restart/respawn coin regression; 29 economy tests passed locally.
+- NEXT D006: audit nameplate world-only/plain-white/proximity/line-of-sight behavior; fix a reproduced mismatch or add a missing behavioral case, retaining browser/mobile gates.

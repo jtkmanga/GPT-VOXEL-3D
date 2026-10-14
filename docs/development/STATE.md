@@ -2,9 +2,17 @@
 
 Updated: 2026-10-15 (Asia/Bangkok).
 Branch: `development/voxel-continuous`.
-Starting source commit: `9a45c879f81a106ca6fbf8a34fe105f42bb3c237`.
-Task: D004 — VIP expiry/reconnect boundary coverage.
+Starting source commit: `4441489f2b35e36217a8bc7a7a32f0569a3554c3`.
+Task: D005 — coin retry recovery across restart and respawn.
 Status: completed; external D003 gates remain blocked.
+
+## D005 completed (2026-10-15)
+
+- Reviewed existing coin replay and restart coverage. Added one combined bundled-Worker regression to tests/rebuild/p4-economy.test.cjs for a discarded post-commit acknowledgment, disconnect, coordinator restart, ticket resume, exact respawn boundary and old request replay.
+- Assertions verify restored score, unchanged coin row/action count after replay, exactly 200 unique coin identities, and successful collection by another UID using the same request ID with one new receipt and a fresh 60-second cooldown. No runtime defect was reproduced; gameplay implementation is unchanged.
+- `NODE_PATH=/workspace/scratch/e72adbdaf5bc/voxel-dev/node_modules node --test tests/rebuild/p4-economy.test.cjs`: 29 passed, 0 failed/skipped. All evidence is local SQLite/transport/identity fixtures; ACK loss is simulated by discarding the received messages, not an actual network outage.
+- Incremental secret scan from 9a45c879f81a106ca6fbf8a34fe105f42bb3c237 to starting source: 10 new objects, no archive members/gaps; one reviewed pre-existing synthetic signing fixture in p7-vip.test.cjs:12, no confirmed privileged credential. Other refs unchanged. Prior scan limitations remain.
+- check-secrets.cjs, node --check on changed test and git diff --check passed. No production/account/deploy/payment changes. External gates remain blocked; continue safe local work.
 
 ## D004 completed (2026-10-15)
 
@@ -80,7 +88,7 @@ Starting source: 0e3fcd1746cd0c55f011a2b8fda58d86a82e5284.
 
 ## Next bounded task
 
-D005: inspect coin pickup retry/idempotency across disconnect and coordinator restart. Add one missing combined regression or fix a reproduced defect using local fixtures only; preserve global coin budget and exact-once scoring.
+D006: inspect nameplate visibility against the world-only, plain-white-text and nearby/line-of-sight requirements. Reuse existing tests, reproduce any concrete mismatch before changing source, and distinguish local client tests from visual browser/mobile evidence.
 
 Deferred D003: verify generated staging client and existing browser scenarios with the
 available permitted browser tooling. Check tooling availability first. Preserve

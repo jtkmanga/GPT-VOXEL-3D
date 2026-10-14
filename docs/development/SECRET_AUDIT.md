@@ -103,3 +103,14 @@ Public development source 9a45c879f81a106ca6fbf8a34fe105f42bb3c237 compared with
 match S002. Existing current blobs and archives reuse prior evidence. Working
 changes contain synthetic test identifiers only and passed check-secrets.cjs.
 Account-side restrictions and all previous scan limitations remain unverified.
+
+## D005 incremental audit — 2026-10-15
+
+Public source 4441489f2b35e36217a8bc7a7a32f0569a3554c3 minus audited
+9a45c879f81a106ca6fbf8a34fe105f42bb3c237: 10 objects (1 commit, 5 trees,
+4 blobs), no new archive members or coverage gaps. One credential-assignment
+candidate at tests/rebuild/p7-vip.test.cjs:12, blob
+e05b47ec2e4ee993c5caeebb788d858c7220c9e8, is the existing synthetic signing
+fixture used by local tests; no value is reproduced here. Scanner exit 1 requires
+this review and is not silently treated as a clean scan. No confirmed privileged
+credential. Other refs unchanged; prior coverage/limitations remain applicable.
