@@ -2,9 +2,17 @@
 
 Updated: 2026-10-15 (Asia/Bangkok).
 Branch: `development/voxel-continuous`.
-Starting source commit: `6ea18e9a976a70d3911129b915509e8406db8934`.
-Task: D006 — fix remote nameplates visible through map geometry.
+Starting source commit: `c73504c97d13b4c22d63f2c5cd0974f9f40b0c94`.
+Task: D007 — share a conservative nearby occluder shortlist per frame.
 Status: completed; external D003 gates remain blocked.
+
+## D007 completed (2026-10-15)
+
+- Added a lazy, reusable per-frame shortlist in wheel-frame.js and reset it alongside static map cleanup in world.js; regenerated index.html. All static geometry (including windows and tree leaves) remains eligible. A camera-centered sphere enclosing every in-range label conservatively rejects distant geometry using transformed bounding spheres before exact segment raycasts.
+- Added two behavioral regressions in p6-client.test.cjs. For 20 visible labels and one distant object: one world-matrix update and zero raycasts per frame; moving the object into the sightline yields one update and 20 raycasts with every label hidden. Invisible objects leave the shortlist; real map cleanup clears retained references. Tree-sized geometry blocks and removal restores names. Existing D006 moving-wall/behind-target checks remain passing.
+- NODE_PATH pointing at the existing voxel-dev/node_modules: node --test tests/rebuild/p6-client.test.cjs tests/rebuild/p8-client.test.cjs passed 22/22, zero failures/skips. npm test passed including historical and legacy suites. check-static.cjs, check-syntax.cjs, build-client.cjs --check, check-secrets.cjs and git diff --check passed.
+- Incremental secret audit of starting source minus 6ea18e9 inspected 14 objects; three candidates reviewed as unchanged Firebase public configuration (two detections of the same assignment) and an unchanged synthetic test token. No new archives/gaps or confirmed privileged credentials. Other advertised refs unchanged. Prior audit limits remain.
+- This reduces repeated geometry traversal; worst-case nearby geometry still requires exact per-label tests. Local operation counts are not browser/mobile FPS or live capacity evidence. No production/account/deployment changes. External D003 gates remain blocked.
 
 ## D006 completed (2026-10-15)
 
@@ -98,7 +106,7 @@ Starting source: 0e3fcd1746cd0c55f011a2b8fda58d86a82e5284.
 
 ## Next bounded task
 
-D007: bound nameplate occlusion work using a reusable map occluder set or spatial shortlist; verify it preserves wall/tree occlusion and resets with map rebuild. Measure local operation counts, not claimed mobile FPS. Keep live browser/mobile validation pending.
+D008: test conservative occluder selection at range boundaries, large/scaled geometry and generated-map seeds against the original exhaustive raycast result. Fix any reproduced false-negative visibility; retain pending live browser/mobile gates.
 
 Deferred D003: verify generated staging client and existing browser scenarios with the
 available permitted browser tooling. Check tooling availability first. Preserve

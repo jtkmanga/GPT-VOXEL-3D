@@ -1557,6 +1557,7 @@ return { MOVEMENT, validMovementInput, validMovementFrames, integrateMovement };
         let serverMapSeed = 'default-map';
         let mapRandom = Math.random;
         const staticMapObjects = [];
+        const nameplateOccluders = [];
 
         function createSeededRandom(seedText) {
             let seed = 2166136261;
@@ -1581,6 +1582,7 @@ return { MOVEMENT, validMovementInput, validMovementFrames, integrateMovement };
                 if (obj && scene) scene.remove(obj);
             });
             staticMapObjects.length = 0;
+            nameplateOccluders.length = 0;
             buildings.length = 0;
             trees.length = 0;
         }
@@ -2432,6 +2434,28 @@ return { MOVEMENT, validMovementInput, validMovementFrames, integrateMovement };
             const canvasRect = renderer.domElement.getBoundingClientRect();
             const maxDistance = 28; // ระยะที่สามารถเห็นชื่อผู้เล่นอื่น
 
+            // Build one conservative shortlist lazily per frame, shared by all
+            // visible labels. The sphere includes the camera and every eligible
+            // head, so geometry outside it cannot intersect a label segment.
+            let occludersReady = false;
+            const origin = camera.getWorldPosition(new THREE.Vector3());
+            function nearbyOccluders() {
+                if (occludersReady) return nameplateOccluders;
+                occludersReady = true;
+                nameplateOccluders.length = 0;
+                const reach = origin.distanceTo(playerPos) + maxDistance + 2.75;
+                const bounds = new THREE.Sphere();
+                staticMapObjects.forEach(object => {
+                    if (!object || !object.visible || !object.geometry) return;
+                    object.updateWorldMatrix(true, false);
+                    if (!object.geometry.boundingSphere) object.geometry.computeBoundingSphere();
+                    bounds.copy(object.geometry.boundingSphere).applyMatrix4(object.matrixWorld);
+                    if (bounds.center.distanceTo(origin) <= reach + bounds.radius)
+                        nameplateOccluders.push(object);
+                });
+                return nameplateOccluders;
+            }
+
             function updateTag(tag, worldPos, extraDistanceCheck = null) {
                 if (!tag) return;
 
@@ -2456,14 +2480,11 @@ return { MOVEMENT, validMovementInput, validMovementFrames, integrateMovement };
                 // DOM labels have no depth buffer: explicitly test opaque map
                 // geometry between the camera and remote player's head.
                 if (extraDistanceCheck !== null && typeof staticMapObjects !== 'undefined') {
-                    const origin = camera.getWorldPosition(new THREE.Vector3());
                     const direction = worldPos.clone().sub(origin);
                     const length = direction.length();
                     if (length > 0) {
                         const ray = new THREE.Raycaster(origin, direction.normalize(), 0, Math.max(0, length - 0.01));
-                        const blocked = staticMapObjects.some(object => {
-                            if (!object || !object.visible) return false;
-                            object.updateWorldMatrix(true, false);
+                        const blocked = nearbyOccluders().some(object => {
                             return ray.intersectObject(object, false).length > 0;
                         });
                         if (blocked) {

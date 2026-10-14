@@ -171,7 +171,7 @@ function nameplateFixture() {
     const entry = { mesh: { position: new THREE.Vector3(x, 0, z) }, nameTagEl: { style: {} } };
     otherPlayers[id] = entry; return entry.nameTagEl;
   }
-  const context = vm.createContext({ THREE, state, camera, playerPos, otherPlayers, staticMapObjects: [],
+  const context = vm.createContext({ THREE, state, camera, playerPos, otherPlayers, staticMapObjects: [], nameplateOccluders: [],
     document: { getElementById(id) { assert.equal(id, 'player-nametag'); return localTag; } },
     renderer: { domElement: { getBoundingClientRect: () => ({ width: 800, height: 400, left: 20, top: 30 }) } }
   });
@@ -231,4 +231,49 @@ test('P6 display names normalize whitespace, remove control/direction text and c
   wall.position.set(0, 4, -20); wall.updateMatrixWorld(true);
   f.update(); assert.equal(tag.style.display, 'block', 'geometry behind the name must not occlude it');
   wall.geometry.dispose(); wall.material.dispose();
+});
+
+
+test('D007 distant geometry is culled once per frame for multiple names and moving geometry is reconsidered', () => {
+  const f = nameplateFixture();
+  const tags = Array.from({ length: 20 }, (_, i) => f.add(String(i), 0, -10));
+  let updates = 0, rays = 0;
+  const wall = new THREE.Mesh(new THREE.BoxGeometry(8, 12, 1), new THREE.MeshBasicMaterial());
+  wall.position.set(1000, 4, 0);
+  const update = wall.updateWorldMatrix.bind(wall), raycast = wall.raycast.bind(wall);
+  wall.updateWorldMatrix = (...args) => { updates++; return update(...args); };
+  wall.raycast = (...args) => { rays++; return raycast(...args); };
+  f.context.staticMapObjects.push(wall);
+  f.update();
+  assert.equal(updates, 1); assert.equal(rays, 0);
+  assert.ok(tags.every(tag => tag.style.display === 'block'));
+  wall.position.x = 0;
+  f.update();
+  assert.equal(updates, 2); assert.equal(rays, 20);
+  assert.ok(tags.every(tag => tag.style.display === 'none'));
+  wall.visible = false;
+  f.update();
+  assert.equal(f.context.nameplateOccluders.length, 0);
+  assert.ok(tags.every(tag => tag.style.display === 'block'));
+  wall.geometry.dispose(); wall.material.dispose();
+});
+
+test('D007 static map cleanup empties the reusable shortlist and tree-sized geometry occludes', () => {
+  const f = nameplateFixture(), tag = f.add('tree', 0, -10);
+  const trunk = new THREE.Mesh(new THREE.BoxGeometry(2, 10, 2), new THREE.MeshBasicMaterial());
+  trunk.position.set(0, 5, 0);
+  f.context.staticMapObjects.push(trunk);
+  f.update(); assert.equal(tag.style.display, 'none');
+  const authored = source('world.js');
+  const node = acorn.parse(authored, { ecmaVersion: 'latest' }).body.find(node =>
+    node.type === 'FunctionDeclaration' && node.id.name === 'clearStaticMapObjects');
+  const removed = [];
+  Object.assign(f.context, { scene: { remove: object => removed.push(object) }, buildings: [{}], trees: [{}] });
+  vm.runInContext(authored.slice(node.start, node.end), f.context);
+  f.context.clearStaticMapObjects();
+  assert.deepEqual(removed, [trunk]);
+  for (const key of ['staticMapObjects', 'nameplateOccluders', 'buildings', 'trees'])
+    assert.equal(f.context[key].length, 0, key);
+  f.update(); assert.equal(tag.style.display, 'block');
+  trunk.geometry.dispose(); trunk.material.dispose();
 });

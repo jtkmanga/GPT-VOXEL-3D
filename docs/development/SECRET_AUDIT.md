@@ -123,3 +123,17 @@ Public source 6ea18e9a976a70d3911129b915509e8406db8934 minus audited
 Current changed files passed the existing configuration/credential scanner;
 generated client retains its previously classified Firebase web configuration.
 No credential was used. Previous exclusions and pattern limitations remain.
+
+## D007 increment — 2026-10-15
+
+Public source c73504c97d13b4c22d63f2c5cd0974f9f40b0c94 minus audited
+6ea18e9a976a70d3911129b915509e8406db8934: 14 objects (1 commit, 7 trees,
+6 blobs), zero new archive members/gaps. Other advertised refs unchanged.
+Scanner exit 1: Firebase web API key and assignment detections at index.html:632,
+blob 10b1baf0a00963d29cae5eb942c2c87e48b95300, are the unchanged public
+web configuration, not Firebase private/admin/database credentials. Assignment
+candidate at tests/rebuild/p6-client.test.cjs:102, blob
+8aa2f9bb82c38953e02a2b0d941efc656b5ddf8d, is an unchanged synthetic test
+token. Compared assignments privately with the prior audited source; no values
+printed or used. Current changed files pass check-secrets.cjs. No confirmed new
+privileged credential; existing account-setting and pattern limitations remain.

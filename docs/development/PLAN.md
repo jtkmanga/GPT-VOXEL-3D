@@ -51,4 +51,5 @@ item. Never substitute local results for live gates above.
 - DONE D004: two exact-expiry VIP resume/fresh-login denial regressions with/without coordinator restart; 42 P7 tests passed locally. Real sandbox lifecycle remains a separate gate.
 - DONE D005: combined lost-ACK/reconnect/restart/respawn coin regression; 29 economy tests passed locally.
 - DONE D006: reproduced and fixed remote labels visible through map geometry; regression and full local npm test passed. Browser/mobile validation remains pending.
-- NEXT D007: bound nameplate occlusion work with reusable occluder selection; preserve obstruction behavior and map rebuild cleanup, measure local operation counts.
+- DONE D007: reusable per-frame nearby shortlist, wall/tree and cleanup regressions; 22 client checks and full npm test passed. Operation counts only, not mobile FPS.
+- NEXT D008: compare shortlisted and exhaustive occlusion for range boundaries, large/scaled geometry and generated-map seeds; fix reproduced false negatives.

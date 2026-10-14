@@ -15,6 +15,7 @@
         let serverMapSeed = 'default-map';
         let mapRandom = Math.random;
         const staticMapObjects = [];
+        const nameplateOccluders = [];
 
         function createSeededRandom(seedText) {
             let seed = 2166136261;
@@ -39,6 +40,7 @@
                 if (obj && scene) scene.remove(obj);
             });
             staticMapObjects.length = 0;
+            nameplateOccluders.length = 0;
             buildings.length = 0;
             trees.length = 0;
         }
