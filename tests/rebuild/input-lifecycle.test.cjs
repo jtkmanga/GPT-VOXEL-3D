@@ -148,3 +148,29 @@ test(`D014 ${interruption} sends idle intent without losing prediction history o
   assert.equal(f.sent.at(-1).input.jump, true);
   assert.notEqual(f.sent.at(-1).input.z, 0);
 });
+
+test('D017 touch-generated mouse events cannot replay a jump after landing', () => {
+  const f = fixture(), c = f.context, jump = f.elements.get('btn-jump');
+  let jumps = 0;
+  c.audio.playJump = () => jumps++;
+  let prevented = false;
+  jump.fire('touchstart', { cancelable: true, preventDefault() { prevented = true; } });
+  assert.equal(jumps, 1); assert.equal(prevented, true);
+  // A delayed compatibility event may arrive after the prior jump has landed.
+  c.isGrounded = true; c.playerVelocityY = 0;
+  jump.fire('mousedown', { sourceCapabilities: { firesTouchEvents: true } });
+  assert.equal(jumps, 1);
+  assert.equal(c.isGrounded, true); assert.equal(c.playerVelocityY, 0);
+  jump.fire('mousedown', { sourceCapabilities: { firesTouchEvents: false } });
+  assert.equal(jumps, 2, 'physical mouse remains usable on a hybrid device');
+  c.isGrounded = true;
+  jump.fire('touchstart', { cancelable: true });
+  assert.equal(jumps, 3, 'fresh touch still works');
+});
+
+test('D017 jump input without source capabilities retains mouse support', () => {
+  const f = fixture(); let jumps = 0;
+  f.context.audio.playJump = () => jumps++;
+  f.elements.get('btn-jump').fire('mousedown');
+  assert.equal(jumps, 1);
+});

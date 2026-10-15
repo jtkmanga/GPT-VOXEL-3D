@@ -61,4 +61,5 @@ item. Never substitute local results for live gates above.
 - DONE D014: three interruption/prediction/packet/reconciliation regressions; 31 targeted tests passed, no runtime defect reproduced.
 - DONE D015: GameRoom/ZoneRoom pause and delayed genuine ACK regressions; 33 targeted tests passed. Synthetic transport only.
 - DONE D016: hidden touch jump guarded; four keyboard/touch-to-authority regressions, 37 targeted tests and full local suite passed.
-- NEXT D017: check touch jump ownership and synthetic mouse duplication across release/landing; fix reproduced behavior only.
+- DONE D017: touch-origin mousedown duplicate filtered; hybrid mouse/fresh touch fallback regressions, 39 targeted tests and full local suite passed. Browser emission/compatibility remains unverified.
+- NEXT D018: reassess existing D003 browser harness against current permitted local tooling; run isolated scenarios if supported, retain exact blockers otherwise.

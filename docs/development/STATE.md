@@ -1,10 +1,18 @@
 # Current development state
 
-Updated: 2026-10-15 (Asia/Bangkok).
+Updated: 2026-10-16 (Asia/Bangkok).
 Branch: `development/voxel-continuous`.
-Starting source commit: `214fe2f8a859e5a2b2129a4dc53c06451ab9285c`.
-Task: D016 — validate authored jump events against local authority.
+Starting source commit: `156e54c1afa154e094fe042ab6abd45ed8fe8a58`.
+Task: D017 — reject touch-generated duplicate mouse jumps.
 Status: completed; external D003 gates remain blocked.
+
+## D017 completed (2026-10-16)
+
+- Inspected jump event handling and reproduced duplicate activation by injecting a delayed mousedown with sourceCapabilities.firesTouchEvents=true after a touch jump/landing. New regression failed (two jumps instead of one). This is handler-level synthetic evidence, not a claim that a particular browser emitted that sequence despite preventDefault.
+- Filtered touch-origin mouse events in the jump button mousedown listener; preserved touchstart prevention, real mouse and missing-capability fallback. Regenerated index.html. Added two input-lifecycle tests covering duplicate suppression, real hybrid-device mouse input, fresh touches and absent capabilities. No new touch ownership state or timing heuristic; held touch alone emits no additional start in this fixture. Browser compatibility without sourceCapabilities continues to rely on touchstart.preventDefault and needs device validation.
+- NODE_PATH=/workspace/scratch/voxel-d016/node_modules node --test tests/rebuild/input-lifecycle.test.cjs tests/rebuild/staging-movement-regression.test.cjs tests/rebuild/p3-client.test.cjs: 39 passed, zero failures/skips. Full npm test passed. Static, syntax (138), generated-client, current-file secret/config (157) and git diff --check passed.
+- Incremental audit: 15 objects (1 commit, 7 trees, 7 blobs) after 214fe2f, no new archives/gaps; other refs unchanged. Two matches at index.html:632 identify unchanged Firebase public web configuration, privately compared. Previous scan/account limits remain.
+- No live browser/mobile/staging/capacity claim. External blockers unchanged; no production, account, deployment or payment changes.
 
 ## D016 completed (2026-10-15)
 
@@ -184,7 +192,7 @@ Starting source: 0e3fcd1746cd0c55f011a2b8fda58d86a82e5284.
 
 ## Next bounded task
 
-D017: inspect touch jump ownership and synthetic mouse-event duplication after touch release/landing. Add focused event regressions and fix only reproduced duplicate-input behavior; preserve keyboard and server-authoritative movement. Physical device/browser evidence remains separate.
+D018: reassess D003 browser-test tooling in the current local environment. Inspect existing browser harness dependencies and permitted local browser availability, then run an existing isolated browser scenario if supported. Do not use production credentials or external live services, weaken assertions or label VM checks as browser evidence. Record exact limitations if blocked and choose another safe plan item.
 
 Deferred D003: verify generated staging client and existing browser scenarios with the
 available permitted browser tooling. Check tooling availability first. Preserve

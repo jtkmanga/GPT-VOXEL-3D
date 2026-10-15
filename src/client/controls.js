@@ -29,7 +29,10 @@
                 triggerJump();
             };
             jumpBtn.addEventListener('touchstart', handleJump, { passive: false });
-            jumpBtn.addEventListener('mousedown', handleJump);
+            jumpBtn.addEventListener('mousedown', (e) => {
+                if (e.sourceCapabilities?.firesTouchEvents) return;
+                handleJump(e);
+            });
 
             const joystickZone = document.getElementById('joystick-zone');
             const joystickHandle = document.getElementById('joystick-handle');
