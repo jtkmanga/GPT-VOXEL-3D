@@ -2,9 +2,18 @@
 
 Updated: 2026-10-15 (Asia/Bangkok).
 Branch: `development/voxel-continuous`.
-Starting source commit: `91351e1ca9cecc8d999c3667c03f78317ffa3642`.
-Task: D011 — release nested Lucky Box resources on replacement and menu return.
+Starting source commit: `2ab4b0b3deeaad5b8ebdba991ae048daff125e37`.
+Task: D012 — reset interrupted input on blur and hidden document.
 Status: completed; external D003 gates remain blocked.
+
+## D012 completed (2026-10-15)
+
+- Reproduced held movement/jump and camera gestures surviving window blur or document hiding: two new behavioral tests failed before the fix. Existing touch cancellation correctly ignores unrelated fingers and releases its owning joystick.
+- Added resetInterruptedInput within setupControls in src/client/controls.js, registered for blur and hidden visibilitychange. Clears keyboard/joystick input, touch/mouse camera ownership and unsent jump intent/held flags; leaves authoritative physics and already-sent frames intact. Regenerated index.html.
+- Added input-lifecycle.test.cjs (3 regressions): interruption, stale follow-up moves, fresh gesture recovery and touch ownership. The first full run found that the P0 document fixture lacked addEventListener; extended it with the existing eventTarget implementation, preserving every assertion. Targeted P0/input suite passed 7/7, zero failures/skips.
+- Full npm test passed after the fixture fix. check-static.cjs, check-syntax.cjs (138 files), build-client.cjs --check, check-secrets.cjs (157 files), git diff --check passed. Node commands use NODE_PATH=/workspace/scratch/e72adbdaf5bc/voxel-dev/node_modules.
+- Resumed the uncommitted D012 work after rechecking public visibility and unchanged HEAD/refs; did not repeat a completed task. Incremental scan at this source inspected 17 objects (1 commit, 7 trees, 9 blobs), no new archives/gaps. Matches were unchanged Firebase public config and a pre-existing synthetic handoff token; prior scope limits remain.
+- This completes focus-loss handling only. Menu interruption is the next bounded task; real browser/app-switch and mobile touch validation remain pending. No production/account/deployment changes.
 
 ## D011 completed (2026-10-15)
 
@@ -141,7 +150,7 @@ Starting source: 0e3fcd1746cd0c55f011a2b8fda58d86a82e5284.
 
 ## Next bounded task
 
-D012: audit input reset when focus is lost, touch is cancelled or menus interrupt movement. Reproduce any stuck movement/jump state and add behavioral regressions without changing authoritative movement rules. Keep live mobile validation pending.
+D013: audit menu/pause interruption of held movement and jump intent; ensure resume requires fresh input where appropriate. Reuse input-reset behavior, preserve authoritative movement/prediction, and verify real menu entry points in local behavioral tests. Live mobile validation remains pending.
 
 Deferred D003: verify generated staging client and existing browser scenarios with the
 available permitted browser tooling. Check tooling availability first. Preserve

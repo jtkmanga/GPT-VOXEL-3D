@@ -25,7 +25,7 @@ function controls() {
   const window = eventTarget();
   const elements = new Map(['btn-jump', 'joystick-zone', 'joystick-handle'].map(id => [id, eventTarget()]));
   let jumpSounds = 0;
-  const c = vm.createContext({ window, document: { getElementById: id => elements.get(id) }, keys: {}, joystickVec: { x: 0, y: 0 }, cameraYaw: 0, cameraPitch: 0.5,
+  const c = vm.createContext({ window, document: { ...eventTarget(), hidden: false, getElementById: id => elements.get(id) }, keys: {}, joystickVec: { x: 0, y: 0 }, cameraYaw: 0, cameraPitch: 0.5,
     state: { isPlaying: true, isPaused: false }, isGrounded: true, playerVelocityY: 0, audio: { playJump() { jumpSounds++; } } });
   vm.runInContext(activeFunction('triggerJump') + '\n' + activeFunction('setupControls') + '\nsetupControls();', c);
   return { c, window, elements, jumpSounds: () => jumpSounds };

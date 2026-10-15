@@ -189,3 +189,17 @@ public web assignment, verified privately against prior source. No private/admin
 credential identified; no values printed or used. Current-file scan passed.
 No confirmed new privileged credential; previous exclusions and bounded-pattern
 limitations remain, including unverified account settings.
+
+## D012 increment — 2026-10-15
+
+Public source 2ab4b0b3deeaad5b8ebdba991ae048daff125e37 minus audited
+91351e1ca9cecc8d999c3667c03f78317ffa3642: 17 objects (1 commit, 7 trees,
+9 blobs), no new archive members/gaps. Rechecked refs before resuming work;
+all unchanged. Scanner exit 1 reviewed: two detections of the same unchanged
+Firebase public web assignment at index.html:632, blob
+15f0863ef3a06cff727d8f2226f4ba294006f3e3; synthetic assignment at
+tests/rebuild/handoff-invariant.cjs:91, blob
+0ef81dd47b51e53b7df074ce44f2a8e0e8897f25. Compared privately with prior source;
+no values printed or used. Public configuration is not a private/admin secret.
+Current-file scan passed, no confirmed new privileged credential. Previous
+pattern/scope limitations and unverified account settings remain.

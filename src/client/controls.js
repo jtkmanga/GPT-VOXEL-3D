@@ -177,6 +177,24 @@
             });
 
             window.addEventListener('mouseup', () => { isMouseDown = false; });
+
+            // A keyup/touchend may never arrive after an app switch. Drop only
+            // local input intent; keep authoritative physics and sent frames.
+            function resetInterruptedInput() {
+                Object.keys(keys).forEach(key => { keys[key] = false; });
+                handleJoyEnd();
+                joystickVec.x = 0;
+                joystickVec.y = 0;
+                camTouchId = null;
+                isDraggingCam = false;
+                isMouseDown = false;
+                if (typeof secureJumpIntent !== 'undefined') secureJumpIntent = false;
+                if (typeof secureJumpHeld !== 'undefined') secureJumpHeld = false;
+            }
+            window.addEventListener('blur', resetInterruptedInput);
+            document.addEventListener('visibilitychange', () => {
+                if (document.hidden) resetInterruptedInput();
+            });
         }
 
         function triggerJump() {

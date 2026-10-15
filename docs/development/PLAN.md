@@ -56,4 +56,5 @@ item. Never substitute local results for live gates above.
 - DONE D009: reproduced and fixed missing static-map disposal; unique-resource/retained-scene lifecycle tests and full local suite passed.
 - DONE D010: fixed shared coin-batch disposal on map rebuild; snapshot meshes stay reused. Lifecycle/P8 checks and full local suite passed.
 - DONE D011: fixed nested Lucky Box resource cleanup on replacement/map initialization/menu return; local lifecycle and countdown checks pass.
-- NEXT D012: audit input reset on blur/touch cancellation/menu interruption to prevent stuck movement; preserve authoritative movement.
+- DONE D012 (focus-loss scope): reset keyboard/joystick/jump/camera input on blur/hidden document; touch ownership preserved. Local regressions and full suite passed.
+- NEXT D013: audit menu/pause interruption and fresh-input behavior on resume; keep live mobile gate pending.
