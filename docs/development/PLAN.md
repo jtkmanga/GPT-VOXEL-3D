@@ -62,4 +62,5 @@ item. Never substitute local results for live gates above.
 - DONE D015: GameRoom/ZoneRoom pause and delayed genuine ACK regressions; 33 targeted tests passed. Synthetic transport only.
 - DONE D016: hidden touch jump guarded; four keyboard/touch-to-authority regressions, 37 targeted tests and full local suite passed.
 - DONE D017: touch-origin mousedown duplicate filtered; hybrid mouse/fresh touch fallback regressions, 39 targeted tests and full local suite passed. Browser emission/compatibility remains unverified.
-- NEXT D018: reassess existing D003 browser harness against current permitted local tooling; run isolated scenarios if supported, retain exact blockers otherwise.
+- D018 ASSESSED, browser execution BLOCKED: Playwright installed locally; Chromium and headless-shell archive downloads failed after retries. No browser run/pass. Reattempt when artifacts become available.
+- NEXT D019: inspect Lucky Box lost-ACK/disconnect/restart coverage and add a missing combined reward/cooldown regression using local fixtures only.

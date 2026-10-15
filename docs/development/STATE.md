@@ -2,9 +2,17 @@
 
 Updated: 2026-10-16 (Asia/Bangkok).
 Branch: `development/voxel-continuous`.
-Starting source commit: `156e54c1afa154e094fe042ab6abd45ed8fe8a58`.
-Task: D017 — reject touch-generated duplicate mouse jumps.
-Status: completed; external D003 gates remain blocked.
+Starting source commit: `b3721a52d51dd4ae75c121fb02cf23f6282e1256`.
+Task: D018 — reassess isolated browser-test prerequisites.
+Status: prerequisite assessment completed; browser execution and external D003 gates remain blocked.
+
+## D018 assessment (2026-10-16)
+
+- Inspected existing p9-browser.py: requires Python Playwright, /usr/bin/chromium and pinned local Three.js. It intercepts synthetic staging origins, Firebase/transport and styling assets, blocks unmatched requests and uses real local WebGL. No assertions or runtime source changed.
+- Current environment initially had neither Playwright nor Chromium. Installed Python Playwright 1.64.0 with dependencies in an isolated local virtual environment; reused locked Three.js dependencies. Both standard Chromium and the separate headless-shell download were attempted, including the installer's repeated attempts. Both failed with 'End of central directory record signature not found' and final Download failure code 1. No browser binary installed, no browser scenario launched, no pass/skip substituted for this failure.
+- A temporary executable-path adaptation was reverted because it could not be verified by browser execution. This commit changes documentation/audit evidence only. Existing runtime evidence remains D017's 526 active tests plus historical/legacy suites; it is not new browser evidence.
+- Incremental audit: starting source minus 156e54c contains 14 objects (1 commit, 7 trees, 6 blobs), no new archive members/gaps. Two matches at index.html:632 identify unchanged Firebase public web configuration, privately compared. Other advertised refs unchanged; existing scope/pattern/account-setting limits apply. Current-file scan and git diff --check passed.
+- Browser tooling blocker is now concretely a missing executable after failed artifact downloads, rather than only limited UI tooling. Retry installation when artifacts are available; do not pause the whole project. Cloudflare sign-in/live staging/mobile/capacity/account gates remain separate. No external service tests, credential use, production changes or charges.
 
 ## D017 completed (2026-10-16)
 
@@ -192,7 +200,7 @@ Starting source: 0e3fcd1746cd0c55f011a2b8fda58d86a82e5284.
 
 ## Next bounded task
 
-D018: reassess D003 browser-test tooling in the current local environment. Inspect existing browser harness dependencies and permitted local browser availability, then run an existing isolated browser scenario if supported. Do not use production credentials or external live services, weaken assertions or label VM checks as browser evidence. Record exact limitations if blocked and choose another safe plan item.
+D019: inspect existing Lucky Box claim/spin replay coverage and add one missing combined lost-ACK/disconnect/coordinator-restart regression if absent. Verify single reward and preserved global cooldown using existing local fixtures; no production credentials or payment actions. Avoid duplicating existing cases.
 
 Deferred D003: verify generated staging client and existing browser scenarios with the
 available permitted browser tooling. Check tooling availability first. Preserve
@@ -202,7 +210,7 @@ only to other local work or authorized read-only staging inspection.
 
 ## External blockers / owner actions
 
-Cloudflare sign-in is required before read-only account inspection can continue. Browser regression execution additionally requires an approved browser environment supporting the existing harness. Skip these blocked subtasks and continue safe local work per the owner's updated instruction; keep the existing hourly task enabled. Firebase API restrictions, Security Rules and App Check have not been inspected in the account; this remains a release-review requirement. Live infrastructure access,
+Cloudflare sign-in is required before read-only account inspection can continue. Browser regression execution requires Chromium: Python Playwright 1.64.0 is now installed locally, but Chromium and headless-shell archive downloads failed to extract on 2026-10-16. No browser run occurred. Skip these blocked subtasks and continue safe local work per the owner's updated instruction; keep the existing hourly task enabled. Firebase API restrictions, Security Rules and App Check have not been inspected in the account; this remains a release-review requirement. Live infrastructure access,
 staging mutations, merchant sandbox activation and production deployment remain
 separate authorization boundaries. Scheduled task model selection is not exposed
 by the automation tool; GPT-6 Astra Medium cannot be guaranteed for future runs.

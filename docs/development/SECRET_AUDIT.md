@@ -257,3 +257,14 @@ Scanner exit 1 reviewed: two detections at index.html:632, blob
 configuration, privately compared against audited source. Not private/admin/
 database credentials. No values printed or used. Current-file scan passed;
 prior scope/pattern/account-setting limitations remain.
+
+## D018 increment — 2026-10-16
+
+Public source b3721a52d51dd4ae75c121fb02cf23f6282e1256 minus audited
+156e54c1afa154e094fe042ab6abd45ed8fe8a58: 14 objects (1 commit, 7 trees,
+6 blobs), no new archive members/gaps. Other advertised refs unchanged.
+Scanner exit 1 reviewed: two matches at index.html:632, blob
+b51fa556f0a09f1f8dd11aa402c41f2fd5d5bfe0, are unchanged Firebase public web
+configuration, compared privately. Not Firebase private/admin/database secrets.
+No values printed or used. Existing archives reuse prior bounded evidence.
+Current-file scan passed; previous exclusions/pattern/account limits remain.
