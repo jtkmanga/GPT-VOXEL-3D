@@ -226,3 +226,13 @@ web configuration, compared privately with audited source. This is not a
 private/admin/database credential. Values never printed or used. Current-file
 scan passed. No confirmed new privileged credential; prior exclusions, bounded
 pattern limits and unverified account settings still apply.
+
+## D015 increment — 2026-10-15
+
+Public source 27828474db2710c54346f2ec4e970421d33d942e minus audited
+5b28809fb3e00873a500aaa639441d5b978c3360: 10 objects (1 commit, 5 trees,
+4 blobs), zero findings/gaps/new archive members. Other advertised refs unchanged.
+Current files pass check-secrets.cjs; unchanged current/historical archives reuse
+prior bounded evidence. Firebase public web configuration remains distinct from
+private/admin/database credentials. No credentials used or account changes made.
+Prior exclusions, pattern limits and unverified account settings still apply.

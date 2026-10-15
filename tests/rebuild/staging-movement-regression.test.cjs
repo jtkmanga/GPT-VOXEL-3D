@@ -208,3 +208,67 @@ test('staging prediction resets omit stale render time and high-FPS batches stay
   assert.equal(client.sent.at(-1).seq, 91);
   assert.equal(client.sent.at(-1).frames.reduce((total, entry) => total + entry.delta, 0), 0);
 });
+
+for (const serverId of ['legacy', 'free1'])
+test(`D015 ${serverId} authority preserves pre-pause frames and delayed ACK cannot erase a fresh jump`, async t => {
+  const { h, connection, client } = await liveFixture(t, serverId);
+  const c = client.context;
+  const fs = require('node:fs'), vm = require('node:vm'), acorn = require('acorn');
+  const element = () => ({ style: {}, classList: { add() {}, remove() {} }, addEventListener() {} });
+  c.document.getElementById = () => element();
+  c.updateShopUI = () => {};
+  vm.runInContext(fs.readFileSync('src/client/controls.js', 'utf8'), c);
+  c.setupControls();
+  const menu = fs.readFileSync('src/client/menu-shop.js', 'utf8');
+  for (const node of acorn.parse(menu, { ecmaVersion: 'latest' }).body) {
+    if (['openShopModal', 'closeShopModal'].includes(node.id?.name)) vm.runInContext(menu.slice(node.start, node.end), c);
+  }
+  const predict = async delta => {
+    await h.advance(delta * 1000); client.setTime(h.now()); c.securePredictMovement(delta);
+  };
+  const send = async () => {
+    assert.equal(c.syncMyPlayerData(true), true);
+    const message = client.sent.at(-1);
+    await connection.send(message);
+    const ack = connection.messages('move').at(-1);
+    assert.equal(ack.ack, message.seq); assert.equal(ack.applied, true);
+    assert.ok(distance(ack.player, client.state()) < 1e-6, 'server integrates the same elapsed input frames');
+    return ack;
+  };
+  c.securePredictMovement(0); // Discard pre-session render time.
+  c.keys.d = true; c.secureQueueJump();
+  await predict(.1);
+  const delayed = await send();
+  await predict(.1); // Already elapsed but not yet sent when the modal opens.
+  const beforePause = client.read('securePendingFrames');
+  c.openShopModal();
+  assert.equal(c.state.isPaused, true);
+  assert.deepEqual(client.read('securePendingFrames'), beforePause);
+  await send();
+  assert.deepEqual(client.sent.at(-1).input, idle);
+  assert.equal(client.sent.at(-1).frames[0].input.jump, true, 'elapsed pre-pause jump is retained');
+  c.closeShopModal();
+  let latest;
+  for (let index = 0; index < 20; index++) {
+    await predict(.1); latest = await send();
+    assert.ok(client.sent.at(-1).frames.every(entry => !entry.input.jump && entry.input.x === 0 && entry.input.z === 0));
+  }
+  assert.equal(client.state().grounded, true, 'released jump does not auto-repeat after landing');
+  c.secureQueueJump();
+  assert.equal(c.secureReconcileMovement(delayed), true);
+  assert.equal(client.read('secureJumpIntent'), true, 'old jump ACK must preserve the fresh generation');
+  assert.equal(c.secureReconcileMovement(latest), true);
+  assert.equal(client.read('secureJumpIntent'), true);
+  assert.equal(client.read('securePendingFrames.length'), 0);
+  assert.equal(client.read('securePendingInputs.length'), 0);
+  await predict(.1);
+  const fresh = await send();
+  assert.equal(client.sent.at(-1).input.jump, true);
+  assert.ok(fresh.player.y > 0, 'authority accepts the new jump after landing');
+  assert.equal(c.secureReconcileMovement(fresh), true);
+  assert.equal(client.read('secureJumpIntent'), false);
+  const finalState = client.state();
+  assert.equal(c.secureReconcileMovement(delayed), false);
+  assert.deepEqual(client.state(), finalState, 'stale ACK cannot rewind the fresh jump');
+  assert.equal(connection.client.closed, false);
+});

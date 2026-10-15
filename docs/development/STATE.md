@@ -2,9 +2,17 @@
 
 Updated: 2026-10-15 (Asia/Bangkok).
 Branch: `development/voxel-continuous`.
-Starting source commit: `5b28809fb3e00873a500aaa639441d5b978c3360`.
-Task: D014 — verify secure movement after input interruption.
+Starting source commit: `27828474db2710c54346f2ec4e970421d33d942e`.
+Task: D015 — verify interruption against local server authority.
 Status: completed; external D003 gates remain blocked.
+
+## D015 completed (2026-10-15)
+
+- Added two regressions in staging-movement-regression.test.cjs, running authored controls reset/shop transitions, staging prediction/packets and bundled Worker GameRoom and ZoneRoom with synthetic authentication/storage/transport. Jumps enter via secureQueueJump; physical keyboard/touch trigger integration is not claimed.
+- Verified exact preservation of elapsed unsent pre-pause frames, idle post-pause input, authoritative position matching prediction within 1e-6 for every packet, landing without automatic jump repetition, delayed genuine server ACK preserving a fresh jump generation, pending history drainage, server acceptance of the fresh jump and rejection of stale ACK rewind. No runtime defect reproduced; gameplay source/generated client unchanged.
+- NODE_PATH=/workspace/scratch/e72adbdaf5bc/voxel-dev/node_modules node --test tests/rebuild/staging-movement-regression.test.cjs tests/rebuild/input-lifecycle.test.cjs tests/rebuild/p3-client.test.cjs: 33 passed, zero failures/skips. node --check on changed test, check-secrets.cjs and git diff --check passed. Test-only change; full npm suite not repeated. Prior D013 full-suite evidence remains on unchanged runtime source.
+- Incremental audit from 5b28809 to starting source: 10 objects (1 commit, 5 trees, 4 blobs), no findings/gaps/new archive members; other advertised refs unchanged. Current files passed credential/config scan. Previous scope and account-setting limitations remain.
+- Local bundled Worker evidence only, not live staging/browser/mobile/capacity. External blockers unchanged. No production, account, deployment or payment changes.
 
 ## D014 completed (2026-10-15)
 
@@ -167,7 +175,7 @@ Starting source: 0e3fcd1746cd0c55f011a2b8fda58d86a82e5284.
 
 ## Next bounded task
 
-D015: extend interruption coverage through the existing local GameRoom transport harness. Verify server-applied movement and delayed acknowledgments across pause/resume, including elapsed pre-pause frames and fresh jumps. Keep synthetic transport evidence distinct from live staging; fix any reproduced discrepancy.
+D016: connect actual keyboard/touch jump triggers to the local staging prediction and server harness. Verify first-jump physics, held/repeated input and post-landing fresh jump behavior; fix any discrepancy without changing authoritative movement rules. Distinguish event fixtures from physical mobile/browser evidence.
 
 Deferred D003: verify generated staging client and existing browser scenarios with the
 available permitted browser tooling. Check tooling availability first. Preserve

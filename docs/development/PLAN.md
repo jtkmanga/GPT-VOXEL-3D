@@ -59,4 +59,5 @@ item. Never substitute local results for live gates above.
 - DONE D012 (focus-loss scope): reset keyboard/joystick/jump/camera input on blur/hidden document; touch ownership preserved. Local regressions and full suite passed.
 - DONE D013: reset input at menu/pause/exit entry points and reject paused/new autorepeat gestures; local regressions and full suite passed.
 - DONE D014: three interruption/prediction/packet/reconciliation regressions; 31 targeted tests passed, no runtime defect reproduced.
-- NEXT D015: verify interruption and delayed ACK behavior through the local GameRoom transport harness, including server-applied movement and fresh jumps.
+- DONE D015: GameRoom/ZoneRoom pause and delayed genuine ACK regressions; 33 targeted tests passed. Synthetic transport only.
+- NEXT D016: verify authored keyboard/touch jump triggers through staging prediction and local server authority, including held input and fresh jumps after landing.
