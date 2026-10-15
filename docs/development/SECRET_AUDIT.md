@@ -287,3 +287,14 @@ Public source 8ec69d788757a068b030636b2944a1ffa63f230f minus audited
 Current-file scan passed. Existing current/historical archives reuse prior bounded
 evidence. Unchanged Firebase public web configuration is not a private/admin/
 database credential. No credentials used; prior scope/pattern/account limits remain.
+
+## D021 increment — 2026-10-16
+
+Public source 0be32d8a4464a4f904ae71182504d0fa12e49db4 minus audited
+8ec69d788757a068b030636b2944a1ffa63f230f: 14 objects (1 commit, 7 trees,
+6 blobs), no archive members/gaps. Other advertised refs unchanged.
+Scanner exit 1 reviewed: two matches at index.html:632, blob
+3116ea09737037e2190b4adb91b65991f6efd463, identify unchanged Firebase public
+web configuration (privately compared), not private/admin/database credentials.
+Current-file scan passed; no values printed or used. Existing archive coverage
+and previous scope/pattern/account limits remain unchanged.

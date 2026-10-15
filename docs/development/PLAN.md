@@ -65,4 +65,5 @@ item. Never substitute local results for live gates above.
 - D018 ASSESSED, browser execution BLOCKED: Playwright installed locally; Chromium and headless-shell archive downloads failed after retries. No browser run/pass. Reattempt when artifacts become available.
 - DONE D019: combined lost claim/reward ACK, reconnect/restart and next-cycle replay regression; 19 local P8 tests passed, runtime unchanged.
 - DONE D020: fixed stale timeout releasing a retry with the same action ID using per-attempt identity; 21 targeted checks and full local suite passed.
-- NEXT D021: inspect wheel animation completion ownership across menu return/new session; add missing lifecycle regression or fix reproduced defect.
+- DONE D021: invalidate stale wheel animation and hide/reset wheel on menu return; 13 targeted tests and full local suite passed.
+- NEXT D022: review disconnect/reconnect UI with pending Lucky Box action, preserving retry identity and usable modal state; local behavioral evidence only.

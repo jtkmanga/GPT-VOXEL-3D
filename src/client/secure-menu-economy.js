@@ -19,6 +19,10 @@
         }
 
         function secureReturnToMenu() {
+            state.wheelAnimation = null;
+            state.wheelSpinning = false;
+            state.wheelReward = null;
+            document.getElementById('wheel-modal').classList.add('hidden');
             if (typeof window !== 'undefined' && typeof window.resetGameplayInput === 'function') window.resetGameplayInput();
             if (typeof secureAbortClientConnections === 'function') secureAbortClientConnections('Returned to menu');
             clearLuckyBoxMesh();
@@ -271,6 +275,7 @@
         };
 
         triggerLuckyBoxModal = function() {
+            state.wheelAnimation = null;
             if (typeof window !== 'undefined' && typeof window.resetGameplayInput === 'function') window.resetGameplayInput();
             state.isPaused = true;
             const localNameTag = document.getElementById('player-nametag');

@@ -1,4 +1,6 @@
         function secureAnimateWheelToReward(rewardValue) {
+            const animation = {};
+            state.wheelAnimation = animation;
             const selectedIdx = WHEEL_ITEMS.findIndex(item => item.value === rewardValue);
             if (selectedIdx < 0) {
                 state.wheelSpinning = false;
@@ -20,6 +22,7 @@
             document.getElementById('wheel-result-msg').innerText = 'กำลังหมุนวงล้อ...';
 
             function animateSpin(now) {
+                if (state.wheelAnimation !== animation || !state.isPlaying) return;
                 const elapsed = now - startTime;
                 const progress = Math.min(elapsed / duration, 1);
                 const easeOut = 1 - Math.pow(1 - progress, 3);

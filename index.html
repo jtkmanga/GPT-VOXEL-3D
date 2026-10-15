@@ -4256,6 +4256,10 @@ return { MOVEMENT, validMovementInput, validMovementFrames, integrateMovement };
         }
 
         function secureReturnToMenu() {
+            state.wheelAnimation = null;
+            state.wheelSpinning = false;
+            state.wheelReward = null;
+            document.getElementById('wheel-modal').classList.add('hidden');
             if (typeof window !== 'undefined' && typeof window.resetGameplayInput === 'function') window.resetGameplayInput();
             if (typeof secureAbortClientConnections === 'function') secureAbortClientConnections('Returned to menu');
             clearLuckyBoxMesh();
@@ -4508,6 +4512,7 @@ return { MOVEMENT, validMovementInput, validMovementFrames, integrateMovement };
         };
 
         triggerLuckyBoxModal = function() {
+            state.wheelAnimation = null;
             if (typeof window !== 'undefined' && typeof window.resetGameplayInput === 'function') window.resetGameplayInput();
             state.isPaused = true;
             const localNameTag = document.getElementById('player-nametag');
@@ -4552,6 +4557,8 @@ return { MOVEMENT, validMovementInput, validMovementFrames, integrateMovement };
             }
         };
         function secureAnimateWheelToReward(rewardValue) {
+            const animation = {};
+            state.wheelAnimation = animation;
             const selectedIdx = WHEEL_ITEMS.findIndex(item => item.value === rewardValue);
             if (selectedIdx < 0) {
                 state.wheelSpinning = false;
@@ -4573,6 +4580,7 @@ return { MOVEMENT, validMovementInput, validMovementFrames, integrateMovement };
             document.getElementById('wheel-result-msg').innerText = 'กำลังหมุนวงล้อ...';
 
             function animateSpin(now) {
+                if (state.wheelAnimation !== animation || !state.isPlaying) return;
                 const elapsed = now - startTime;
                 const progress = Math.min(elapsed / duration, 1);
                 const easeOut = 1 - Math.pow(1 - progress, 3);

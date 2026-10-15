@@ -2,9 +2,17 @@
 
 Updated: 2026-10-16 (Asia/Bangkok).
 Branch: `development/voxel-continuous`.
-Starting source commit: `8ec69d788757a068b030636b2944a1ffa63f230f`.
-Task: D020 — fence Lucky Box retry timeouts by send attempt.
+Starting source commit: `0be32d8a4464a4f904ae71182504d0fa12e49db4`.
+Task: D021 — cancel stale wheel animation across menu/session changes.
 Status: completed; browser execution and external D003 gates remain blocked.
+
+## D021 completed (2026-10-16)
+
+- Reproduced two lifecycle failures in new wheel-animation-lifecycle.test.cjs: menu return left the wheel modal visible, and an old animation completion changed the angle/state of a newer session's wheel. Executes authored animation and menu functions with synthetic DOM, animation scheduling and audio/render-output ports.
+- Added per-animation identity in secure-wheel-startup.js; callbacks stop when replaced or gameplay ends. secureReturnToMenu invalidates the animation, resets spinning/reward state and hides the wheel modal; opening a new Lucky Box modal invalidates prior animation ownership. Regenerated index.html. Authoritative reward/score logic unchanged.
+- NODE_PATH=/workspace/scratch/voxel-d016/node_modules node --test tests/rebuild/wheel-animation-lifecycle.test.cjs tests/rebuild/luckybox-retry.test.cjs tests/rebuild/p8-client.test.cjs: 13 passed, zero failures/skips. Full npm test passed. Static, syntax (140), generated-client, current-file credential/config (159) and whitespace checks passed.
+- Incremental audit: starting source minus 8ec69d7 contains 14 objects (1 commit, 7 trees, 6 blobs), no archive members/gaps. Two matches at index.html:632 are unchanged Firebase public web configuration, privately compared. Other refs unchanged; prior scope/pattern/account limits remain.
+- This is local lifecycle evidence, not browser/mobile rendering or live staging. The previous usage-limit interruption made no task edits; this attempt rechecked HEAD before continuing. No production/account/deployment/payment changes.
 
 ## D020 completed (2026-10-16)
 
@@ -214,7 +222,7 @@ Starting source: 0e3fcd1746cd0c55f011a2b8fda58d86a82e5284.
 
 ## Next bounded task
 
-D021: inspect actual wheel animation callbacks across return-to-menu and a new game session. Verify delayed animation completion cannot modify a newer wheel/modal state; add missing lifecycle regressions and fix reproduced issues only. Keep local timer/DOM fixtures distinct from browser evidence.
+D022: review client disconnect/reconnect UI during a pending Lucky Box claim or spin. Check whether existing recovery preserves retry identity and avoids leaving an unusable paused modal; add a missing behavioral regression or fix a reproduced defect using local fixtures only.
 
 Deferred D003: verify generated staging client and existing browser scenarios with the
 available permitted browser tooling. Check tooling availability first. Preserve
