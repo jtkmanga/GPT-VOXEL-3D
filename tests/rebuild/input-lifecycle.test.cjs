@@ -52,3 +52,33 @@ test('D012 touch cancellation affects only its owning joystick gesture', () => {
   f.window.fire('touchcancel', { changedTouches: [f.touch(1)] });
   assert.equal(f.context.joystickVec.x, 0);
 });
+
+for (const [open, close] of [['openShopModal', 'closeShopModal'], ['openHomeConfirmModal', 'closeHomeConfirmModal']])
+test(`D013 ${open} clears held input and resume requires a fresh gesture`, () => {
+  const f = fixture(), c = f.context;
+  const acorn = require('acorn');
+  const authored = fs.readFileSync('src/client/menu-shop.js', 'utf8');
+  c.updateShopUI = () => {};
+  for (const id of ['shop-modal', 'exit-modal', 'player-nametag']) {
+    f.document.getElementById(id).classList = { add() {}, remove() {} };
+  }
+  for (const node of acorn.parse(authored, { ecmaVersion: 'latest' }).body) {
+    if ([open, close].includes(node.id?.name)) vm.runInContext(authored.slice(node.start, node.end), c);
+  }
+  f.window.fire('keydown', { code: 'KeyW' });
+  f.elements.get('joystick-zone').fire('touchstart', { changedTouches: [f.touch(1)] });
+  c.secureJumpIntent = true; c.secureJumpHeld = true;
+  c[open]();
+  assert.equal(c.state.isPaused, true); assert.equal(c.keys.w, false);
+  assert.equal(c.joystickVec.x, 0); assert.equal(c.secureJumpIntent, false);
+  f.window.fire('keydown', { code: 'KeyD' });
+  f.elements.get('joystick-zone').fire('touchstart', { changedTouches: [f.touch(2)] });
+  assert.equal(c.keys.d, false); assert.equal(c.joystickVec.x, 0);
+  c[close]();
+  f.window.fire('keydown', { code: 'KeyW', repeat: true });
+  f.window.fire('touchmove', { changedTouches: [f.touch(1), f.touch(2)] });
+  assert.equal(c.keys.w, false); assert.equal(c.joystickVec.x, 0);
+  f.window.fire('keyup', { code: 'KeyW' }); f.window.fire('keydown', { code: 'KeyW' });
+  f.elements.get('joystick-zone').fire('touchstart', { changedTouches: [f.touch(3)] });
+  assert.equal(c.keys.w, true); assert.ok(c.joystickVec.x > 0);
+});

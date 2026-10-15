@@ -19,6 +19,7 @@
         }
 
         function secureReturnToMenu() {
+            if (typeof window !== 'undefined' && typeof window.resetGameplayInput === 'function') window.resetGameplayInput();
             if (typeof secureAbortClientConnections === 'function') secureAbortClientConnections('Returned to menu');
             clearLuckyBoxMesh();
             state.isPlaying = false;
@@ -270,6 +271,7 @@
         };
 
         triggerLuckyBoxModal = function() {
+            if (typeof window !== 'undefined' && typeof window.resetGameplayInput === 'function') window.resetGameplayInput();
             state.isPaused = true;
             const localNameTag = document.getElementById('player-nametag');
             if (localNameTag) localNameTag.style.display = 'none';

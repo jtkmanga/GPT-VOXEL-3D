@@ -1401,6 +1401,7 @@ return { MOVEMENT, validMovementInput, validMovementFrames, integrateMovement };
         }
 
         function openShopModal() {
+            if (typeof window !== 'undefined' && typeof window.resetGameplayInput === 'function') window.resetGameplayInput();
             state.isPaused = true;
             const localNameTag = document.getElementById('player-nametag');
             if (localNameTag) localNameTag.style.display = 'none';
@@ -1496,6 +1497,7 @@ return { MOVEMENT, validMovementInput, validMovementFrames, integrateMovement };
         }
 
         function openHomeConfirmModal() {
+            if (typeof window !== 'undefined' && typeof window.resetGameplayInput === 'function') window.resetGameplayInput();
             state.isPaused = true;
             const localNameTag = document.getElementById('player-nametag');
             if (localNameTag) localNameTag.style.display = 'none';
@@ -2118,6 +2120,7 @@ return { MOVEMENT, validMovementInput, validMovementFrames, integrateMovement };
         }
         function setupControls() {
             window.addEventListener('keydown', (e) => {
+                if (!state.isPlaying || state.isPaused || document.hidden || e.repeat) return;
                 const code = e.code;
                 const k = e.key ? e.key.toLowerCase() : '';
                 if (code === 'KeyW' || code === 'ArrowUp' || k === 'w') keys.w = true;
@@ -2155,6 +2158,7 @@ return { MOVEMENT, validMovementInput, validMovementFrames, integrateMovement };
             let joyCenter = { x: 0, y: 0 };
 
             function handleJoyStart(e) {
+                if (!state.isPlaying || state.isPaused || document.hidden) return;
                 if (joystickActive) return;
                 const touch = e.changedTouches ? e.changedTouches[0] : e;
                 if (!touch) return;
@@ -2227,6 +2231,7 @@ return { MOVEMENT, validMovementInput, validMovementFrames, integrateMovement };
             }
 
             window.addEventListener('touchstart', (e) => {
+                if (!state.isPlaying || state.isPaused || document.hidden) return;
                 for (let t of e.changedTouches) {
                     if (!isUIElement(t.target) && camTouchId === null) {
                         camTouchId = t.identifier;
@@ -2274,6 +2279,7 @@ return { MOVEMENT, validMovementInput, validMovementFrames, integrateMovement };
 
             let isMouseDown = false;
             window.addEventListener('mousedown', (e) => {
+                if (!state.isPlaying || state.isPaused || document.hidden) return;
                 if (!isUIElement(e.target)) {
                     isMouseDown = true;
                     lastTouchX = e.clientX;
@@ -2309,6 +2315,7 @@ return { MOVEMENT, validMovementInput, validMovementFrames, integrateMovement };
                 if (typeof secureJumpIntent !== 'undefined') secureJumpIntent = false;
                 if (typeof secureJumpHeld !== 'undefined') secureJumpHeld = false;
             }
+            window.resetGameplayInput = resetInterruptedInput;
             window.addEventListener('blur', resetInterruptedInput);
             document.addEventListener('visibilitychange', () => {
                 if (document.hidden) resetInterruptedInput();
@@ -2385,6 +2392,7 @@ return { MOVEMENT, validMovementInput, validMovementFrames, integrateMovement };
         }
 
         function triggerLuckyBoxModal() {
+            if (typeof window !== 'undefined' && typeof window.resetGameplayInput === 'function') window.resetGameplayInput();
             state.isPaused = true;
             const localNameTag = document.getElementById('player-nametag');
             if (localNameTag) localNameTag.style.display = 'none';
@@ -4245,6 +4253,7 @@ return { MOVEMENT, validMovementInput, validMovementFrames, integrateMovement };
         }
 
         function secureReturnToMenu() {
+            if (typeof window !== 'undefined' && typeof window.resetGameplayInput === 'function') window.resetGameplayInput();
             if (typeof secureAbortClientConnections === 'function') secureAbortClientConnections('Returned to menu');
             clearLuckyBoxMesh();
             state.isPlaying = false;
@@ -4496,6 +4505,7 @@ return { MOVEMENT, validMovementInput, validMovementFrames, integrateMovement };
         };
 
         triggerLuckyBoxModal = function() {
+            if (typeof window !== 'undefined' && typeof window.resetGameplayInput === 'function') window.resetGameplayInput();
             state.isPaused = true;
             const localNameTag = document.getElementById('player-nametag');
             if (localNameTag) localNameTag.style.display = 'none';

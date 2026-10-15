@@ -1,5 +1,6 @@
         function setupControls() {
             window.addEventListener('keydown', (e) => {
+                if (!state.isPlaying || state.isPaused || document.hidden || e.repeat) return;
                 const code = e.code;
                 const k = e.key ? e.key.toLowerCase() : '';
                 if (code === 'KeyW' || code === 'ArrowUp' || k === 'w') keys.w = true;
@@ -37,6 +38,7 @@
             let joyCenter = { x: 0, y: 0 };
 
             function handleJoyStart(e) {
+                if (!state.isPlaying || state.isPaused || document.hidden) return;
                 if (joystickActive) return;
                 const touch = e.changedTouches ? e.changedTouches[0] : e;
                 if (!touch) return;
@@ -109,6 +111,7 @@
             }
 
             window.addEventListener('touchstart', (e) => {
+                if (!state.isPlaying || state.isPaused || document.hidden) return;
                 for (let t of e.changedTouches) {
                     if (!isUIElement(t.target) && camTouchId === null) {
                         camTouchId = t.identifier;
@@ -156,6 +159,7 @@
 
             let isMouseDown = false;
             window.addEventListener('mousedown', (e) => {
+                if (!state.isPlaying || state.isPaused || document.hidden) return;
                 if (!isUIElement(e.target)) {
                     isMouseDown = true;
                     lastTouchX = e.clientX;
@@ -191,6 +195,7 @@
                 if (typeof secureJumpIntent !== 'undefined') secureJumpIntent = false;
                 if (typeof secureJumpHeld !== 'undefined') secureJumpHeld = false;
             }
+            window.resetGameplayInput = resetInterruptedInput;
             window.addEventListener('blur', resetInterruptedInput);
             document.addEventListener('visibilitychange', () => {
                 if (document.hidden) resetInterruptedInput();

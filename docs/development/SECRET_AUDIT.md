@@ -203,3 +203,14 @@ tests/rebuild/handoff-invariant.cjs:91, blob
 no values printed or used. Public configuration is not a private/admin secret.
 Current-file scan passed, no confirmed new privileged credential. Previous
 pattern/scope limitations and unverified account settings remain.
+
+## D013 increment — 2026-10-15
+
+Public source d8076e2de798fce8845dc34003de21d7d6899ef1 minus audited
+2ab4b0b3deeaad5b8ebdba991ae048daff125e37: 15 objects (1 commit, 7 trees,
+7 blobs), no new archive members/gaps; other advertised refs unchanged.
+Scanner exit 1: two detections of the unchanged Firebase public web assignment
+at index.html:632, blob 1d4eb0072c71ceb244cd01538dc6abb1e59cca27.
+Privately compared with prior source, values never printed or used. No private/admin
+credential identified. Current-file scan passed. Previous exclusions, pattern
+limitations and unverified account settings remain; no account actions taken.

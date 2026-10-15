@@ -13,6 +13,7 @@
         }
 
         function openShopModal() {
+            if (typeof window !== 'undefined' && typeof window.resetGameplayInput === 'function') window.resetGameplayInput();
             state.isPaused = true;
             const localNameTag = document.getElementById('player-nametag');
             if (localNameTag) localNameTag.style.display = 'none';
@@ -108,6 +109,7 @@
         }
 
         function openHomeConfirmModal() {
+            if (typeof window !== 'undefined' && typeof window.resetGameplayInput === 'function') window.resetGameplayInput();
             state.isPaused = true;
             const localNameTag = document.getElementById('player-nametag');
             if (localNameTag) localNameTag.style.display = 'none';

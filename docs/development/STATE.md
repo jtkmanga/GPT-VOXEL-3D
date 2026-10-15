@@ -2,9 +2,18 @@
 
 Updated: 2026-10-15 (Asia/Bangkok).
 Branch: `development/voxel-continuous`.
-Starting source commit: `2ab4b0b3deeaad5b8ebdba991ae048daff125e37`.
-Task: D012 — reset interrupted input on blur and hidden document.
+Starting source commit: `d8076e2de798fce8845dc34003de21d7d6899ef1`.
+Task: D013 — reset held input on menu and pause transitions.
 Status: completed; external D003 gates remain blocked.
+
+## D013 completed (2026-10-15)
+
+- Reproduced held keyboard/joystick input surviving shop/home-confirm open and close; both new menu-entry regressions failed before the fix.
+- setupControls exposes its existing closure reset as window.resetGameplayInput. Shop/home-confirm and both Lucky Box modal implementations invoke it before pausing; secureReturnToMenu invokes it before exit. Guards permit isolated/historical contexts without initialized controls. New keyboard/touch/camera gestures are ignored outside active unpaused visible gameplay; keyboard autorepeat cannot restart cleared movement after resume.
+- Changed controls.js, menu-shop.js, wheel-frame.js, secure-menu-economy.js and regenerated index.html. Authoritative movement rules, prediction history, server packets and reward logic remain unchanged.
+- Extended input-lifecycle.test.cjs to exercise authored shop/home-confirm open/close, clear jump intent, reject paused inputs/stale gestures/repeated keydown, then accept fresh input. Targeted input/P0 suites: 9 passed, zero failures/skips. Full npm test passed. Static/syntax/generated-client/current-file secret checks and git diff --check passed; Node commands used existing NODE_PATH dependencies.
+- Incremental audit: 15 objects (1 commit, 7 trees, 7 blobs) after 2ab4b0b, no new archives/gaps. Two detections identify unchanged public Firebase configuration, privately compared; no confirmed privileged credential. Other advertised refs unchanged and prior scope limits remain.
+- Local event fixtures are not physical mobile/browser evidence. External gates remain pending. No production/account/deployment changes.
 
 ## D012 completed (2026-10-15)
 
@@ -150,7 +159,7 @@ Starting source: 0e3fcd1746cd0c55f011a2b8fda58d86a82e5284.
 
 ## Next bounded task
 
-D013: audit menu/pause interruption of held movement and jump intent; ensure resume requires fresh input where appropriate. Reuse input-reset behavior, preserve authoritative movement/prediction, and verify real menu entry points in local behavioral tests. Live mobile validation remains pending.
+D014: verify actual secure movement output after pause/focus interruption using the existing prediction/transport fixtures. Check idle intent and absence of stale jump replay while preserving acknowledgment/reconciliation state; fix any reproduced discrepancy. Do not claim browser/mobile evidence.
 
 Deferred D003: verify generated staging client and existing browser scenarios with the
 available permitted browser tooling. Check tooling availability first. Preserve
