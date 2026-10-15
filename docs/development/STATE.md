@@ -2,9 +2,17 @@
 
 Updated: 2026-10-15 (Asia/Bangkok).
 Branch: `development/voxel-continuous`.
-Starting source commit: `d8076e2de798fce8845dc34003de21d7d6899ef1`.
-Task: D013 — reset held input on menu and pause transitions.
+Starting source commit: `5b28809fb3e00873a500aaa639441d5b978c3360`.
+Task: D014 — verify secure movement after input interruption.
 Status: completed; external D003 gates remain blocked.
+
+## D014 completed (2026-10-15)
+
+- Added three input-lifecycle regressions combining authored controls, shop transitions, staging packet generation, prediction and reconciliation for blur, hidden document and shop pause/resume. DOM events and transport remain synthetic ports.
+- Verified idle top-level intent after interruption, no stale input in subsequent predicted frames, exact preservation and once-only transmission of elapsed pre-interruption frames, pending sequence/ACK history, replay reconciliation, rejection of duplicate ACKs, and fresh jump generation surviving an older jump ACK. Historical pre-interruption frames are intentionally retained, not erased or misclassified as new intent.
+- No runtime defect reproduced; source and generated client unchanged. NODE_PATH=/workspace/scratch/e72adbdaf5bc/voxel-dev/node_modules node --test tests/rebuild/input-lifecycle.test.cjs tests/rebuild/staging-movement-regression.test.cjs tests/rebuild/p3-client.test.cjs: 31 passed, zero failures/skips. node --check, check-secrets.cjs (157 files) and git diff --check passed. Full npm test was not repeated for this test-only change; D013 full-suite evidence applies to unchanged runtime source.
+- Incremental audit of starting source minus d8076e2: 17 objects (1 commit, 7 trees, 9 blobs), no new archives/gaps. Two matches at index.html:632 are the same unchanged public Firebase configuration, privately compared to audited source. Other refs unchanged; previous exclusions and account-setting limitations remain.
+- Local fixtures are not live staging, physical mobile or browser evidence. External blockers unchanged; no production/account/deployment changes.
 
 ## D013 completed (2026-10-15)
 
@@ -159,7 +167,7 @@ Starting source: 0e3fcd1746cd0c55f011a2b8fda58d86a82e5284.
 
 ## Next bounded task
 
-D014: verify actual secure movement output after pause/focus interruption using the existing prediction/transport fixtures. Check idle intent and absence of stale jump replay while preserving acknowledgment/reconciliation state; fix any reproduced discrepancy. Do not claim browser/mobile evidence.
+D015: extend interruption coverage through the existing local GameRoom transport harness. Verify server-applied movement and delayed acknowledgments across pause/resume, including elapsed pre-pause frames and fresh jumps. Keep synthetic transport evidence distinct from live staging; fix any reproduced discrepancy.
 
 Deferred D003: verify generated staging client and existing browser scenarios with the
 available permitted browser tooling. Check tooling availability first. Preserve

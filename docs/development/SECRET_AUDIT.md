@@ -214,3 +214,15 @@ at index.html:632, blob 1d4eb0072c71ceb244cd01538dc6abb1e59cca27.
 Privately compared with prior source, values never printed or used. No private/admin
 credential identified. Current-file scan passed. Previous exclusions, pattern
 limitations and unverified account settings remain; no account actions taken.
+
+## D014 increment — 2026-10-15
+
+Public source 5b28809fb3e00873a500aaa639441d5b978c3360 minus audited
+d8076e2de798fce8845dc34003de21d7d6899ef1: 17 objects (1 commit, 7 trees,
+9 blobs), no new archive members/gaps. Other advertised refs unchanged.
+Scanner exit 1 reviewed: two detections at index.html:632, blob
+fbc9e9f6cf41d84f0138d181040bb0a2c30b272f, identify unchanged Firebase public
+web configuration, compared privately with audited source. This is not a
+private/admin/database credential. Values never printed or used. Current-file
+scan passed. No confirmed new privileged credential; prior exclusions, bounded
+pattern limits and unverified account settings still apply.

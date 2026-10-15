@@ -58,4 +58,5 @@ item. Never substitute local results for live gates above.
 - DONE D011: fixed nested Lucky Box resource cleanup on replacement/map initialization/menu return; local lifecycle and countdown checks pass.
 - DONE D012 (focus-loss scope): reset keyboard/joystick/jump/camera input on blur/hidden document; touch ownership preserved. Local regressions and full suite passed.
 - DONE D013: reset input at menu/pause/exit entry points and reject paused/new autorepeat gestures; local regressions and full suite passed.
-- NEXT D014: verify secure movement intent and jump replay after input interruption with actual prediction/transport fixtures.
+- DONE D014: three interruption/prediction/packet/reconciliation regressions; 31 targeted tests passed, no runtime defect reproduced.
+- NEXT D015: verify interruption and delayed ACK behavior through the local GameRoom transport harness, including server-applied movement and fresh jumps.

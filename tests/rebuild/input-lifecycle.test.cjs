@@ -82,3 +82,69 @@ test(`D013 ${open} clears held input and resume requires a fresh gesture`, () =>
   f.elements.get('joystick-zone').fire('touchstart', { changedTouches: [f.touch(3)] });
   assert.equal(c.keys.w, true); assert.ok(c.joystickVec.x > 0);
 });
+
+for (const interruption of ['blur', 'hidden', 'shop'])
+test(`D014 ${interruption} sends idle intent without losing prediction history or newer jumps`, async () => {
+  const { stagingClientFixture } = require('./staging-client-fixture.cjs');
+  const f = await stagingClientFixture(), c = f.context;
+  // Real controls + staging packet/prediction/reconciliation code; only DOM and transport are ports.
+  const window = target(), document = target(), elements = new Map();
+  document.getElementById = id => {
+    if (!elements.has(id)) elements.set(id, { ...target(), classList: { add() {}, remove() {} } });
+    return elements.get(id);
+  };
+  c.window = window; c.document = document;
+  vm.runInContext(fs.readFileSync('src/client/controls.js', 'utf8'), c);
+  c.setupControls();
+  const authored = fs.readFileSync('src/client/menu-shop.js', 'utf8');
+  c.updateShopUI = () => {};
+  for (const node of require('acorn').parse(authored, { ecmaVersion: 'latest' }).body) {
+    if (['openShopModal', 'closeShopModal'].includes(node.id?.name)) vm.runInContext(authored.slice(node.start, node.end), c);
+  }
+  f.reset(); c.securePredictMovement(0);
+  window.fire('keydown', { code: 'KeyW' });
+  window.fire('keydown', { code: 'Space' });
+  c.securePredictMovement(.02);
+  assert.equal(c.syncMyPlayerData(true), true);
+  assert.equal(f.sent[0].input.jump, true);
+  assert.notEqual(f.sent[0].input.z, 0);
+  const acknowledgedState = f.state();
+  // This elapsed frame predates the interruption and must still reach authority once.
+  c.securePredictMovement(.02);
+  const history = f.read('({ frames: securePendingFrames, packets: securePendingInputs, seq: secureInputSequence, ack: secureLastAcknowledgedSequence })');
+  if (interruption === 'blur') window.fire('blur');
+  else if (interruption === 'hidden') { document.hidden = true; document.fire('visibilitychange'); }
+  else c.openShopModal();
+  assert.deepEqual(f.read('({ frames: securePendingFrames, packets: securePendingInputs, seq: secureInputSequence, ack: secureLastAcknowledgedSequence })'), history);
+  assert.deepEqual(f.read('secureMovementIntent()'), { x: 0, z: 0, jump: false });
+  assert.equal(c.syncMyPlayerData(true), true);
+  assert.deepEqual(f.sent[1].input, { x: 0, z: 0, jump: false });
+  assert.deepEqual(f.sent[1].frames, history.frames.filter(frame => frame.seq === 1).map(({ input, delta }) => ({ input, delta })));
+  if (interruption === 'shop') c.closeShopModal();
+  document.hidden = false;
+  window.fire('keydown', { code: 'KeyW', repeat: true });
+  c.securePredictMovement(.02);
+  assert.equal(c.syncMyPlayerData(true), true);
+  assert.ok(f.sent[2].frames.every(frame => frame.input.x === 0 && frame.input.z === 0 && !frame.input.jump));
+  const remaining = f.read('securePendingFrames.filter(frame => frame.seq > 0)');
+  let expected = acknowledgedState;
+  for (const frame of remaining) expected = f.movement.integrateMovement(expected, frame.input, frame.delta, { ...c.secureMovementOptions(), speed: frame.speed });
+  const ack = { ack: 0, player: acknowledgedState, movement: acknowledgedState };
+  assert.equal(c.secureReconcileMovement(ack), true);
+  assert.deepEqual(f.state(), JSON.parse(JSON.stringify(expected)));
+  assert.deepEqual(f.read('securePendingFrames'), remaining);
+  assert.deepEqual(f.read('securePendingInputs.map(packet => packet.seq)'), [1, 2]);
+  assert.equal(f.read('secureLastAcknowledgedSequence'), 0);
+  assert.equal(c.secureReconcileMovement(ack), false, 'duplicate ACK cannot replay history');
+  assert.equal(f.read('secureJumpIntent'), false);
+  // A fresh jump generation must survive the delayed ACK for a pre-interruption jump.
+  c.isGrounded = true;
+  window.fire('keydown', { code: 'Space' });
+  assert.equal(f.read('secureJumpIntent'), true);
+  assert.equal(c.secureReconcileMovement({ ...ack, ack: 1 }), true);
+  assert.equal(f.read('secureJumpIntent'), true);
+  window.fire('keydown', { code: 'KeyW' });
+  assert.equal(c.syncMyPlayerData(true), true);
+  assert.equal(f.sent.at(-1).input.jump, true);
+  assert.notEqual(f.sent.at(-1).input.z, 0);
+});
