@@ -272,3 +272,58 @@ test(`D015 ${serverId} authority preserves pre-pause frames and delayed ACK cann
   assert.deepEqual(client.state(), finalState, 'stale ACK cannot rewind the fresh jump');
   assert.equal(connection.client.closed, false);
 });
+
+for (const inputMode of ['keyboard', 'touch'])
+for (const serverId of ['legacy', 'free1'])
+test(`D016 ${inputMode} jumps match ${serverId} authority and ignore inactive input`, async t => {
+  const { h, connection, client } = await liveFixture(t, serverId), c = client.context;
+  const fs = require('node:fs'), vm = require('node:vm');
+  const target = () => {
+    const handlers = new Map();
+    return { style: {}, addEventListener(type, fn) {
+      if (!handlers.has(type)) handlers.set(type, []);
+      handlers.get(type).push(fn);
+    }, fire(type, data = {}) {
+      for (const fn of handlers.get(type) || []) fn({ preventDefault() {}, stopPropagation() {}, cancelable: true, ...data });
+    } };
+  };
+  const elements = new Map();
+  c.window = target(); c.document = { ...target(), hidden: false, getElementById(id) {
+    if (!elements.has(id)) elements.set(id, target()); return elements.get(id);
+  } };
+  let sounds = 0; c.audio.playJump = () => sounds++;
+  vm.runInContext(fs.readFileSync('src/client/controls.js', 'utf8'), c); c.setupControls();
+  const press = (repeat = false) => inputMode === 'keyboard'
+    ? c.window.fire('keydown', { code: 'Space', repeat })
+    : elements.get('btn-jump').fire('touchstart');
+  const tick = async () => {
+    await h.advance(100); client.setTime(h.now()); c.securePredictMovement(.1);
+    assert.equal(c.syncMyPlayerData(true), true);
+    await connection.send(client.sent.at(-1));
+    const ack = connection.messages('move').at(-1);
+    assert.equal(ack.applied, true);
+    assert.ok(distance(ack.player, client.state()) < 1e-6, 'authored jump physics matches authority before correction');
+    assert.equal(c.secureReconcileMovement(ack), true);
+    return ack;
+  };
+  c.securePredictMovement(0);
+  for (const flag of ['isPaused', 'hidden', 'notPlaying']) {
+    c.state.isPaused = flag === 'isPaused'; c.document.hidden = flag === 'hidden'; c.state.isPlaying = flag !== 'notPlaying';
+    const before = client.state(); press();
+    assert.deepEqual(client.state(), before, `${flag} input cannot mutate physics`);
+    assert.equal(client.read('secureJumpIntent'), false);
+  }
+  c.state.isPaused = false; c.document.hidden = false; c.state.isPlaying = true;
+  press(); assert.equal(sounds, 1);
+  const first = await tick(); assert.ok(first.player.y > 0);
+  press(true); assert.equal(sounds, 1, 'airborne input cannot jump twice');
+  for (let i = 0; i < 20; i++) await tick();
+  assert.equal(client.state().grounded, true);
+  assert.equal(client.read('secureJumpIntent'), false);
+  if (inputMode === 'keyboard') {
+    press(true); assert.equal(sounds, 1, 'held key repeat after landing is ignored');
+    c.window.fire('keyup', { code: 'Space' });
+  } else elements.get('btn-jump').fire('touchend');
+  press(); assert.equal(sounds, 2);
+  assert.ok((await tick()).player.y > 0, 'fresh post-landing jump accepted');
+});

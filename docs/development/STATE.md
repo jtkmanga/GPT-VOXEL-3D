@@ -2,9 +2,18 @@
 
 Updated: 2026-10-15 (Asia/Bangkok).
 Branch: `development/voxel-continuous`.
-Starting source commit: `27828474db2710c54346f2ec4e970421d33d942e`.
-Task: D015 — verify interruption against local server authority.
+Starting source commit: `214fe2f8a859e5a2b2129a4dc53c06451ab9285c`.
+Task: D016 — validate authored jump events against local authority.
 Status: completed; external D003 gates remain blocked.
+
+## D016 completed (2026-10-15)
+
+- Reproduced hidden-document touch jump mutating physics and queuing input: both GameRoom/ZoneRoom touch cases failed before the fix. Added !document.hidden to the shared triggerJump guard in controls.js and regenerated index.html. No authoritative physics or protocol change.
+- Added four event-to-server regressions (keyboard/touch x GameRoom/ZoneRoom) covering paused/hidden/not-playing input, first jump, airborne repeated input, landing without repeat, keyboard autorepeat rejection and fresh post-landing jump. Each packet checks authoritative position against prediction before reconciliation (tolerance 1e-6). DOM/storage/auth/transport remain synthetic; no physical-device/browser/live claim.
+- Resumed the uncommitted D016 work after re-reading GitHub state and confirming unchanged public visibility, HEAD and advertised refs. Reviewed retained successful full-suite log: 524 active tests passed, zero failures/skips, historical suites and both legacy scenarios passed. No runtime edits were made after that successful run.
+- P3 isolated trigger fixture lacked document; added a visible-document port without modifying assertions. Targeted input/staging movement/P3 suites: 37 passed, zero failures/skips. Full npm test passed after this fixture update. Static, syntax (138), generated-client, current-file secret/config (157) and whitespace checks passed.
+- Scratch checkout was unavailable, so restored the existing repository into an isolated local checkout and installed the locked 42 dependencies with npm ci --ignore-scripts --no-audit --no-fund. No new project or cloud resource created.
+- Incremental audit: starting source minus 27828474 contains 10 objects (1 commit, 5 trees, 4 blobs), zero findings/gaps/new archive members. Other refs unchanged; previous coverage and account-setting limits remain. No production/account/deployment/payment changes.
 
 ## D015 completed (2026-10-15)
 
@@ -175,7 +184,7 @@ Starting source: 0e3fcd1746cd0c55f011a2b8fda58d86a82e5284.
 
 ## Next bounded task
 
-D016: connect actual keyboard/touch jump triggers to the local staging prediction and server harness. Verify first-jump physics, held/repeated input and post-landing fresh jump behavior; fix any discrepancy without changing authoritative movement rules. Distinguish event fixtures from physical mobile/browser evidence.
+D017: inspect touch jump ownership and synthetic mouse-event duplication after touch release/landing. Add focused event regressions and fix only reproduced duplicate-input behavior; preserve keyboard and server-authoritative movement. Physical device/browser evidence remains separate.
 
 Deferred D003: verify generated staging client and existing browser scenarios with the
 available permitted browser tooling. Check tooling availability first. Preserve

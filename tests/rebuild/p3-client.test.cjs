@@ -37,6 +37,7 @@ async function clientFixture(options = {}) {
   } };
   const context = vm.createContext({
     movement, protocol, config, Date: ClockDate, WebSocket: LocalWebSocket,
+    document: { hidden: false },
     setTimeout: () => 1, clearTimeout() {}, requestAnimationFrame() {},
     console, playerPos, playerVel: { x: 0, z: 0 }, playerVelocityY: 0,
     playerRotation: 0, isGrounded: true, playerGroup: null,

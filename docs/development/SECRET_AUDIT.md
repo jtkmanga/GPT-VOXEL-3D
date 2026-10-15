@@ -236,3 +236,13 @@ Current files pass check-secrets.cjs; unchanged current/historical archives reus
 prior bounded evidence. Firebase public web configuration remains distinct from
 private/admin/database credentials. No credentials used or account changes made.
 Prior exclusions, pattern limits and unverified account settings still apply.
+
+## D016 increment — 2026-10-15
+
+Public source 214fe2f8a859e5a2b2129a4dc53c06451ab9285c minus audited
+27828474db2710c54346f2ec4e970421d33d942e: 10 objects (1 commit, 5 trees,
+4 blobs), no findings/gaps/new archive members. Other advertised refs unchanged.
+Current-file configuration/credential scan passed. Existing current/historical
+archives reuse prior bounded evidence. Firebase public web configuration is
+unchanged and distinct from private/admin/database secrets. No credential use
+or account actions. Prior scope/pattern and account-verification limits remain.
