@@ -72,10 +72,7 @@
             buildVoxelStructures();
 
             // สร้างเหรียญใหม่ด้วย seed เดียวกัน
-            coins.forEach(c => {
-                if (c && c.mesh && scene) scene.remove(c.mesh);
-            });
-            coins.length = 0;
+            clearCoinMeshes();
             spawnCoins(MAX_COINS_PER_MAP);
         }
 
@@ -292,6 +289,31 @@
 
             listenToCoinsRealtime(serverId);
             spawnLuckyBoxes(serverId);
+        }
+
+        function clearCoinMeshes() {
+            // A spawned batch shares geometry/material; release once, only after
+            // detaching the entire batch and checking retained scene owners.
+            const geometries = new Set();
+            const materials = new Set();
+            coins.forEach(coin => {
+                const mesh = coin && coin.mesh;
+                if (!mesh) return;
+                if (scene) scene.remove(mesh);
+                if (mesh.geometry) geometries.add(mesh.geometry);
+                const list = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+                list.forEach(material => { if (material) materials.add(material); });
+            });
+            if (scene && typeof scene.traverse === 'function') {
+                scene.traverse(obj => {
+                    geometries.delete(obj.geometry);
+                    const list = Array.isArray(obj.material) ? obj.material : [obj.material];
+                    list.forEach(material => materials.delete(material));
+                });
+            }
+            geometries.forEach(geometry => geometry.dispose());
+            materials.forEach(material => material.dispose());
+            coins.length = 0;
         }
 
         function spawnCoins(count) {

@@ -2,9 +2,18 @@
 
 Updated: 2026-10-15 (Asia/Bangkok).
 Branch: `development/voxel-continuous`.
-Starting source commit: `44ae105e99cf0a57bdb9b4d2d8aa0edd942d85d7`.
-Task: D009 — release removed static-map geometry and materials.
+Starting source commit: `6f7da691452e86dfe23debbd0fee61a552d1250c`.
+Task: D010 — release old coin-batch resources on map rebuild.
 Status: completed; external D003 gates remain blocked.
+
+## D010 completed (2026-10-15)
+
+- Reproduced missing coin geometry/material disposal through the authored rebuildServerStaticMap path: expected one disposal event but observed zero. The second new test initially also failed because the cleanup entry point did not yet exist.
+- Added clearCoinMeshes in src/client/world.js and used it before spawning the new map batch; regenerated index.html. Deduplicates shared geometry/materials and preserves resources referenced by retained scene descendants. Snapshot handlers remain unchanged because they mutate existing coin meshes instead of replacing them.
+- Extended tests/rebuild/static-map-lifecycle.test.cjs with three repeated map rebuilds, 200 unique coin IDs, detached old meshes, shared-resource disposal once, new mesh ownership, repeated cleanup, snapshot identity/visibility/position updates and retained shared owners. Lifecycle/P8 client suites: 13 passed, zero failures/skips.
+- Full npm test passed on this modified source. check-static.cjs, check-syntax.cjs (137 files), build-client.cjs --check, check-secrets.cjs (156 files) and git diff --check passed. Node commands used NODE_PATH=/workspace/scratch/e72adbdaf5bc/voxel-dev/node_modules.
+- Incremental audit: starting source minus 44ae105 contains 14 objects (1 commit, 7 trees, 6 blobs), no new archive members/gaps. Two detections on the same unchanged public Firebase assignment were reviewed privately; no confirmed new privileged credential. Other refs unchanged; previous audit limits remain.
+- Local Three.js lifecycle evidence only, not actual GPU memory measurements, mobile stability or live multiplayer evidence. No production, deployment, account, payment or resource provisioning changes.
 
 ## D009 completed (2026-10-15)
 
@@ -123,7 +132,7 @@ Starting source: 0e3fcd1746cd0c55f011a2b8fda58d86a82e5284.
 
 ## Next bounded task
 
-D010: audit coin mesh resource lifetime across server-map rebuild and authoritative snapshot replacement. Reuse existing ownership conventions, reproduce any missing disposal before fixing it, and preserve shared resources and authoritative coin behavior. Live browser/mobile memory evidence remains separate.
+D011: inspect Lucky Box resource ownership across server changes and return-to-menu cleanup; reproduce any missing disposal, preserve shared resources, and test countdown/authoritative state behavior. Keep browser/GPU and live gates separate.
 
 Deferred D003: verify generated staging client and existing browser scenarios with the
 available permitted browser tooling. Check tooling availability first. Preserve

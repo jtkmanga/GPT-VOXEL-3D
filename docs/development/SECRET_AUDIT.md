@@ -165,3 +165,15 @@ or used. Current-file configuration/credential scan passed; public Firebase web
 configuration remains unchanged, distinct from private/admin credentials.
 No confirmed new privileged credential. Existing pattern, scope and account-side
 verification limitations still apply.
+
+## D010 increment — 2026-10-15
+
+Public source 6f7da691452e86dfe23debbd0fee61a552d1250c minus audited
+44ae105e99cf0a57bdb9b4d2d8aa0edd942d85d7: 14 objects (1 commit, 7 trees,
+6 blobs), no new archive members/gaps. Other advertised refs unchanged.
+Scanner exit 1 candidates: Firebase web API key and assignment at index.html:632,
+blob 43411b08c8e6dafa3a7e8a95de786aa3c85f56d6. Both identify the same unchanged
+public Firebase web configuration, privately compared with prior audited source;
+not private/admin/database credentials. Values were not printed or used.
+Current files passed check-secrets.cjs. No confirmed new privileged credential;
+prior scan scope/pattern and account-setting limitations remain.

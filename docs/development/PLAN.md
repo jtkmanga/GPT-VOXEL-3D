@@ -54,4 +54,5 @@ item. Never substitute local results for live gates above.
 - DONE D007: reusable per-frame nearby shortlist, wall/tree and cleanup regressions; 22 client checks and full npm test passed. Operation counts only, not mobile FPS.
 - DONE D008: exhaustive-ray equivalence at range boundaries and transformed geometry plus 192 generated-map comparisons; 24 client checks passed, no defect reproduced.
 - DONE D009: reproduced and fixed missing static-map disposal; unique-resource/retained-scene lifecycle tests and full local suite passed.
-- NEXT D010: audit coin mesh disposal on map rebuild/snapshot replacement; preserve shared resources and authoritative behavior.
+- DONE D010: fixed shared coin-batch disposal on map rebuild; snapshot meshes stay reused. Lifecycle/P8 checks and full local suite passed.
+- NEXT D011: audit Lucky Box resource cleanup on server changes/menu return without changing authoritative countdown behavior.
