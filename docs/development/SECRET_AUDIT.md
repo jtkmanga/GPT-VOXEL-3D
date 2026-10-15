@@ -278,3 +278,12 @@ Current-file scan passed; existing current/historical archives reuse prior bound
 evidence. Firebase public web configuration remains unchanged, distinct from
 private/admin/database credentials. No credential use or account actions.
 Previous exclusions, pattern limits and unverified account settings remain.
+
+## D020 increment — 2026-10-16
+
+Public source 8ec69d788757a068b030636b2944a1ffa63f230f minus audited
+9512dd83ef09a7d00c846089350e86ced42a126d: 10 objects (1 commit, 5 trees,
+4 blobs), no findings/gaps/new archive members. Other advertised refs unchanged.
+Current-file scan passed. Existing current/historical archives reuse prior bounded
+evidence. Unchanged Firebase public web configuration is not a private/admin/
+database credential. No credentials used; prior scope/pattern/account limits remain.

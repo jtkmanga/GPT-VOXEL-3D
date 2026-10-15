@@ -64,4 +64,5 @@ item. Never substitute local results for live gates above.
 - DONE D017: touch-origin mousedown duplicate filtered; hybrid mouse/fresh touch fallback regressions, 39 targeted tests and full local suite passed. Browser emission/compatibility remains unverified.
 - D018 ASSESSED, browser execution BLOCKED: Playwright installed locally; Chromium and headless-shell archive downloads failed after retries. No browser run/pass. Reattempt when artifacts become available.
 - DONE D019: combined lost claim/reward ACK, reconnect/restart and next-cycle replay regression; 19 local P8 tests passed, runtime unchanged.
-- NEXT D020: inspect actual Lucky Box client retry identity and stale-response fencing; add missing local behavioral coverage or fix a reproduced defect.
+- DONE D020: fixed stale timeout releasing a retry with the same action ID using per-attempt identity; 21 targeted checks and full local suite passed.
+- NEXT D021: inspect wheel animation completion ownership across menu return/new session; add missing lifecycle regression or fix reproduced defect.

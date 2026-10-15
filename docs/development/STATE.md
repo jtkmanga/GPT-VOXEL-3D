@@ -2,9 +2,16 @@
 
 Updated: 2026-10-16 (Asia/Bangkok).
 Branch: `development/voxel-continuous`.
-Starting source commit: `9512dd83ef09a7d00c846089350e86ced42a126d`.
-Task: D019 — combined lost Lucky Box acknowledgment recovery.
+Starting source commit: `8ec69d788757a068b030636b2944a1ffa63f230f`.
+Task: D020 — fence Lucky Box retry timeouts by send attempt.
 Status: completed; browser execution and external D003 gates remain blocked.
+
+## D020 completed (2026-10-16)
+
+- Added luckybox-retry.test.cjs using authored staging/client packet handling with synthetic DOM, timers and animation-output ports. Verifies lost-response retries retain request identity, duplicate rewards animate once, stale action replies/timers do not release a newer action, and an earlier attempt timeout cannot release a retry of the same action.
+- Reproduced the last case failing: after a retryable server error, retry reused the action ID, letting the first timeout clear the newer pending request. Added an in-memory attempt identity to spinWheel timeout ownership in secure-menu-economy.js and regenerated index.html. Server request IDs, protocol and reward rules unchanged.
+- NODE_PATH=/workspace/scratch/voxel-d016/node_modules node --test tests/rebuild/luckybox-retry.test.cjs tests/rebuild/p8-luckybox.test.cjs tests/rebuild/p8-client.test.cjs: 21 passed, zero failures/skips. Full npm test passed. Static, syntax (139), generated-client, current-file secret/config (158) and whitespace checks passed. No weakened assertions.
+- Incremental audit: starting source minus 9512dd8 contains 10 objects (1 commit, 5 trees, 4 blobs), no findings/gaps/new archive members; other refs unchanged. Prior scope/pattern/account limits remain. Local fixtures only; browser/live staging gates still pending. No production/account/deployment/payment changes.
 
 ## D019 completed (2026-10-16)
 
@@ -207,7 +214,7 @@ Starting source: 0e3fcd1746cd0c55f011a2b8fda58d86a82e5284.
 
 ## Next bounded task
 
-D020: inspect authored Lucky Box client retry behavior after a lost spin response. Verify request identity survives retry and stale responses cannot close or overwrite a newer pending action, using existing client fixtures; add missing regression or fix a reproduced defect only. Keep local evidence distinct from browser/live staging.
+D021: inspect actual wheel animation callbacks across return-to-menu and a new game session. Verify delayed animation completion cannot modify a newer wheel/modal state; add missing lifecycle regressions and fix reproduced issues only. Keep local timer/DOM fixtures distinct from browser evidence.
 
 Deferred D003: verify generated staging client and existing browser scenarios with the
 available permitted browser tooling. Check tooling availability first. Preserve

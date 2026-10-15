@@ -297,8 +297,11 @@
             if (!luckyBox._spinActionRequestId) luckyBox._spinActionRequestId = secureEconomyRequestId('box-spin');
             const requestId = luckyBox._spinActionRequestId;
             luckyBox._spinPendingRequestId = requestId;
+            const attempt = {};
+            luckyBox._spinPendingAttempt = attempt;
             const allowRetry = () => {
-                if (luckyBox?._spinPendingRequestId !== requestId) return;
+                if (luckyBox?._spinPendingRequestId !== requestId ||
+                    luckyBox._spinPendingAttempt !== attempt) return;
                 luckyBox._spinPendingRequestId = null;
                 state.wheelSpinning = false;
                 document.getElementById('btn-spin-wheel').classList.remove('hidden');
