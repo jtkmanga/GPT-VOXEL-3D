@@ -2,9 +2,16 @@
 
 Updated: 2026-10-16 (Asia/Bangkok).
 Branch: `development/voxel-continuous`.
-Starting source commit: `b3721a52d51dd4ae75c121fb02cf23f6282e1256`.
-Task: D018 — reassess isolated browser-test prerequisites.
-Status: prerequisite assessment completed; browser execution and external D003 gates remain blocked.
+Starting source commit: `9512dd83ef09a7d00c846089350e86ced42a126d`.
+Task: D019 — combined lost Lucky Box acknowledgment recovery.
+Status: completed; browser execution and external D003 gates remain blocked.
+
+## D019 completed (2026-10-16)
+
+- Reviewed existing P8 replay, rollback and restart coverage; added one combined regression in p8-luckybox.test.cjs spanning discarded claim ACK, disconnect/restart, claim retry, discarded committed reward ACK, another restart, replay after claim expiry and replay after the four-hour respawn boundary.
+- Checks unchanged durable receipts/box rows after replay, single awarded spin, persisted score, original cooldown, one box row and a successful next collector claim with a new cooldown. Reauthenticates after the four-hour clock advance. ACK loss is simulated by clearing observed messages, not a real network outage. No runtime defect reproduced; game source unchanged.
+- NODE_PATH=/workspace/scratch/voxel-d016/node_modules node --test tests/rebuild/p8-luckybox.test.cjs tests/rebuild/p8-client.test.cjs: 19 passed, zero failures/skips. node --check, current-file secret scan and git diff --check passed. Full npm suite not rerun for this test-only change; prior D017 runtime evidence remains attached to unchanged runtime source.
+- Incremental audit from b3721a5 to starting source: 7 objects (1 commit, 3 trees, 3 blobs), no findings/gaps/new archive members; other advertised refs unchanged. Prior coverage/pattern/account limitations remain. No production, account, payment or deployment action.
 
 ## D018 assessment (2026-10-16)
 
@@ -200,7 +207,7 @@ Starting source: 0e3fcd1746cd0c55f011a2b8fda58d86a82e5284.
 
 ## Next bounded task
 
-D019: inspect existing Lucky Box claim/spin replay coverage and add one missing combined lost-ACK/disconnect/coordinator-restart regression if absent. Verify single reward and preserved global cooldown using existing local fixtures; no production credentials or payment actions. Avoid duplicating existing cases.
+D020: inspect authored Lucky Box client retry behavior after a lost spin response. Verify request identity survives retry and stale responses cannot close or overwrite a newer pending action, using existing client fixtures; add missing regression or fix a reproduced defect only. Keep local evidence distinct from browser/live staging.
 
 Deferred D003: verify generated staging client and existing browser scenarios with the
 available permitted browser tooling. Check tooling availability first. Preserve

@@ -63,4 +63,5 @@ item. Never substitute local results for live gates above.
 - DONE D016: hidden touch jump guarded; four keyboard/touch-to-authority regressions, 37 targeted tests and full local suite passed.
 - DONE D017: touch-origin mousedown duplicate filtered; hybrid mouse/fresh touch fallback regressions, 39 targeted tests and full local suite passed. Browser emission/compatibility remains unverified.
 - D018 ASSESSED, browser execution BLOCKED: Playwright installed locally; Chromium and headless-shell archive downloads failed after retries. No browser run/pass. Reattempt when artifacts become available.
-- NEXT D019: inspect Lucky Box lost-ACK/disconnect/restart coverage and add a missing combined reward/cooldown regression using local fixtures only.
+- DONE D019: combined lost claim/reward ACK, reconnect/restart and next-cycle replay regression; 19 local P8 tests passed, runtime unchanged.
+- NEXT D020: inspect actual Lucky Box client retry identity and stale-response fencing; add missing local behavioral coverage or fix a reproduced defect.

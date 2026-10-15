@@ -24,6 +24,54 @@ async function claim(h, player, requestId) {
 }
 const actions = h => h.room().sql.exec('SELECT * FROM voxel_economy_actions ORDER BY created_at,action_key').toArray();
 
+test('D019 lost claim and reward ACKs survive reconnect/restart without consuming the next box cycle', async t => {
+  const h = harness(t), uid = 'synthetic-d019-collector';
+  let collector = await auth(h, uid);
+  const claimRequest = { type: 'collect_box', requestId: 'd019-lost-claim' };
+  const spinRequest = { type: 'spin_box', requestId: 'd019-lost-spin' };
+  h.place(collector, contact(h.room().boxSnapshot()));
+  await collector.send(claimRequest);
+  assert.ok(last(collector, 'box_spin_ready'));
+  const claimed = row(h), claimReceipts = plain(actions(h));
+  collector.clear(); // Simulate the client never receiving the committed ACK.
+  await collector.close(); await h.advance(1000);
+  h.restartRoom(); await h.room().ready;
+  collector = await auth(h, uid);
+  await collector.send(claimRequest);
+  assert.ok(last(collector, 'box_spin_ready'));
+  assert.deepEqual(row(h), claimed);
+  assert.deepEqual(plain(actions(h)), claimReceipts);
+  await collector.send(spinRequest);
+  const reward = last(collector, 'box_reward');
+  assert.ok([100, 500, 1000, 5000, 9999].includes(reward?.reward));
+  const committed = row(h), receipts = plain(actions(h));
+  collector.clear(); await collector.close();
+  h.restartRoom(); await h.room().ready;
+  await h.setTime(claimed.claim_expires_at + 1);
+  collector = await auth(h, uid);
+  assert.equal(last(collector, 'welcome').score, reward.reward);
+  await collector.send(spinRequest);
+  assert.equal(last(collector, 'box_reward').replayed, true);
+  assert.equal(last(collector, 'box_reward').reward, reward.reward);
+  assert.deepEqual(row(h), committed);
+  assert.deepEqual(plain(actions(h)), receipts);
+  await h.setTime(claimed.next_spawn_at);
+  const respawned = row(h);
+  assert.equal(h.room().boxSnapshot().active, true);
+  // Renew authentication after the four-hour clock advance; never reuse an expired token.
+  await collector.close(); collector = await auth(h, uid);
+  await collector.send(claimRequest); await collector.send(spinRequest);
+  assert.deepEqual(row(h), respawned, 'old receipts cannot claim or consume the new box');
+  assert.deepEqual(plain(actions(h)), receipts);
+  assert.equal(h.room().economy.score(uid), reward.reward);
+  const next = await auth(h, 'synthetic-d019-next-collector');
+  await claim(h, next, 'd019-next-claim');
+  assert.equal(row(h).cycle, respawned.cycle + 1);
+  assert.equal(row(h).next_spawn_at, h.now() + BOX_RESPAWN);
+  assert.equal(h.room().sql.exec('SELECT COUNT(*) AS count FROM voxel_lucky_box').toArray()[0].count, 1);
+  assert.equal(actions(h).filter(action => action.kind === 'spin' && action.awarded === 1).length, 1);
+});
+
 test('P8 collection starts one global four-hour cooldown and delayed spin cannot extend it', async t => {
   const h = harness(t), uid = 'synthetic-p8-collection-start';
   let collector = await auth(h, uid);
