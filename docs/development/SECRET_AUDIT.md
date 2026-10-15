@@ -1,5 +1,16 @@
 # S001: public repository credential audit
 
+## D022 increment — 2026-10-16
+
+Public source 77c23b6ae94316e7d6f2cbea40e7166d65d98ca7 minus audited
+0be32d8a4464a4f904ae71182504d0fa12e49db4: 15 objects (1 commit, 7 trees,
+7 blobs), no new archive members/gaps. Other advertised refs unchanged.
+Scanner exit 1 reviewed: two matches at index.html:632, blob
+966c7b836903665a907ef0a8fe077661ee8db6b2, are unchanged Firebase public web
+configuration, compared privately against audited source; not private/admin/
+database credentials. Current-file scan passed. No values printed or used.
+Existing archive coverage and all previous scope/pattern/account limits remain.
+
 Date: 2026-10-14. Source: development/voxel-continuous at
 5b49b8c013e556d768537fc7be7c046a88239507. GitHub visibility: public.
 

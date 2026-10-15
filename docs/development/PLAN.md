@@ -66,4 +66,5 @@ item. Never substitute local results for live gates above.
 - DONE D019: combined lost claim/reward ACK, reconnect/restart and next-cycle replay regression; 19 local P8 tests passed, runtime unchanged.
 - DONE D020: fixed stale timeout releasing a retry with the same action ID using per-attempt identity; 21 targeted checks and full local suite passed.
 - DONE D021: invalidate stale wheel animation and hide/reset wheel on menu return; 13 targeted tests and full local suite passed.
-- NEXT D022: review disconnect/reconnect UI with pending Lucky Box action, preserving retry identity and usable modal state; local behavioral evidence only.
+- DONE D022 (pending spin scope): two local resume/snapshot/modal/retry regressions passed; runtime unchanged. Socket authentication and live transport are not covered by these fixtures.
+- NEXT D023: review client recovery after lost claim ACK and resumed claimed snapshot, preserving ownership and retry identity; local evidence only.

@@ -2,9 +2,17 @@
 
 Updated: 2026-10-16 (Asia/Bangkok).
 Branch: `development/voxel-continuous`.
-Starting source commit: `0be32d8a4464a4f904ae71182504d0fa12e49db4`.
-Task: D021 — cancel stale wheel animation across menu/session changes.
+Starting source commit: `77c23b6ae94316e7d6f2cbea40e7166d65d98ca7`.
+Task: D022 — pending spin UI across local resume.
 Status: completed; browser execution and external D003 gates remain blocked.
+
+## D022 completed (2026-10-16)
+
+- Added two luckybox-retry.test.cjs regressions executing the authored resume loop, welcome snapshot processing, modal and spin retry logic with synthetic transport/authentication, DOM, delay and animation-output ports. Covered both an active claim and a reward already committed before the lost response.
+- Verified timeout restores retry visibility, offline click sends nothing, resume requires the existing session ticket, modal remains paused/visible, claim identity survives, spin retries the same request ID, reward updates score once and the old timeout cannot reopen retry after acknowledgement. No runtime defect reproduced; no gameplay/generated-client changes.
+- NODE_PATH=/workspace/scratch/voxel-d016/node_modules node --test tests/rebuild/luckybox-retry.test.cjs tests/rebuild/p8-client.test.cjs tests/rebuild/wheel-animation-lifecycle.test.cjs: 15 passed, zero failures/skips. node --check, current-file scan (159 files) and git diff --check passed. Full npm suite not repeated for this test-only change; D021 evidence applies to unchanged runtime.
+- Incremental scan: starting source minus 0be32d8 contains 15 objects (1 commit, 7 trees, 7 blobs), no archive members/gaps. Two index.html:632 matches are unchanged public Firebase configuration, privately compared; other refs unchanged. Existing audit/account limits remain.
+- Scope is pending spin recovery only. This does not exercise actual socket onclose/authentication or claim-ACK loss, and is not browser/live staging evidence. External blockers unchanged; no production/account/payment/deployment action.
 
 ## D021 completed (2026-10-16)
 
@@ -222,7 +230,7 @@ Starting source: 0e3fcd1746cd0c55f011a2b8fda58d86a82e5284.
 
 ## Next bounded task
 
-D022: review client disconnect/reconnect UI during a pending Lucky Box claim or spin. Check whether existing recovery preserves retry identity and avoids leaving an unusable paused modal; add a missing behavioral regression or fix a reproduced defect using local fixtures only.
+D023: review lost Lucky Box claim acknowledgement followed by a resumed claimed snapshot. Determine whether the client can recover its own pending claim without waiting for expiry or confusing another player's claim; add local behavioral evidence or fix a reproduced defect. Do not change server ownership rules or claim live evidence.
 
 Deferred D003: verify generated staging client and existing browser scenarios with the
 available permitted browser tooling. Check tooling availability first. Preserve
