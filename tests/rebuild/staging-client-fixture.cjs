@@ -52,7 +52,7 @@ async function stagingClientFixture(options = {}) {
     secureNow: () => currentTime, secureSetServerNow() {},
     SECURE_ZONE_GRID_SIZE: 10, SECURE_ZONE_SIZE: 150, MAP_SIZE: 1500,
     secureIntentionalSockets: new WeakSet(), secureRemoteSources: new Map(), secureGhostMembersByZone: new Map(),
-    otherPlayers: {}, coins: [],
+    otherPlayers: {}, coins: [], luckyBox: null,
     addOtherPlayer() {}, updateOtherPlayer() {}, removeOtherPlayer() {}, removeAllOtherPlayers() {},
     updateScoreDisplay() {}, audio: { playJump() {}, playCoin() {} }
   });

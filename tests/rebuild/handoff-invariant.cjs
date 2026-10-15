@@ -43,7 +43,9 @@ const executable = source.slice(kernel.start, kernel.end) + '\n' +
   'secureNormalizeZoneId', 'secureZoneFromPosition', 'secureZoneSocketUrl',
   'secureRememberStablePosition', 'secureCloseSocket', 'secureNormalizeLeaderboard',
   'secureHandleSocketMessage', 'secureOpenZoneSocket', 'secureWaitForHandoffResumeAck',
-  'secureResumeHandoffOnTarget', 'secureBeginZoneHandoff', 'secureReturnToMenu'
+  'secureResumeHandoffOnTarget', 'secureBeginZoneHandoff', 'secureReturnToMenu',
+  // Historical checkpoints predate chest cleanup; load the real helper when present.
+  ...ast.body.filter(n => n.type === 'FunctionDeclaration' && n.id.name === 'clearLuckyBoxMesh').map(n => n.id.name)
 ].map(declaration).join('\n') + '\n' + source.slice(movementOverride.start, movementOverride.end);
 
 async function flush() { for (let i = 0; i < 16; i++) await Promise.resolve(); }
@@ -66,7 +68,7 @@ function fixture() {
   const old = new Socket('ws://127.0.0.1/play?zone=4%2C4'); old.readyState = 1;
   const playerPos = { x: 1, y: 0, z: -75, set(x, y, z) { Object.assign(this, { x, y, z }); } };
   const c = vm.createContext({
-    WebSocket: Socket, Date: { now: () => now }, console: { warn() {}, error() {} },
+    luckyBox: null, WebSocket: Socket, Date: { now: () => now }, console: { warn() {}, error() {} },
     setTimeout(callback, delay) { const id = ++timerId; timers.set(id, { callback, due: now + delay }); return id; },
     clearTimeout(id) { timers.delete(id); }, requestAnimationFrame(callback) { callback(); },
     auth: { currentUser: { async getIdToken() { return 'synthetic-client-handoff-token'; } } },

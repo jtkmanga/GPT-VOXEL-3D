@@ -109,3 +109,51 @@ test('D010 authoritative snapshots reuse coin resources; cleanup respects retain
   assert.deepEqual(f.scene.children, [retained]);
   retained.geometry.dispose(); retained.material.dispose();
 });
+
+function chestFixture() {
+  const f = fixture();
+  f.luckyBox = null;
+  f.document = { getElementById: () => ({ classList: { add() {}, remove() {} } }) };
+  const world = fs.readFileSync('src/client/world.js', 'utf8');
+  const chest = acorn.parse(world, { ecmaVersion: 'latest' }).body.find(n => n.id?.name === 'createTreasureChest');
+  vm.runInContext(world.slice(chest.start, chest.end), f);
+  const secure = fs.readFileSync('src/client/secure-menu-economy.js', 'utf8');
+  for (const n of acorn.parse(secure, { ecmaVersion: 'latest' }).body) {
+    if (['clearLuckyBoxMesh', 'secureReturnToMenu'].includes(n.id?.name) ||
+      n.expression?.left?.name === 'spawnLuckyBoxes') vm.runInContext(secure.slice(n.start, n.end), f);
+  }
+  Object.assign(f, { state: {}, secureHandoffResumeTimer: null, secureClearRemoteState() {} });
+  return f;
+}
+function chestResources(mesh) {
+  const resources = new Set();
+  mesh.traverse(o => { if (o.geometry) resources.add(o.geometry);
+    for (const m of (Array.isArray(o.material) ? o.material : [o.material])) if (m) resources.add(m); });
+  return [...resources];
+}
+test('D011 chest replacement and menu return release nested resources exactly once', () => {
+  const f = chestFixture(); f.spawnLuckyBoxes();
+  for (let i = 0; i < 3; i++) {
+    const old = f.luckyBox.mesh, counts = chestResources(old).map(watch);
+    assert.ok(counts.length > 3);
+    f.spawnLuckyBoxes();
+    assert.ok(counts.every(count => count() === 1));
+    assert.equal(old.parent, null); assert.equal(f.scene.children.length, 1);
+    assert.equal(f.luckyBox.active, false); assert.equal(f.luckyBox.mesh.visible, false);
+  }
+  const counts = chestResources(f.luckyBox.mesh).map(watch);
+  f.secureReturnToMenu(); f.secureReturnToMenu();
+  assert.ok(counts.every(count => count() === 1));
+  assert.equal(f.luckyBox, null); assert.equal(f.scene.children.length, 0);
+});
+test('D011 retained scene owners protect shared chest geometry and material', () => {
+  const f = chestFixture(); f.spawnLuckyBoxes();
+  const piece = f.luckyBox.mesh.children[0];
+  const retained = new THREE.Mesh(piece.geometry, piece.material);
+  f.scene.add(retained);
+  const counts = [watch(piece.geometry), watch(piece.material)];
+  f.secureReturnToMenu();
+  assert.deepEqual(counts.map(count => count()), [0, 0]);
+  assert.deepEqual(f.scene.children, [retained]);
+  retained.geometry.dispose(); retained.material.dispose();
+});

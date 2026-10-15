@@ -177,3 +177,15 @@ public Firebase web configuration, privately compared with prior audited source;
 not private/admin/database credentials. Values were not printed or used.
 Current files passed check-secrets.cjs. No confirmed new privileged credential;
 prior scan scope/pattern and account-setting limitations remain.
+
+## D011 increment — 2026-10-15
+
+Public source 91351e1ca9cecc8d999c3667c03f78317ffa3642 minus audited
+6f7da691452e86dfe23debbd0fee61a552d1250c: 14 objects (1 commit, 7 trees,
+6 blobs), no new archive members/gaps. All other advertised refs unchanged.
+Scanner exit 1: two detections at index.html:632, blob
+1e345bb4da1e835dd6d5731a2efb021b5566a8ad, identify the same unchanged Firebase
+public web assignment, verified privately against prior source. No private/admin
+credential identified; no values printed or used. Current-file scan passed.
+No confirmed new privileged credential; previous exclusions and bounded-pattern
+limitations remain, including unverified account settings.

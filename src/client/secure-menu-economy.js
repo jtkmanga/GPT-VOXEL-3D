@@ -1,5 +1,26 @@
+        function clearLuckyBoxMesh() {
+            const mesh = luckyBox && luckyBox.mesh;
+            if (!mesh) { luckyBox = null; return; }
+            if (scene) scene.remove(mesh);
+            const geometries = new Set(), materials = new Set();
+            mesh.traverse(obj => {
+                if (obj.geometry) geometries.add(obj.geometry);
+                const list = Array.isArray(obj.material) ? obj.material : [obj.material];
+                list.forEach(material => { if (material) materials.add(material); });
+            });
+            if (scene) scene.traverse(obj => {
+                geometries.delete(obj.geometry);
+                const list = Array.isArray(obj.material) ? obj.material : [obj.material];
+                list.forEach(material => materials.delete(material));
+            });
+            geometries.forEach(geometry => geometry.dispose());
+            materials.forEach(material => material.dispose());
+            luckyBox = null;
+        }
+
         function secureReturnToMenu() {
             if (typeof secureAbortClientConnections === 'function') secureAbortClientConnections('Returned to menu');
+            clearLuckyBoxMesh();
             state.isPlaying = false;
             state.isPaused = false;
             secureGameReady = false;
@@ -228,7 +249,7 @@
         }
 
         spawnLuckyBoxes = function() {
-            if (luckyBox?.mesh && scene) scene.remove(luckyBox.mesh);
+            clearLuckyBoxMesh();
             const chestMesh = createTreasureChest();
             chestMesh.visible = false;
             scene.add(chestMesh);

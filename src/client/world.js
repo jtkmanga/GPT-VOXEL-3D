@@ -282,10 +282,7 @@
             // สำคัญ: map ทั้งหมดถูกสร้างจาก seed ของ serverId เดียวกัน
             rebuildServerStaticMap(serverId);
 
-            if (luckyBox && luckyBox.mesh) {
-                scene.remove(luckyBox.mesh);
-                luckyBox = null;
-            }
+            clearLuckyBoxMesh();
 
             listenToCoinsRealtime(serverId);
             spawnLuckyBoxes(serverId);

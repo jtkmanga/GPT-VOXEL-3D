@@ -2,9 +2,18 @@
 
 Updated: 2026-10-15 (Asia/Bangkok).
 Branch: `development/voxel-continuous`.
-Starting source commit: `6f7da691452e86dfe23debbd0fee61a552d1250c`.
-Task: D010 — release old coin-batch resources on map rebuild.
+Starting source commit: `91351e1ca9cecc8d999c3667c03f78317ffa3642`.
+Task: D011 — release nested Lucky Box resources on replacement and menu return.
 Status: completed; external D003 gates remain blocked.
+
+## D011 completed (2026-10-15)
+
+- Reproduced missing nested chest disposal during replacement and retained chest objects after menu return. Added clearLuckyBoxMesh to secure-menu-economy.js: traverse chest descendants, deduplicate geometry/materials, preserve retained scene owners, dispose unused resources and clear the box reference. Called from secure spawn replacement, menu return and world.js map initialization. Regenerated index.html.
+- Extended static-map-lifecycle.test.cjs with three chest replacements, repeated menu cleanup, fresh hidden/inactive box state, and retained shared-resource protection. Lifecycle/P8 client suite: 15 passed, zero failed/skipped, including unchanged countdown/authoritative-state checks.
+- Full-suite runs exposed missing dependencies in isolated handoff fixtures. Updated handoff-invariant.cjs to load the actual cleanup helper when present in the tested checkpoint and initialize luckyBox=null; staging-client-fixture.cjs now initializes the same world state. No assertions weakened or skipped. Historical checkpoints without the helper remain supported.
+- Full npm test passed after fixture fixes. Static, syntax, generated-client, current-file secrets and whitespace checks passed. Node commands use NODE_PATH=/workspace/scratch/e72adbdaf5bc/voxel-dev/node_modules.
+- Incremental audit: 14 objects (1 commit, 7 trees, 6 blobs) after 6f7da69; two detections of one unchanged public Firebase web assignment, no new archives/gaps or confirmed privileged credentials. Other advertised refs unchanged; prior audit limitations remain.
+- These are local resource lifecycle/logic checks, not measured browser GPU memory, physical-mobile, live staging or capacity evidence. External blockers unchanged. No production/account/deployment changes.
 
 ## D010 completed (2026-10-15)
 
@@ -132,7 +141,7 @@ Starting source: 0e3fcd1746cd0c55f011a2b8fda58d86a82e5284.
 
 ## Next bounded task
 
-D011: inspect Lucky Box resource ownership across server changes and return-to-menu cleanup; reproduce any missing disposal, preserve shared resources, and test countdown/authoritative state behavior. Keep browser/GPU and live gates separate.
+D012: audit input reset when focus is lost, touch is cancelled or menus interrupt movement. Reproduce any stuck movement/jump state and add behavioral regressions without changing authoritative movement rules. Keep live mobile validation pending.
 
 Deferred D003: verify generated staging client and existing browser scenarios with the
 available permitted browser tooling. Check tooling availability first. Preserve
