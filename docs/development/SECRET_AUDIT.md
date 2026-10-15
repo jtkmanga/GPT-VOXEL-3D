@@ -152,3 +152,16 @@ fixture. Compared privately against the prior audited source without printing
 values. Current changed files pass check-secrets.cjs. No confirmed new privileged
 credential; no credential use or account actions. Prior scan exclusions and
 account-setting limitations remain.
+
+## D009 increment — 2026-10-15
+
+Public source 44ae105e99cf0a57bdb9b4d2d8aa0edd942d85d7 minus audited
+250005dce44741de6e2a4587d40c903c8f662978: 10 objects (1 commit, 5 trees,
+4 blobs), no new archive members/gaps. Other advertised refs unchanged.
+Scanner exit 1: assignment candidate at tests/rebuild/p6-client.test.cjs:102,
+blob 6911a7da9df2783435df04c5c9bed3ef60b473c7, is an unchanged synthetic
+test token, privately compared against prior audited source. No value printed
+or used. Current-file configuration/credential scan passed; public Firebase web
+configuration remains unchanged, distinct from private/admin credentials.
+No confirmed new privileged credential. Existing pattern, scope and account-side
+verification limitations still apply.

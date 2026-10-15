@@ -1578,9 +1578,26 @@ return { MOVEMENT, validMovementInput, validMovementFrames, integrateMovement };
         }
 
         function clearStaticMapObjects() {
+            const geometries = new Set();
+            const materials = new Set();
             staticMapObjects.forEach(obj => {
-                if (obj && scene) scene.remove(obj);
+                if (!obj) return;
+                if (scene) scene.remove(obj);
+                if (obj.geometry) geometries.add(obj.geometry);
+                const list = Array.isArray(obj.material) ? obj.material : [obj.material];
+                list.forEach(material => { if (material) materials.add(material); });
             });
+            // Only release resources no longer used by the retained scene.
+            // Building windows share materials; dispose each unique resource once.
+            if (scene && typeof scene.traverse === 'function') {
+                scene.traverse(obj => {
+                    geometries.delete(obj.geometry);
+                    const list = Array.isArray(obj.material) ? obj.material : [obj.material];
+                    list.forEach(material => materials.delete(material));
+                });
+            }
+            geometries.forEach(geometry => geometry.dispose());
+            materials.forEach(material => material.dispose());
             staticMapObjects.length = 0;
             nameplateOccluders.length = 0;
             buildings.length = 0;

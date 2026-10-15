@@ -2,9 +2,18 @@
 
 Updated: 2026-10-15 (Asia/Bangkok).
 Branch: `development/voxel-continuous`.
-Starting source commit: `250005dce44741de6e2a4587d40c903c8f662978`.
-Task: D008 — validate shortlist equivalence against exhaustive occlusion.
+Starting source commit: `44ae105e99cf0a57bdb9b4d2d8aa0edd942d85d7`.
+Task: D009 — release removed static-map geometry and materials.
 Status: completed; external D003 gates remain blocked.
+
+## D009 completed (2026-10-15)
+
+- Reproduced missing resource disposal in clearStaticMapObjects: both new lifecycle tests failed before the fix. Removing scene objects alone did not dispatch geometry/material disposal.
+- Updated src/client/world.js to deduplicate removed geometries/materials, preserve resources referenced anywhere in the retained scene, and dispose remaining resources once. Supports shared materials and material arrays; existing map/occluder/collision-array cleanup remains. Regenerated index.html.
+- Added tests/rebuild/static-map-lifecycle.test.cjs: three generated-map build/cleanup cycles, duplicate entries, repeated empty cleanup, shared resources retained under a scene group, and untouched ground resources. Targeted lifecycle/P6/P8 suite passed 26/26, zero failures/skips.
+- Full npm test passed on the modified source. check-static.cjs, check-syntax.cjs (137 files), build-client.cjs --check, check-secrets.cjs (156 files) and git diff --check passed. Commands used NODE_PATH=/workspace/scratch/e72adbdaf5bc/voxel-dev/node_modules. The earlier full-suite process result was unavailable after interruption; reran it instead of assuming success.
+- Incremental credential audit from 250005d to starting source: 10 objects (1 commit, 5 trees, 4 blobs), one unchanged synthetic test-token candidate, no new archive members/gaps. All other advertised refs unchanged. No confirmed new privileged credential; prior bounded audit limitations remain.
+- Evidence establishes local Three.js disposal lifecycle, not measured GPU memory recovery or mobile stability. Static map meshes are flat and untextured; this change does not claim general texture/group ownership management. No production/account/deployment changes. External gates remain pending.
 
 ## D008 completed (2026-10-15)
 
@@ -114,7 +123,7 @@ Starting source: 0e3fcd1746cd0c55f011a2b8fda58d86a82e5284.
 
 ## Next bounded task
 
-D009: audit static-map resource lifetime during repeated rebuilds. Check whether removed building/window/tree meshes release owned geometries and shared materials exactly once without disposing resources still used by the retained scene; reproduce and fix any leak with lifecycle regressions. Live browser/mobile memory evidence remains separate.
+D010: audit coin mesh resource lifetime across server-map rebuild and authoritative snapshot replacement. Reuse existing ownership conventions, reproduce any missing disposal before fixing it, and preserve shared resources and authoritative coin behavior. Live browser/mobile memory evidence remains separate.
 
 Deferred D003: verify generated staging client and existing browser scenarios with the
 available permitted browser tooling. Check tooling availability first. Preserve
