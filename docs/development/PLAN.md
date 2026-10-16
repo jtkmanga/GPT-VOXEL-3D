@@ -75,4 +75,5 @@ item. Never substitute local results for live gates above.
 - DONE D028: browser interpreter environment is missing; fixed open shop surviving menu return with regression and full local suite.
 - DONE D029: restored isolated Playwright; headless-shell archive still fails. Added reconnect-backoff menu cancellation regression, 19 local tests passed.
 - DONE D030: menu exit during reconnect authentication rejects late open/welcome and cleans resources; 20 local session tests passed, runtime unchanged.
-- NEXT D031: exhausted reconnect attempts return to menu without retained timers or fresh-session fallback; local session fixture only.
+- DONE D031: all three failed reconnect attempts return to menu, retain resume-only authentication and release timers; 21 local session tests passed.
+- NEXT D032: old-session callbacks after menu return and new-session entry must not mutate the replacement session; local lifecycle regression.

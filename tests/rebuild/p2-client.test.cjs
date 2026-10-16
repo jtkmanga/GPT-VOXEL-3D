@@ -354,6 +354,43 @@ test('D030 menu exit during reconnect authentication rejects late welcome and re
   assert.equal(f.timers.size, 0);
 });
 
+test('D031 exhausted reconnect attempts return to menu without fresh-session fallback or timers', async () => {
+  const f = await fixture();
+  const original = await f.connect();
+  const ticket = f.c.secureGetResumeTicket('4,4').resumeToken;
+  original.close(1006, 'Synthetic network loss');
+  const failed = [];
+  for (const delay of [250, 500, 1000]) {
+    const created = f.nextSocket();
+    await f.advance(delay);
+    const socket = await created;
+    socket.open();
+    assert.equal(socket.sent.length, 1);
+    assert.equal(socket.sent[0].resumeToken, ticket, 'every retry requires the original capability');
+    assert.equal(f.evaluate('state.isPlaying'), true);
+    socket.close(1006, 'Synthetic retry failure');
+    failed.push(socket);
+    await flush();
+  }
+  assert.equal(f.evaluate('state.isPlaying'), false);
+  assert.equal(f.evaluate('state.isPaused'), false);
+  assert.equal(f.evaluate('secureReconnectInProgress'), false);
+  assert.equal(f.evaluate('secureGameSocket'), null);
+  assert.equal(f.evaluate('secureGameReady'), false);
+  assert.equal(f.events.filter(event => event.kind === 'alert').length, 1);
+  for (const socket of failed) {
+    socket.onopen();
+    socket.receive(f.welcome());
+    assert.equal(socket.readyState, 3);
+    assert.equal(socket.sent.length, 1);
+  }
+  await f.advance(120_000);
+  assert.equal(f.evaluate('state.isPlaying'), false);
+  assert.equal(f.evaluate('secureGameSocket'), null);
+  assert.equal(f.sockets.length, 4, 'three failed retries must not start a fresh session');
+  assert.equal(f.timers.size, 0);
+});
+
 test('P2 client cancelled reconnect and expired ticket cannot fall back to a new session', async () => {
   const f = await fixture();
   assert.equal(await f.c.secureResumeDisconnectedSocket('4,4', f.user.uid), false);

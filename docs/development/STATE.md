@@ -2,9 +2,17 @@
 
 Updated: 2026-10-16 (Asia/Bangkok).
 Branch: `development/voxel-continuous`.
-Starting source commit: `b5eb2345e00f17943fb42b5c87c5f4b313a622e4`.
-Task: D030 — menu cancellation during reconnect authentication.
+Starting source commit: `5f30df901f28212f6a12c998ff9812f9df27f88b`.
+Task: D031 — exhausted reconnect attempts fail closed.
 Status: completed; browser execution and external D003 gates remain blocked.
+
+## D031 completed (2026-10-16)
+
+- Added p2-client.test.cjs scenario executing authored abnormal socket close, all three reconnect attempts with 250/500/1000 ms backoff, resume authentication and transport failure before welcome. Every retry must carry the original resume capability, with no fresh-session fallback.
+- Verified menu return after exhaustion, stopped/unpaused gameplay, cleared reconnect flag, no active/ready socket, one failure notification, all replacement sockets closed and zero timers/no additional connection after 120 seconds. Late open/welcome callbacks on all failed sockets cannot revive gameplay or send again. No runtime defect reproduced; runtime/generated client unchanged.
+- NODE_PATH=/workspace/scratch/voxel-d016/node_modules node --test tests/rebuild/p2-client.test.cjs: 21 passed, zero failures/skips. node --check, current-file credential scan (160 files) and git diff --check passed. Full npm not repeated for test-only addition; D028 runtime evidence remains applicable.
+- Incremental audit: starting source minus b5eb234 has 10 objects (1 commit, 5 trees, 4 blobs), no archive members/gaps. Nine assignment candidates are unchanged synthetic fixtures, privately compared. Other refs unchanged; prior pattern/scope/account limits remain.
+- Local mocked transport/auth/DOM/clock only, not browser/live staging/mobile/capacity evidence. External blockers unchanged; no production/account/payment/deployment actions. Next: verify old-session callbacks cannot mutate a newly entered session after menu return, rather than repeating stopped-menu checks.
 
 ## D030 completed (2026-10-16)
 
