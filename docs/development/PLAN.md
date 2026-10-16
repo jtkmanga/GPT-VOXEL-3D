@@ -77,4 +77,5 @@ item. Never substitute local results for live gates above.
 - DONE D030: menu exit during reconnect authentication rejects late open/welcome and cleans resources; 20 local session tests passed, runtime unchanged.
 - DONE D031: all three failed reconnect attempts return to menu, retain resume-only authentication and release timers; 21 local session tests passed.
 - DONE D032: stale callbacks from authenticated and pending sockets cannot mutate a replacement session; 22 local session tests passed.
-- NEXT D033: pending Firebase refresh cancelled by menu return, followed by same-UID new session and late token resolution; local lifecycle regression.
+- DONE D033: late refresh success/failure cannot affect a same-UID replacement session; 24 local session tests passed.
+- NEXT D034: bounded browser prerequisite/artifact recheck; if unavailable, review missing auth-refresh ACK handling against the server lease locally. Do not label local evidence as browser/live.

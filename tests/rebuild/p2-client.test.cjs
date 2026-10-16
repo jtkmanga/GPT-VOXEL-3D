@@ -207,6 +207,39 @@ test('P2 client lease notices cannot postpone or repeat the Firebase refresh tim
   assert.equal(socket.sent.length, 2);
 });
 
+for (const outcome of ['resolve', 'reject']) {
+  test(`D033 old refresh ${outcome} cannot affect a same-UID replacement session`, async () => {
+    const f = await fixture();
+    const original = await f.connect('4,4', f.session({ tokenExpiresAt: f.now() + 61_000 }));
+    const token = deferred();
+    const getIdToken = f.user.getIdToken;
+    f.user.getIdToken = () => token.promise;
+    const refresh = f.fireNext();
+    f.c.secureReturnToMenu();
+    assert.equal(original.readyState, 3);
+    f.user.getIdToken = getIdToken;
+    f.evaluate('state.isPlaying = true');
+    const replacement = await f.connect('4,4', f.session({ sessionId: 'synthetic-replacement-session' }));
+    const timerEntries = [...f.timers].map(([id, timer]) => [id, timer.at]);
+    if (outcome === 'resolve') token.resolve('synthetic-delayed-refresh');
+    else token.reject(new Error('Synthetic refresh failure'));
+    await refresh; await flush();
+    assert.equal(original.sent.length, 1);
+    assert.equal(replacement.sent.length, 1);
+    assert.equal(replacement.readyState, 1);
+    assert.equal(f.evaluate('secureGameSocket'), replacement);
+    assert.equal(f.evaluate('secureGameReady'), true);
+    assert.equal(f.evaluate('state.isPlaying'), true);
+    assert.equal(f.c.secureGetResumeTicket('4,4').sessionId, 'synthetic-replacement-session');
+    assert.deepEqual([...f.timers].map(([id, timer]) => [id, timer.at]), timerEntries);
+    assert.equal(f.events.filter(event => event.kind === 'alert').length, 0);
+    assert.equal(f.sockets.length, 2);
+    f.c.secureReturnToMenu();
+    await flush();
+    assert.equal(f.timers.size, 0);
+  });
+}
+
 test('P2 client UID switch while refreshing cannot transmit another account token', async () => {
   const f = await fixture();
   const socket = await f.connect('4,4', f.session({ tokenExpiresAt: f.now() + 61_000 }));

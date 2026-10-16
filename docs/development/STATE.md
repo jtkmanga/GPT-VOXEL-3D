@@ -2,9 +2,17 @@
 
 Updated: 2026-10-16 (Asia/Bangkok).
 Branch: `development/voxel-continuous`.
-Starting source commit: `a0b1ddfd08e182bc5e63cffb0bde715376b1d5db`.
-Task: D032 — stale callbacks cannot mutate a replacement session.
+Starting source commit: `965f57e2d16ccfd8e08327cdfbc797786821fbcc`.
+Task: D033 — late token refresh isolation across same-UID sessions.
 Status: completed; browser execution and external D003 gates remain blocked.
+
+## D033 completed (2026-10-16)
+
+- Added two p2-client.test.cjs regressions executing the authored token-refresh timer with a deferred synthetic SDK result. Return to menu while refresh awaits, connect a new session with the same UID and zone, then resolve or reject the old request.
+- Both outcomes preserve the replacement socket/readiness/gameplay/session identity and its exact timer IDs/deadlines. Neither sends another authentication packet, closes the replacement, emits an alert or creates another socket; final teardown leaves zero timers. No runtime defect reproduced; runtime/generated client unchanged.
+- NODE_PATH=/workspace/scratch/voxel-d016/node_modules node --test tests/rebuild/p2-client.test.cjs: 24 passed, zero failures/skips. node --check, current-file credential scan (160 files) and git diff --check passed. Full npm not repeated for test-only addition; D028 runtime evidence remains applicable.
+- Incremental audit: source minus a0b1ddf has 10 objects (1 commit, 5 trees, 4 blobs), no archive members/gaps. Nine assignment candidates are unchanged synthetic fixtures, privately compared. Other advertised refs unchanged; prior scope/pattern/account limits remain.
+- Local mocked SDK/socket/DOM/clock only, not live Firebase or browser evidence. External blockers unchanged; no production/account/payment/deployment actions. Next: bounded browser prerequisite/artifact recheck after intervening local tasks; if still unavailable, review missing auth-refresh ACK handling against the server lease without weakening tests.
 
 ## D032 completed (2026-10-16)
 
