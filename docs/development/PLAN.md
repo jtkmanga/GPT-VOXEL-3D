@@ -78,4 +78,5 @@ item. Never substitute local results for live gates above.
 - DONE D031: all three failed reconnect attempts return to menu, retain resume-only authentication and release timers; 21 local session tests passed.
 - DONE D032: stale callbacks from authenticated and pending sockets cannot mutate a replacement session; 22 local session tests passed.
 - DONE D033: late refresh success/failure cannot affect a same-UID replacement session; 24 local session tests passed.
-- NEXT D034: bounded browser prerequisite/artifact recheck; if unavailable, review missing auth-refresh ACK handling against the server lease locally. Do not label local evidence as browser/live.
+- DONE D034: browser interpreter unavailable; missing refresh ACK/policy-close client regression and separate Worker security suite pass (51 tests). Browser gate remains blocked.
+- NEXT D035: wire missing-refresh client behavior to genuine bundled-Worker expiry rejection in one local integration test; no live evidence claim.

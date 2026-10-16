@@ -207,6 +207,28 @@ test('P2 client lease notices cannot postpone or repeat the Firebase refresh tim
   assert.equal(socket.sent.length, 2);
 });
 
+test('D034 missing refresh ACK does not retry speculatively or bypass a policy close', async () => {
+  const f = await fixture();
+  const socket = await f.connect('4,4', f.session({ tokenExpiresAt: f.now() + 61_000 }));
+  await f.advance(1000);
+  assert.equal(socket.sent.length, 2);
+  assert.deepEqual(f.requests, [false, true]);
+  await f.advance(60_000);
+  assert.equal(socket.sent.length, 2, 'no unacknowledged refresh loop');
+  assert.equal(f.timers.size, 0);
+  // Transport injects server policy closure; this is not a live lease test.
+  socket.close(1008, 'Synthetic expired authentication');
+  await flush();
+  socket.receive({ type: 'auth_refreshed', session: f.session() });
+  await f.advance(120_000);
+  assert.equal(f.evaluate('state.isPlaying'), false);
+  assert.equal(f.evaluate('secureGameSocket'), null);
+  assert.equal(f.evaluate('secureGameReady'), false);
+  assert.equal(f.sockets.length, 1, 'policy close cannot start resume or fresh auth');
+  assert.equal(f.timers.size, 0);
+  assert.equal(socket.sent.length, 2);
+});
+
 for (const outcome of ['resolve', 'reject']) {
   test(`D033 old refresh ${outcome} cannot affect a same-UID replacement session`, async () => {
     const f = await fixture();

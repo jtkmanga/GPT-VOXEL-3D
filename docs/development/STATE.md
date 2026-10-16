@@ -2,9 +2,17 @@
 
 Updated: 2026-10-16 (Asia/Bangkok).
 Branch: `development/voxel-continuous`.
-Starting source commit: `965f57e2d16ccfd8e08327cdfbc797786821fbcc`.
-Task: D033 — late token refresh isolation across same-UID sessions.
+Starting source commit: `345fe7d9cb0671cac05d40fb97e17aeeb7923ef0`.
+Task: D034 — browser prerequisite recheck and missing refresh ACK review.
 Status: completed; browser execution and external D003 gates remain blocked.
+
+## D034 completed (2026-10-16)
+
+- Bounded browser prerequisite recheck: the D029 isolated environment's bin/python is now missing; installer invocation exited 127 before download. No browser launched; D029 malformed-archive result remains historical. Browser gate stays blocked, with no new owner/account action required.
+- Added p2-client.test.cjs regression withholding refresh ACK beyond the advertised original token expiry, then injecting a policy close and late ACK. Verified one refresh only, no speculative retry timer, stopped gameplay after policy close, no new connection or late-ACK revival and no timers/sends afterward. Client does not independently infer server acceptance from an absent ACK.
+- Reviewed server counterpart: existing p2-security expiry regression executes bundled Worker token checks and denies rewards after expiry despite a retained resume lease. Reran it with the complete client/security suites: NODE_PATH=/workspace/scratch/voxel-d016/node_modules node --test tests/rebuild/p2-client.test.cjs tests/rebuild/p2-security.test.cjs — 51 passed, zero failures/skips. node --check, current-file credential scan (160 files) and git diff --check passed.
+- No runtime defect reproduced or runtime/generated-client changes; full npm not repeated for test-only addition. Incremental source audit minus 965f57e: 10 objects (1 commit, 5 trees, 4 blobs), no archive members/gaps; nine unchanged synthetic candidates privately compared, other refs unchanged. Prior audit/account limits remain.
+- Client policy close is injected, not wired to Worker transport; server expiry is separately exercised. Neither is live Firebase, browser, staging, mobile or capacity evidence. No production/account/payment/deployment action. Next: connect the missing-refresh scenario to genuine Worker expiry rejection in one local integration test, preserving this evidence distinction.
 
 ## D033 completed (2026-10-16)
 
