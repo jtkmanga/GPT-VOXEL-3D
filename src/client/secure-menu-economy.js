@@ -37,6 +37,7 @@
             secureCurrentZoneId = null;
             secureClearRemoteState();
             document.getElementById('exit-modal').classList.add('hidden');
+            document.getElementById('shop-modal').classList.add('hidden');
             document.getElementById('game-hud').classList.add('hidden');
             document.getElementById('player-nametag').classList.add('hidden');
             document.getElementById('start-screen').classList.remove('hidden');

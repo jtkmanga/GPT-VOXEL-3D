@@ -76,6 +76,22 @@ test('D025 matching expired-claim rejection offers return to gameplay without a 
   assert.equal(f.elements.get('btn-close-wheel').classList.contains('hidden'), true);
   assert.equal(f.elements.get('btn-spin-wheel').classList.contains('hidden'), false);
 });
+test('D028 returning to menu dismisses an open shop without retaining a paused overlay', async () => {
+  const f = await fixture(), c = f.context;
+  c.closeWheelModal(); c.updateShopUI = () => {};
+  const source = fs.readFileSync('src/client/menu-shop.js', 'utf8');
+  const node = acorn.parse(source, { ecmaVersion: 'latest' }).body.find(node => node.id?.name === 'openShopModal');
+  vm.runInContext(source.slice(node.start, node.end), c);
+  c.openShopModal();
+  assert.equal(f.elements.get('shop-modal').classList.contains('hidden'), false);
+  assert.equal(c.state.isPaused, true);
+  c.secureReturnToMenu();
+  assert.equal(f.elements.get('shop-modal').classList.contains('hidden'), true);
+  assert.equal(c.state.isPlaying, false); assert.equal(c.state.isPaused, false);
+  assert.equal(f.elements.get('start-screen').classList.contains('hidden'), false);
+  c.secureReturnToMenu();
+  assert.equal(f.elements.get('shop-modal').classList.contains('hidden'), true);
+});
 test('D021 returning to menu cancels wheel UI and stale animation completion', async () => {
   const f = await fixture(), c = f.context;
   c.secureAnimateWheelToReward(100); const stale = f.frames.shift();

@@ -2,9 +2,17 @@
 
 Updated: 2026-10-16 (Asia/Bangkok).
 Branch: `development/voxel-continuous`.
-Starting source commit: `1099aef1d86648f138e2c2123462cda529d229a8`.
-Task: D027 — genuine Worker expiry through client timeout/exit.
+Starting source commit: `efc7f624de28fc3456e07ea34f8e22a00b0ab153`.
+Task: D028 — browser availability check and shop teardown on menu return.
 Status: completed; browser execution and external D003 gates remain blocked.
+
+## D028 completed (2026-10-16)
+
+- Rechecked browser prerequisites: no Chromium command found, system Python cannot import Playwright, and the prior isolated environment's python executable is missing (python3/python3.12 are dangling links to python). Installer attempts via those paths exited 127 before any download or browser execution. D018 archive-download evidence remains historical, not a current installation attempt. Browser gate remains blocked; no test was skipped/relabelled as passing.
+- Selected the planned local menu/session fallback. Reproduced open shop overlay surviving secureReturnToMenu in wheel-animation-lifecycle.test.cjs. Added shop-modal hiding alongside existing exit/wheel cleanup in secure-menu-economy.js and regenerated index.html.
+- Regression executes authored shop open and menu return, verifying overlay hidden, gameplay/paused state cleared, start screen visible and repeated teardown safe. Targeted wheel-animation/input-lifecycle suites: 16 passed, zero failures/skips. Full npm test and static, syntax (141), generated-client, current-file credential (160), whitespace checks passed.
+- Incremental audit: starting source minus 1099aef contains 10 objects (1 commit, 5 trees, 4 blobs), no findings/archive members/gaps. Other refs unchanged. Existing archive coverage, pattern/scope/account limits remain; no credentials used.
+- Local DOM fixture evidence, not browser/live/mobile evidence. No production/account/payment/deployment action. Browser tooling requires rebuilding the isolated interpreter environment before another download can be attempted.
 
 ## D027 completed (2026-10-16)
 
@@ -270,7 +278,7 @@ Starting source: 0e3fcd1746cd0c55f011a2b8fda58d86a82e5284.
 
 ## Next bounded task
 
-D028: revisit D018 browser executable availability and, if permitted downloads now work, run the existing isolated browser scenarios against current source without weakening assertions. If still blocked, record only a changed blocker and select a safe local menu/session lifecycle gap rather than repeating completed Lucky Box cases.
+D029: rebuild the missing isolated Python/Playwright environment using available permitted local tooling, then attempt a bounded browser install. Preserve existing assertions and network isolation; if blocked, select another untested local session lifecycle case. Do not assume D018 dependencies still exist.
 
 Deferred D003: verify generated staging client and existing browser scenarios with the
 available permitted browser tooling. Check tooling availability first. Preserve

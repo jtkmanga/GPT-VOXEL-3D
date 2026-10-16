@@ -72,4 +72,5 @@ item. Never substitute local results for live gates above.
 - DONE D025: explicit correlated expiry rejection exposes return-to-play without reward; 19 targeted tests and full suite passed.
 - DONE D026: correlated late expiry handled independently of pending attempt, preserving newer/rewarded actions; 21 targeted tests and full suite passed.
 - DONE D027: genuine Worker expiry delivered after client timeout enables neutral exit with unchanged score/cooldown; 14 targeted tests passed, runtime unchanged.
-- NEXT D028: recheck browser executable availability and existing isolated scenarios; skip unchanged blocker and choose an untested local menu/session lifecycle gap if unavailable.
+- DONE D028: browser interpreter environment is missing; fixed open shop surviving menu return with regression and full local suite.
+- NEXT D029: rebuild isolated browser tooling before bounded install retry; retain browser/live gates and safe local fallback.
