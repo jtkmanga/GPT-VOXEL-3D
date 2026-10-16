@@ -3642,6 +3642,7 @@ return { MOVEMENT, validMovementInput, validMovementFrames, integrateMovement };
                     }
 
                     secureGameReady = true;
+                    if (!isSmoothHandoffWelcome && typeof secureRetryPendingBoxClaim === 'function') secureRetryPendingBoxClaim();
                     break;
                 }
                 case "join": {
@@ -3723,6 +3724,7 @@ return { MOVEMENT, validMovementInput, validMovementFrames, integrateMovement };
                     if (message.requestId && message.claimed === false &&
                         message.requestId === luckyBox?._claimActionRequestId) {
                         luckyBox._claimActionRequestId = null;
+                        luckyBox._claimPendingRequestId = null;
                         luckyBox._actionCycle = null;
                     }
                     secureApplyLuckyBoxState(message.box || message.luckyBox || message, message.serverNow);
@@ -3730,6 +3732,7 @@ return { MOVEMENT, validMovementInput, validMovementFrames, integrateMovement };
                 case "box_spin_ready":
                     if (message.requestId && luckyBox?._claimActionRequestId &&
                         message.requestId !== luckyBox._claimActionRequestId) break;
+                    if (luckyBox) luckyBox._claimPendingRequestId = null;
                     secureApplyLuckyBoxState(message.box || message.luckyBox || null, message.serverNow);
                     triggerLuckyBoxModal();
                     break;
@@ -3753,6 +3756,9 @@ return { MOVEMENT, validMovementInput, validMovementFrames, integrateMovement };
                 }
                 case "box_error":
                     console.warn('Lucky Box:', message.message || message);
+                    if (luckyBox?._claimPendingRequestId && message.requestId === luckyBox._claimPendingRequestId) {
+                        luckyBox._claimPendingRequestId = null;
+                    }
                     if (luckyBox?._spinPendingRequestId &&
                         (!message.requestId || message.requestId === luckyBox._spinPendingRequestId)) {
                         luckyBox._spinPendingRequestId = null;
@@ -4470,6 +4476,19 @@ return { MOVEMENT, validMovementInput, validMovementFrames, integrateMovement };
             timerEl.innerText = luckyBox.active ? 'พร้อมเปิด!' : 'กำลังรอสถานะจาก Server...';
         }
 
+        function secureRetryPendingBoxClaim() {
+            const requestId = luckyBox?._claimPendingRequestId;
+            if (!requestId || luckyBox._actionUid !== auth.currentUser?.uid ||
+                !state.isPlaying || state.isPaused || secureHandoffInProgress ||
+                !luckyBox.claimed || luckyBox.claimExpiresAt <= secureNow() ||
+                !secureGameReady || !secureGameSocket || secureGameSocket.readyState !== WebSocket.OPEN) return;
+            // A snapshot does not identify the owner. Replay the original request
+            // for server authorization; only BOX_SPIN_READY may open the wheel.
+            try {
+                secureGameSocket.send(JSON.stringify({ type: "collect_box", requestId }));
+            } catch (_) { /* Keep the unresolved identity for a later resume. */ }
+        }
+
         function secureRequestLuckyBoxCollect() {
             if (secureHandoffInProgress || !luckyBox || !luckyBox.active || luckyBox.collecting) return;
             if (!secureGameReady || !secureGameSocket || secureGameSocket.readyState !== WebSocket.OPEN) return;
@@ -4481,6 +4500,7 @@ return { MOVEMENT, validMovementInput, validMovementFrames, integrateMovement };
                 luckyBox._spinActionRequestId = null;
             }
             luckyBox.collecting = true;
+            luckyBox._claimPendingRequestId = luckyBox._claimActionRequestId;
             setTimeout(() => { if (luckyBox) luckyBox.collecting = false; }, 1200);
             try {
                 secureGameSocket.send(JSON.stringify({ type: "collect_box",

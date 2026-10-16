@@ -2,9 +2,17 @@
 
 Updated: 2026-10-16 (Asia/Bangkok).
 Branch: `development/voxel-continuous`.
-Starting source commit: `77c23b6ae94316e7d6f2cbea40e7166d65d98ca7`.
-Task: D022 — pending spin UI across local resume.
+Starting source commit: `4f0726ab6f8722fbbdcab15bbfdc1581504aafd8`.
+Task: D023 — recover unresolved claim after resumed claimed snapshot.
 Status: completed; browser execution and external D003 gates remain blocked.
+
+## D023 completed (2026-10-16)
+
+- Reproduced a missing recovery request after lost claim ACK: the resumed claimed snapshot makes the box inactive, so normal contact cannot retry. Added explicit unresolved claim identity and a bounded welcome-time replay, using the same request ID only for the original account, active gameplay, unexpired claimed snapshot and available socket. A snapshot never grants ownership or opens the wheel; the server must return BOX_SPIN_READY. Matching acknowledgement, denial or rejected claim clears pending recovery. Server ownership/reward rules unchanged.
+- Changed secure-menu-economy.js, secure-socket-handoff.js and regenerated index.html. Added two luckybox-retry.test.cjs regressions for recovery, wrong-account denial, matching rejection, exact expiry, unrelated ACK, acknowledgement cleanup and no ownership inference from snapshots.
+- Targeted luckybox-retry/P8-luckybox/P8-client tests: 25 passed, zero failures/skips. Full npm test and static/syntax/generated-client/current-file credential/whitespace checks passed. Local fixtures only; no live transport, browser, mobile or capacity claim.
+- Incremental audit: starting source minus 77c23b6 contains 10 objects (1 commit, 5 trees, 4 blobs), no archive members/gaps. One assignment candidate in luckybox-retry.test.cjs:42 is the synthetic resume fixture from D022. No credential value used or disclosed. Other refs unchanged; previous scope/pattern/account limits remain.
+- Initial audit invocation rejected symbolic HEAD; rerun with explicit SHA completed. Initial generator invocation lacked NODE_PATH; rerun with locked dependencies succeeded before the final full-suite run. No assertions weakened. External blockers unchanged; no production/account/payment/deployment action.
 
 ## D022 completed (2026-10-16)
 
@@ -230,7 +238,7 @@ Starting source: 0e3fcd1746cd0c55f011a2b8fda58d86a82e5284.
 
 ## Next bounded task
 
-D023: review lost Lucky Box claim acknowledgement followed by a resumed claimed snapshot. Determine whether the client can recover its own pending claim without waiting for expiry or confusing another player's claim; add local behavioral evidence or fix a reproduced defect. Do not change server ownership rules or claim live evidence.
+D024: connect the client pending-claim recovery regression to the existing bundled Worker harness, including a competing claimant and lost ACK. Verify server denial/receipt replay and unchanged cooldown/score end to end through local ports; do not claim live evidence or change ownership rules.
 
 Deferred D003: verify generated staging client and existing browser scenarios with the
 available permitted browser tooling. Check tooling availability first. Preserve

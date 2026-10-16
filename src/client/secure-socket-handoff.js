@@ -415,6 +415,7 @@
                     }
 
                     secureGameReady = true;
+                    if (!isSmoothHandoffWelcome && typeof secureRetryPendingBoxClaim === 'function') secureRetryPendingBoxClaim();
                     break;
                 }
                 case protocol.WS_MESSAGE.JOIN: {
@@ -496,6 +497,7 @@
                     if (message.requestId && message.claimed === false &&
                         message.requestId === luckyBox?._claimActionRequestId) {
                         luckyBox._claimActionRequestId = null;
+                        luckyBox._claimPendingRequestId = null;
                         luckyBox._actionCycle = null;
                     }
                     secureApplyLuckyBoxState(message.box || message.luckyBox || message, message.serverNow);
@@ -503,6 +505,7 @@
                 case protocol.WS_MESSAGE.BOX_SPIN_READY:
                     if (message.requestId && luckyBox?._claimActionRequestId &&
                         message.requestId !== luckyBox._claimActionRequestId) break;
+                    if (luckyBox) luckyBox._claimPendingRequestId = null;
                     secureApplyLuckyBoxState(message.box || message.luckyBox || null, message.serverNow);
                     triggerLuckyBoxModal();
                     break;
@@ -526,6 +529,9 @@
                 }
                 case protocol.WS_MESSAGE.BOX_ERROR:
                     console.warn('Lucky Box:', message.message || message);
+                    if (luckyBox?._claimPendingRequestId && message.requestId === luckyBox._claimPendingRequestId) {
+                        luckyBox._claimPendingRequestId = null;
+                    }
                     if (luckyBox?._spinPendingRequestId &&
                         (!message.requestId || message.requestId === luckyBox._spinPendingRequestId)) {
                         luckyBox._spinPendingRequestId = null;

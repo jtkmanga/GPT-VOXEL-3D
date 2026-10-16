@@ -1,5 +1,17 @@
 # S001: public repository credential audit
 
+## D023 increment — 2026-10-16
+
+Public source 4f0726ab6f8722fbbdcab15bbfdc1581504aafd8 minus audited
+77c23b6ae94316e7d6f2cbea40e7166d65d98ca7: 10 objects (1 commit, 5 trees,
+4 blobs), no archive members/gaps; other advertised refs unchanged.
+Scanner exit 1 reviewed: tests/rebuild/luckybox-retry.test.cjs:42, blob
+9151200e1e2025f112d24864d622d6e89f5014ae, is the fabricated resume-token
+fixture introduced by D022, not a provider credential. No value printed or used.
+Current-file scan passed; Firebase public web configuration unchanged and distinct
+from private/admin/database credentials. Prior archive coverage and bounded-pattern,
+scope and account-setting limits remain. No account actions taken.
+
 ## D022 increment — 2026-10-16
 
 Public source 77c23b6ae94316e7d6f2cbea40e7166d65d98ca7 minus audited

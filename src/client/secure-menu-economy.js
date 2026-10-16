@@ -233,6 +233,19 @@
             timerEl.innerText = luckyBox.active ? 'พร้อมเปิด!' : 'กำลังรอสถานะจาก Server...';
         }
 
+        function secureRetryPendingBoxClaim() {
+            const requestId = luckyBox?._claimPendingRequestId;
+            if (!requestId || luckyBox._actionUid !== auth.currentUser?.uid ||
+                !state.isPlaying || state.isPaused || secureHandoffInProgress ||
+                !luckyBox.claimed || luckyBox.claimExpiresAt <= secureNow() ||
+                !secureGameReady || !secureGameSocket || secureGameSocket.readyState !== WebSocket.OPEN) return;
+            // A snapshot does not identify the owner. Replay the original request
+            // for server authorization; only BOX_SPIN_READY may open the wheel.
+            try {
+                secureGameSocket.send(JSON.stringify({ type: protocol.WS_MESSAGE.COLLECT_BOX, requestId }));
+            } catch (_) { /* Keep the unresolved identity for a later resume. */ }
+        }
+
         function secureRequestLuckyBoxCollect() {
             if (secureHandoffInProgress || !luckyBox || !luckyBox.active || luckyBox.collecting) return;
             if (!secureGameReady || !secureGameSocket || secureGameSocket.readyState !== WebSocket.OPEN) return;
@@ -244,6 +257,7 @@
                 luckyBox._spinActionRequestId = null;
             }
             luckyBox.collecting = true;
+            luckyBox._claimPendingRequestId = luckyBox._claimActionRequestId;
             setTimeout(() => { if (luckyBox) luckyBox.collecting = false; }, 1200);
             try {
                 secureGameSocket.send(JSON.stringify({ type: protocol.WS_MESSAGE.COLLECT_BOX,
