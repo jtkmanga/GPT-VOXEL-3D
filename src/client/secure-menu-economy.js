@@ -299,6 +299,7 @@
             document.getElementById('wheel-modal').classList.remove('hidden');
             document.getElementById('btn-spin-wheel').classList.remove('hidden');
             document.getElementById('btn-close-wheel').classList.add('hidden');
+            document.getElementById('btn-close-wheel').innerText = 'รับรางวัล & เล่นต่อ';
             document.getElementById('wheel-result-msg').innerText = 'กดปุ่มเพื่อเริ่มหมุนวงล้อ!';
             drawLuckyWheel();
             audio.playBoxHit();

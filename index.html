@@ -3765,6 +3765,15 @@ return { MOVEMENT, validMovementInput, validMovementFrames, integrateMovement };
                         state.wheelSpinning = false;
                         document.getElementById('btn-spin-wheel').classList.remove('hidden');
                         document.getElementById('wheel-result-msg').innerText = 'Server ยังไม่ยืนยันผล กรุณาลองอีกครั้ง';
+                        // Only a correlated, explicit server expiry is terminal.
+                        // Storage/transport errors keep the existing retry path.
+                        if (message.requestId === luckyBox._spinActionRequestId &&
+                            message.message === 'Lucky Box claim expired') {
+                            document.getElementById('btn-spin-wheel').classList.add('hidden');
+                            document.getElementById('btn-close-wheel').innerText = 'เล่นต่อ';
+                            document.getElementById('btn-close-wheel').classList.remove('hidden');
+                            document.getElementById('wheel-result-msg').innerText = 'สิทธิ์หมุนหมดอายุแล้ว กลับไปเล่นต่อได้';
+                        }
                     }
                     break;
                 case "handoff_resumed":
@@ -4542,6 +4551,7 @@ return { MOVEMENT, validMovementInput, validMovementFrames, integrateMovement };
             document.getElementById('wheel-modal').classList.remove('hidden');
             document.getElementById('btn-spin-wheel').classList.remove('hidden');
             document.getElementById('btn-close-wheel').classList.add('hidden');
+            document.getElementById('btn-close-wheel').innerText = 'รับรางวัล & เล่นต่อ';
             document.getElementById('wheel-result-msg').innerText = 'กดปุ่มเพื่อเริ่มหมุนวงล้อ!';
             drawLuckyWheel();
             audio.playBoxHit();

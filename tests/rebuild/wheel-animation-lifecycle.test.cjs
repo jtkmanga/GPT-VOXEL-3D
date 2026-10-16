@@ -25,9 +25,33 @@ async function fixture() {
   const source = fs.readFileSync('src/client/secure-wheel-startup.js', 'utf8');
   const node = acorn.parse(source, { ecmaVersion: 'latest' }).body.find(node => node.id?.name === 'secureAnimateWheelToReward');
   vm.runInContext(source.slice(node.start, node.end), c);
+  const wheelSource = fs.readFileSync('src/client/wheel-frame.js', 'utf8');
+  const closeNode = acorn.parse(wheelSource, { ecmaVersion: 'latest' }).body.find(node => node.id?.name === 'closeWheelModal');
+  vm.runInContext(wheelSource.slice(closeNode.start, closeNode.end), c);
   c.luckyBox = {}; c.triggerLuckyBoxModal(); c.state.wheelSpinning = true;
   return { ...f, frames, elements, rewards: () => rewards, draws: () => draws };
 }
+test('D025 matching expired-claim rejection offers return to gameplay without a reward', async () => {
+  const f = await fixture(), c = f.context;
+  c.console = { warn() {} }; c.state.wheelSpinning = false;
+  c.spinWheel(); const requestId = f.sent.at(-1).requestId;
+  c.secureHandleSocketMessage({ type: 'box_error', requestId: 'synthetic-old', message: 'Lucky Box claim expired' });
+  assert.equal(c.state.wheelSpinning, true);
+  assert.equal(f.elements.get('btn-close-wheel').classList.contains('hidden'), true);
+  c.secureHandleSocketMessage({ type: 'box_error', requestId, message: 'Lucky Box claim expired' });
+  assert.equal(c.state.wheelSpinning, false);
+  assert.equal(f.elements.get('btn-close-wheel').classList.contains('hidden'), false);
+  assert.equal(f.elements.get('btn-spin-wheel').classList.contains('hidden'), true);
+  assert.equal(f.elements.get('btn-close-wheel').innerText, 'เล่นต่อ');
+  assert.equal(c.state.score, 0); assert.equal(f.rewards(), 0); assert.equal(f.frames.length, 0);
+  c.closeWheelModal();
+  assert.equal(c.state.isPaused, false);
+  assert.equal(f.elements.get('wheel-modal').classList.contains('hidden'), true);
+  c.triggerLuckyBoxModal();
+  assert.equal(f.elements.get('btn-close-wheel').innerText, 'รับรางวัล & เล่นต่อ');
+  assert.equal(f.elements.get('btn-close-wheel').classList.contains('hidden'), true);
+  assert.equal(f.elements.get('btn-spin-wheel').classList.contains('hidden'), false);
+});
 test('D021 returning to menu cancels wheel UI and stale animation completion', async () => {
   const f = await fixture(), c = f.context;
   c.secureAnimateWheelToReward(100); const stale = f.frames.shift();

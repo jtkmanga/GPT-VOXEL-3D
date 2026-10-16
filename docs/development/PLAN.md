@@ -69,4 +69,5 @@ item. Never substitute local results for live gates above.
 - DONE D022 (pending spin scope): two local resume/snapshot/modal/retry regressions passed; runtime unchanged. Socket authentication and live transport are not covered by these fixtures.
 - DONE D023: replay unresolved own claim after resumed unexpired claimed snapshot; two client regressions, 25 targeted checks and full suite passed. Server authorization remains required.
 - DONE D024: two client-to-bundled-Worker recovery scenarios verify owned replay and competing-claim denial without changing box state or score; 18 targeted tests passed.
-- NEXT D025: inspect expired-claim wheel rejection and return-to-game usability with local behavioral coverage.
+- DONE D025: explicit correlated expiry rejection exposes return-to-play without reward; 19 targeted tests and full suite passed.
+- NEXT D026: review terminal error after retry timeout with stale/newer-action guards and local evidence.

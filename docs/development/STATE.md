@@ -2,9 +2,17 @@
 
 Updated: 2026-10-16 (Asia/Bangkok).
 Branch: `development/voxel-continuous`.
-Starting source commit: `370e6d1906cdbfc2790f853f22d8441534f249c6`.
-Task: D024 — client claim recovery against bundled Worker authority.
+Starting source commit: `f946bee2b6f47af9adec685e94367d6b2290b807`.
+Task: D025 — allow gameplay return after explicit expired-spin rejection.
 Status: completed; browser execution and external D003 gates remain blocked.
+
+## D025 completed (2026-10-16)
+
+- Resumed the clean unfinished checkout after fresh GitHub visibility/HEAD/refs checks; no previous D025 edits existed. Reproduced hidden close button after a matching expired-claim error in wheel-animation-lifecycle.test.cjs.
+- secure-socket-handoff.js now hides retry and exposes a neutral return-to-play button only for the current pending action's explicit server message 'Lucky Box claim expired'. No inference from client clocks, no score/reward mutation. Other errors retain existing retry behavior. secure-menu-economy.js restores the normal reward button label when opening a new modal; regenerated index.html.
+- New regression runs authored modal, spin/message and close functions with synthetic DOM/transport/animation ports. Checks stale error rejection, visible exit after matching expiry, no reward/animation/score, unpause/hide on close and fresh modal label/reset. Targeted wheel-animation/luckybox-retry/P8-luckybox suites: 19 passed, zero failures/skips. Full npm test plus static, syntax, generated-client, current-file credential and whitespace checks passed.
+- Incremental audit of starting source minus 370e6d1: 10 objects (1 commit, 5 trees, 4 blobs), no findings/archive members/gaps; other refs unchanged. Reused that completed scan after confirming unchanged refs rather than repeating history. Prior audit/account limits remain.
+- Local behavior only, not browser/mobile/live staging evidence. Existing external blockers unchanged; no production/account/deployment/payment actions. Matching expiry delivered after the retry timer has already cleared pending state remains a separate ordering case to review next.
 
 ## D024 completed (2026-10-16)
 
@@ -246,7 +254,7 @@ Starting source: 0e3fcd1746cd0c55f011a2b8fda58d86a82e5284.
 
 ## Next bounded task
 
-D025: inspect Lucky Box modal recovery when its claim expires while a player waits before spinning. Reproduce whether server rejection leaves a usable way back to gameplay; implement only a verified local defect with behavioral coverage. Preserve server authority and never award from client time.
+D026: review terminal Lucky Box error arriving after the local retry timeout, including a newer retry/action. Preserve request/attempt ownership and verify usable exit without accepting stale results; use local fixtures only.
 
 Deferred D003: verify generated staging client and existing browser scenarios with the
 available permitted browser tooling. Check tooling availability first. Preserve
