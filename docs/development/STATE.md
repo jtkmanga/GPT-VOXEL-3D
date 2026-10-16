@@ -2,9 +2,17 @@
 
 Updated: 2026-10-16 (Asia/Bangkok).
 Branch: `development/voxel-continuous`.
-Starting source commit: `efc7f624de28fc3456e07ea34f8e22a00b0ab153`.
-Task: D028 — browser availability check and shop teardown on menu return.
+Starting source commit: `1bc889a03a5f881b525cb1d43303c3350db5252b`.
+Task: D029 — restore browser tooling and verify menu cancellation during reconnect.
 Status: completed; browser execution and external D003 gates remain blocked.
+
+## D029 completed (2026-10-16)
+
+- Created a fresh isolated Python environment at /workspace/scratch/voxel-browser-d029 and installed Playwright 1.64.0 successfully. A bounded headless-shell installer run (including its built-in retries) again failed with 'End of central directory record signature not found', final Download failure code 1. No browser binary installed or scenario launched. Interpreter restoration is complete; archive blocker remains, with no account/permission action required.
+- Selected a local session fallback: added p2-client.test.cjs regression executing actual socket close/reconnect backoff and secureReturnToMenu. Menu exit before reconnect completes must leave gameplay stopped/unpaused, no active/ready socket, only the original socket ever created and zero timers after 5 seconds of synthetic clock advancement. No runtime defect reproduced or runtime/generated-client change.
+- NODE_PATH=/workspace/scratch/voxel-d016/node_modules node --test tests/rebuild/p2-client.test.cjs: 19 passed, zero failures/skips. Syntax/current-file credential/whitespace checks passed. Full npm not repeated for a test-only addition; D028 runtime evidence remains applicable.
+- Incremental audit: source minus efc7f62 contains 14 objects (1 commit, 7 trees, 6 blobs), no new archive members/gaps. Two index.html:632 matches are unchanged public Firebase configuration, privately compared. Other refs unchanged; prior scope/pattern/account limits remain.
+- Local mocked transport/auth/DOM/clock, not browser/live reconnect evidence. No production/account/payment/deployment action.
 
 ## D028 completed (2026-10-16)
 
@@ -278,7 +286,7 @@ Starting source: 0e3fcd1746cd0c55f011a2b8fda58d86a82e5284.
 
 ## Next bounded task
 
-D029: rebuild the missing isolated Python/Playwright environment using available permitted local tooling, then attempt a bounded browser install. Preserve existing assertions and network isolation; if blocked, select another untested local session lifecycle case. Do not assume D018 dependencies still exist.
+D030: review menu exit while a reconnect socket has been created but has not received welcome. Verify a late welcome cannot revive gameplay or retain timers/sockets using the local session fixture; do not repeat the completed backoff-only case.
 
 Deferred D003: verify generated staging client and existing browser scenarios with the
 available permitted browser tooling. Check tooling availability first. Preserve

@@ -310,6 +310,21 @@ test('P2 client reconnect uses a retained resume ticket and policy rejection nev
   assert.equal(f.timers.size, 0);
 });
 
+test('D029 menu exit during reconnect backoff cannot reopen a socket or revive gameplay', async () => {
+  const f = await fixture();
+  const original = await f.connect();
+  original.close(1006, 'Synthetic network loss');
+  assert.equal(f.evaluate('state.isPlaying'), true);
+  f.c.secureReturnToMenu();
+  await flush(); await f.advance(5000);
+  assert.equal(f.evaluate('state.isPlaying'), false);
+  assert.equal(f.evaluate('state.isPaused'), false);
+  assert.equal(f.evaluate('secureGameSocket'), null);
+  assert.equal(f.evaluate('secureGameReady'), false);
+  assert.equal(f.sockets.length, 1, 'cancelled backoff must not create a replacement');
+  assert.equal(f.timers.size, 0);
+});
+
 test('P2 client cancelled reconnect and expired ticket cannot fall back to a new session', async () => {
   const f = await fixture();
   assert.equal(await f.c.secureResumeDisconnectedSocket('4,4', f.user.uid), false);

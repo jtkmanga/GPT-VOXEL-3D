@@ -73,4 +73,5 @@ item. Never substitute local results for live gates above.
 - DONE D026: correlated late expiry handled independently of pending attempt, preserving newer/rewarded actions; 21 targeted tests and full suite passed.
 - DONE D027: genuine Worker expiry delivered after client timeout enables neutral exit with unchanged score/cooldown; 14 targeted tests passed, runtime unchanged.
 - DONE D028: browser interpreter environment is missing; fixed open shop surviving menu return with regression and full local suite.
-- NEXT D029: rebuild isolated browser tooling before bounded install retry; retain browser/live gates and safe local fallback.
+- DONE D029: restored isolated Playwright; headless-shell archive still fails. Added reconnect-backoff menu cancellation regression, 19 local tests passed.
+- NEXT D030: menu exit during reconnect socket authentication, with late welcome and cleanup evidence.
