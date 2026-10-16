@@ -229,6 +229,52 @@ test('D034 missing refresh ACK does not retry speculatively or bypass a policy c
   assert.equal(socket.sent.length, 2);
 });
 
+test('D035 lost refresh request reaches genuine Worker expiry rejection and client teardown', async t => {
+  const { createHarness } = require('./harness.cjs');
+  const h = createHarness();
+  t.after(() => h.close());
+  const f = await fixture();
+  f.c.scene = { add() {}, remove() {}, traverse() {} };
+  f.c.createTreasureChest = () => ({ position: { set() {} }, traverse() {} });
+  f.user.getIdToken = async refresh => h.token(f.user.uid, {
+    exp: Math.floor(h.now() / 1000) + (refresh ? 3600 : 61)
+  });
+  const backend = await h.open('/play?zone=4,4');
+  const created = f.nextSocket();
+  const opening = f.c.secureOpenZoneSocket('4,4');
+  const socket = await created;
+  socket.open();
+  await backend.send(socket.sent[0]);
+  const welcome = backend.messages('welcome').at(-1);
+  assert.ok(welcome);
+  socket.receive(welcome);
+  await opening;
+  await h.advance(1000); await f.advance(1000);
+  assert.equal(socket.sent.length, 2);
+  assert.equal(socket.sent[1].type, 'auth');
+  // Drop the outgoing refresh at the local transport boundary: no server ACK
+  // exists and the Worker still owns the original token expiry.
+  assert.equal(backend.messages('auth_refreshed').length, 0);
+  assert.equal(backend.attachment().exp * 1000, welcome.session.tokenExpiresAt);
+  const before = backend.attachment();
+  await h.advance(60_000); await f.advance(60_000);
+  f.evaluate('state.isPaused = true');
+  f.c.syncMyPlayerData(true);
+  assert.equal(socket.sent.at(-1).type, 'move');
+  await backend.send(socket.sent.at(-1));
+  assert.equal(backend.client.closed, true);
+  assert.equal(backend.client.closeInfo.code, 1008);
+  assert.equal(backend.attachment().score, before.score);
+  socket.close(backend.client.closeInfo.code, backend.client.closeInfo.reason);
+  await flush(); await f.advance(120_000);
+  assert.equal(f.evaluate('state.isPlaying'), false);
+  assert.equal(f.evaluate('secureGameSocket'), null);
+  assert.equal(f.evaluate('secureGameReady'), false);
+  assert.equal(f.sockets.length, 1);
+  assert.equal(socket.sent.length, 3, 'initial auth, lost refresh, and one movement packet only');
+  assert.equal(f.timers.size, 0);
+});
+
 for (const outcome of ['resolve', 'reject']) {
   test(`D033 old refresh ${outcome} cannot affect a same-UID replacement session`, async () => {
     const f = await fixture();

@@ -2,9 +2,17 @@
 
 Updated: 2026-10-16 (Asia/Bangkok).
 Branch: `development/voxel-continuous`.
-Starting source commit: `345fe7d9cb0671cac05d40fb97e17aeeb7923ef0`.
-Task: D034 — browser prerequisite recheck and missing refresh ACK review.
+Starting source commit: `c67005bfeaca21b31be5089f9d55caf7c870c1ff`.
+Task: D035 — lost refresh request and genuine Worker expiry integration.
 Status: completed; browser execution and external D003 gates remain blocked.
+
+## D035 completed (2026-10-16)
+
+- Added p2-client.test.cjs integration using the actual client socket/auth/refresh/movement/menu code and bundled Worker ZoneRoom with synthetic signed Firebase tokens. Forward initial client authentication and genuine welcome, drop the outgoing refresh request, advance both clocks to original expiry, then forward an authored paused movement packet. Worker policy closure (1008) is propagated to the actual client close callback.
+- Verified no refresh ACK/extended server token expiry, Worker rejection, unchanged attached score, stopped client gameplay, no active/ready socket, no reconnect, no extra authentication sends and zero timers. This covers lost request, not accepted refresh with lost response. Rendering, SDK, storage/network and clock ports are synthetic; no live Firebase/staging/browser claim.
+- Initial integration lacked a chest-rendering port and used the legacy movement schema. Added inert scene/chest ports and forwarded actual syncMyPlayerData output instead. No production code or assertions weakened. Final isolated client suite: NODE_PATH=/workspace/scratch/voxel-d016/node_modules node --test tests/rebuild/p2-client.test.cjs — 26 passed, zero failures/skips. A combined security run returned exit zero but its saved output lacked a final summary, so no combined test count is claimed. Syntax/current-file credential (160 files)/whitespace checks passed.
+- Incremental audit: source minus 345fe7d has 10 objects (1 commit, 5 trees, 4 blobs), no archive members/gaps; nine unchanged synthetic assignment candidates privately compared. Other advertised refs unchanged; prior scope/pattern/account limits remain.
+- Runtime/generated client unchanged; full npm not repeated for test-only addition. External blockers unchanged; no production/account/payment/deployment actions. Next: accepted refresh with dropped ACK, checking genuine renewed server expiry separately from the old client deadline.
 
 ## D034 completed (2026-10-16)
 
