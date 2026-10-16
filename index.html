@@ -3765,15 +3765,19 @@ return { MOVEMENT, validMovementInput, validMovementFrames, integrateMovement };
                         state.wheelSpinning = false;
                         document.getElementById('btn-spin-wheel').classList.remove('hidden');
                         document.getElementById('wheel-result-msg').innerText = 'Server ยังไม่ยืนยันผล กรุณาลองอีกครั้ง';
-                        // Only a correlated, explicit server expiry is terminal.
-                        // Storage/transport errors keep the existing retry path.
-                        if (message.requestId === luckyBox._spinActionRequestId &&
-                            message.message === 'Lucky Box claim expired') {
+                    }
+                    // Timeout clears an attempt, not the unresolved action.
+                    // Never replace an accepted reward or a newer action's UI.
+                    if (state.isPlaying && state.isPaused && message.requestId &&
+                        message.requestId === luckyBox?._spinActionRequestId &&
+                        message.requestId !== luckyBox._lastRewardRequestId &&
+                        message.message === 'Lucky Box claim expired') {
+                            luckyBox._spinPendingRequestId = null;
+                            state.wheelSpinning = false;
                             document.getElementById('btn-spin-wheel').classList.add('hidden');
                             document.getElementById('btn-close-wheel').innerText = 'เล่นต่อ';
                             document.getElementById('btn-close-wheel').classList.remove('hidden');
                             document.getElementById('wheel-result-msg').innerText = 'สิทธิ์หมุนหมดอายุแล้ว กลับไปเล่นต่อได้';
-                        }
                     }
                     break;
                 case "handoff_resumed":

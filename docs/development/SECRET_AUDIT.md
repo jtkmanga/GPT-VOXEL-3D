@@ -1,5 +1,16 @@
 # S001: public repository credential audit
 
+## D026 increment — 2026-10-16
+
+Public source d191ba8a6b26e5941462cffb35161877d50a6538 minus audited
+f946bee2b6f47af9adec685e94367d6b2290b807: 15 objects (1 commit, 7 trees,
+7 blobs), no archive members/gaps; other advertised refs unchanged.
+Scanner exit 1 reviewed: two matches at index.html:632, blob
+1d94aeaba2bbc71a436c65f79cee5c6cb90d0e95, are unchanged Firebase public web
+configuration, privately compared, not private/admin/database credentials.
+Current-file scan passed. No values printed or used; previous archive coverage,
+scope/pattern and unverified account-setting limitations remain.
+
 ## D025 increment — 2026-10-16
 
 Public source f946bee2b6f47af9adec685e94367d6b2290b807 minus audited

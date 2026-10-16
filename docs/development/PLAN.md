@@ -70,4 +70,5 @@ item. Never substitute local results for live gates above.
 - DONE D023: replay unresolved own claim after resumed unexpired claimed snapshot; two client regressions, 25 targeted checks and full suite passed. Server authorization remains required.
 - DONE D024: two client-to-bundled-Worker recovery scenarios verify owned replay and competing-claim denial without changing box state or score; 18 targeted tests passed.
 - DONE D025: explicit correlated expiry rejection exposes return-to-play without reward; 19 targeted tests and full suite passed.
-- NEXT D026: review terminal error after retry timeout with stale/newer-action guards and local evidence.
+- DONE D026: correlated late expiry handled independently of pending attempt, preserving newer/rewarded actions; 21 targeted tests and full suite passed.
+- NEXT D027: genuine Worker expiry reply through client timeout/exit integration, local evidence only.

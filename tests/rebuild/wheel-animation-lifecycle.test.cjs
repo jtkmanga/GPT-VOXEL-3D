@@ -31,6 +31,30 @@ async function fixture() {
   c.luckyBox = {}; c.triggerLuckyBoxModal(); c.state.wheelSpinning = true;
   return { ...f, frames, elements, rewards: () => rewards, draws: () => draws };
 }
+for (const retry of [false, true]) test(`D026 expiry after timeout settles current action (retry=${retry}) without affecting newer/rewarded actions`, async () => {
+  const f = await fixture(), c = f.context, timers = [];
+  c.console = { warn() {} }; c.setTimeout = fn => timers.push(fn);
+  c.state.wheelSpinning = false; c.spinWheel();
+  const requestId = f.sent.at(-1).requestId;
+  timers[0]();
+  if (retry) c.spinWheel();
+  c.secureHandleSocketMessage({ type: 'box_error', message: 'Lucky Box claim expired' });
+  assert.equal(f.elements.get('btn-close-wheel').classList.contains('hidden'), true);
+  c.secureHandleSocketMessage({ type: 'box_error', requestId, message: 'Lucky Box claim expired' });
+  assert.equal(f.elements.get('btn-close-wheel').classList.contains('hidden'), false);
+  assert.equal(f.elements.get('btn-spin-wheel').classList.contains('hidden'), true);
+  assert.equal(c.state.wheelSpinning, false);
+  timers.forEach(fn => fn());
+  assert.equal(f.elements.get('btn-spin-wheel').classList.contains('hidden'), true);
+  c.triggerLuckyBoxModal(); c.luckyBox._spinActionRequestId = 'synthetic-next-action'; c.spinWheel();
+  c.secureHandleSocketMessage({ type: 'box_error', requestId, message: 'Lucky Box claim expired' });
+  assert.equal(c.state.wheelSpinning, true);
+  assert.equal(f.elements.get('btn-close-wheel').classList.contains('hidden'), true);
+  c.secureHandleSocketMessage({ type: 'box_reward', requestId: 'synthetic-next-action', reward: 100 });
+  c.secureHandleSocketMessage({ type: 'box_error', requestId: 'synthetic-next-action', message: 'Lucky Box claim expired' });
+  assert.equal(c.state.wheelSpinning, true, 'reward animation remains authoritative');
+  assert.equal(f.elements.get('btn-close-wheel').classList.contains('hidden'), true);
+});
 test('D025 matching expired-claim rejection offers return to gameplay without a reward', async () => {
   const f = await fixture(), c = f.context;
   c.console = { warn() {} }; c.state.wheelSpinning = false;

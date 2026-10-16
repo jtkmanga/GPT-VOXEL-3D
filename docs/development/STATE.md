@@ -2,9 +2,17 @@
 
 Updated: 2026-10-16 (Asia/Bangkok).
 Branch: `development/voxel-continuous`.
-Starting source commit: `f946bee2b6f47af9adec685e94367d6b2290b807`.
-Task: D025 — allow gameplay return after explicit expired-spin rejection.
+Starting source commit: `d191ba8a6b26e5941462cffb35161877d50a6538`.
+Task: D026 — correlate terminal expiry after retry timeout.
 Status: completed; browser execution and external D003 gates remain blocked.
+
+## D026 completed (2026-10-16)
+
+- Reproduced two failing late-expiry regressions in wheel-animation-lifecycle.test.cjs, with/without a retry of the same action. Timeout (or an uncorrelated generic error) cleared pending attempt state, so a later correlated terminal expiry left the close button hidden.
+- Moved terminal expiry handling outside pending-attempt cleanup in secure-socket-handoff.js. Requires active paused gameplay, an explicit current action ID, the existing server expiry message and no accepted reward for that ID. Clears pending retry and presents the existing neutral exit. Newer action and reward animation cannot be overwritten. Regenerated index.html; no server/protocol/reward rule changes.
+- Tests cover both ordering variants, missing-ID response, stale action, timers after terminal settlement, newer action and accepted reward. Targeted wheel-animation/luckybox-retry/P8-luckybox suites: 21 passed, zero failures/skips. Full npm test passed; static, syntax (141), generated-client, current-file credential (160) and whitespace checks passed. No assertions weakened.
+- Incremental audit: starting source minus f946bee contains 15 objects (1 commit, 7 trees, 7 blobs), no new archive members/gaps. Two matches at index.html:632 are unchanged public Firebase configuration, privately compared. Other refs unchanged; prior scope/pattern/account limits remain.
+- Local fixture evidence only; browser/live/mobile/capacity gates remain pending. No production/account/payment/deployment actions and no changed external blocker.
 
 ## D025 completed (2026-10-16)
 
@@ -254,7 +262,7 @@ Starting source: 0e3fcd1746cd0c55f011a2b8fda58d86a82e5284.
 
 ## Next bounded task
 
-D026: review terminal Lucky Box error arriving after the local retry timeout, including a newer retry/action. Preserve request/attempt ownership and verify usable exit without accepting stale results; use local fixtures only.
+D027: extend local Worker/client integration to delayed terminal spin expiry after timeout. Use a genuine Worker rejection rather than a constructed error, assert unchanged score/cooldown and return-to-game behavior. Keep browser/live gates separate.
 
 Deferred D003: verify generated staging client and existing browser scenarios with the
 available permitted browser tooling. Check tooling availability first. Preserve
