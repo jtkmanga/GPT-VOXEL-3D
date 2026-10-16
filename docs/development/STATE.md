@@ -2,9 +2,17 @@
 
 Updated: 2026-10-16 (Asia/Bangkok).
 Branch: `development/voxel-continuous`.
-Starting source commit: `c67005bfeaca21b31be5089f9d55caf7c870c1ff`.
-Task: D035 — lost refresh request and genuine Worker expiry integration.
+Starting source commit: `3e7deacd42d1db1db270699912f8dba3e2aaf7e7`.
+Task: D036 — accepted refresh with withheld acknowledgement.
 Status: completed; browser execution and external D003 gates remain blocked.
+
+## D036 completed (2026-10-16)
+
+- Added p2-client.test.cjs integration forwarding actual client initial auth and refresh packets to bundled ZoneRoom. Withheld the genuine auth_refreshed response after confirming renewed Worker token expiry, then advanced both clocks beyond the original deadline and forwarded authored paused movement. Worker remains connected; client does not create a speculative refresh timer or new session.
+- Delivered the held ACK late, then again: exactly one client refresh timer remains with an unchanged deadline, no additional auth/socket, and final menu teardown clears timers. D035 lost-request scenario remains intact. No runtime defect reproduced or runtime/generated-client changes.
+- NODE_PATH=/workspace/scratch/voxel-d016/node_modules node --test tests/rebuild/p2-client.test.cjs: 27 passed, zero failures/skips. node --check, current-file credential scan (160 files) and git diff --check passed. Full npm not repeated for test-only addition; D028 runtime evidence remains applicable.
+- Incremental audit: source minus c67005b has 10 objects (1 commit, 5 trees, 4 blobs), no archive members/gaps; nine unchanged synthetic assignment candidates privately compared. Other advertised refs unchanged. Previous audit scope/pattern/account limitations remain.
+- Synthetic signed tokens, local transport/clock/storage/DOM/rendering only, not live Firebase/staging/browser/mobile/capacity evidence. External blockers unchanged; no production/account/payment/deployment action. Next: examine delayed refresh ACK arriving after its renewed token expiry, including timer and policy-close behavior, without treating client time as server authorization.
 
 ## D035 completed (2026-10-16)
 

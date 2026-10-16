@@ -275,6 +275,56 @@ test('D035 lost refresh request reaches genuine Worker expiry rejection and clie
   assert.equal(f.timers.size, 0);
 });
 
+test('D036 lost refresh ACK preserves renewed Worker authority beyond the old expiry', async t => {
+  const { createHarness } = require('./harness.cjs');
+  const h = createHarness();
+  t.after(() => h.close());
+  const f = await fixture();
+  f.c.scene = { add() {}, remove() {}, traverse() {} };
+  f.c.createTreasureChest = () => ({ position: { set() {} }, traverse() {} });
+  f.user.getIdToken = async refresh => h.token(f.user.uid, {
+    exp: Math.floor(h.now() / 1000) + (refresh ? 3600 : 61)
+  });
+  const backend = await h.open('/play?zone=4,4');
+  const created = f.nextSocket();
+  const opening = f.c.secureOpenZoneSocket('4,4');
+  const socket = await created;
+  socket.open();
+  await backend.send(socket.sent[0]);
+  const welcome = backend.messages('welcome').at(-1);
+  assert.ok(welcome);
+  socket.receive(welcome);
+  await opening;
+  await h.advance(1000); await f.advance(1000);
+  await backend.send(socket.sent[1]);
+  const ack = backend.messages('auth_refreshed').at(-1);
+  assert.ok(ack, 'Worker really accepted refresh');
+  assert.ok(ack.session.tokenExpiresAt > welcome.session.tokenExpiresAt);
+  assert.equal(backend.attachment().exp * 1000, ack.session.tokenExpiresAt);
+  // Withhold genuine ACK from the client; do not fabricate server acceptance.
+  await h.advance(60_000); await f.advance(60_000);
+  assert.equal(f.timers.size, 0, 'no speculative refresh timer without ACK');
+  f.evaluate('state.isPaused = true');
+  f.c.syncMyPlayerData(true);
+  await backend.send(socket.sent.at(-1));
+  assert.equal(backend.client.closed, false);
+  assert.equal(f.evaluate('secureGameSocket'), socket);
+  assert.equal(f.evaluate('state.isPlaying'), true);
+  assert.equal(socket.sent.length, 3);
+  // Late delivery must restore exactly one refresh schedule without a new login.
+  socket.receive(ack);
+  assert.equal(f.timers.size, 1);
+  const due = [...f.timers.values()][0].at;
+  socket.receive(ack);
+  assert.equal(f.timers.size, 1);
+  assert.equal([...f.timers.values()][0].at, due);
+  assert.equal(f.sockets.length, 1);
+  assert.equal(socket.sent.length, 3);
+  f.c.secureReturnToMenu();
+  await flush();
+  assert.equal(f.timers.size, 0);
+});
+
 for (const outcome of ['resolve', 'reject']) {
   test(`D033 old refresh ${outcome} cannot affect a same-UID replacement session`, async () => {
     const f = await fixture();
