@@ -2,9 +2,17 @@
 
 Updated: 2026-10-16 (Asia/Bangkok).
 Branch: `development/voxel-continuous`.
-Starting source commit: `d191ba8a6b26e5941462cffb35161877d50a6538`.
-Task: D026 — correlate terminal expiry after retry timeout.
+Starting source commit: `1099aef1d86648f138e2c2123462cda529d229a8`.
+Task: D027 — genuine Worker expiry through client timeout/exit.
 Status: completed; browser execution and external D003 gates remain blocked.
+
+## D027 completed (2026-10-16)
+
+- Extended luckybox-recovery-integration.test.cjs with a third scenario: recover owned claim, advance the local Worker clock to exact claim expiry, send authored client spin, withhold the genuine Worker rejection until the authored retry timeout fires, then deliver server messages and execute authored closeWheelModal.
+- Verified correlated expiry with no box_reward, timeout clearing pending state before delivery, visible neutral exit, hidden retry, stopped spinning, unchanged client/server score, original respawn deadline/cycle, resumed gameplay and no extra economy action on close. Existing owned/competing scenarios preserved. No runtime defect reproduced; runtime/generated client unchanged.
+- NODE_PATH=/workspace/scratch/voxel-d016/node_modules node --test tests/rebuild/luckybox-recovery-integration.test.cjs tests/rebuild/luckybox-retry.test.cjs tests/rebuild/wheel-animation-lifecycle.test.cjs: 14 passed, zero failures/skips. node --check, current-file credential scan (160) and git diff --check passed. Full npm not repeated for test-only change; D026 full-suite evidence applies to unchanged runtime.
+- Incremental audit: starting source minus d191ba8 contains 14 objects (1 commit, 7 trees, 6 blobs), no archives/gaps. Two index.html:632 matches are unchanged Firebase public web configuration, privately compared. Other refs unchanged; existing bounded-pattern/scope/account limits remain.
+- Worker/authentication/storage/transport/DOM use local fixtures, not live staging or browser evidence. External blockers unchanged; no production/account/deployment/payment actions.
 
 ## D026 completed (2026-10-16)
 
@@ -262,7 +270,7 @@ Starting source: 0e3fcd1746cd0c55f011a2b8fda58d86a82e5284.
 
 ## Next bounded task
 
-D027: extend local Worker/client integration to delayed terminal spin expiry after timeout. Use a genuine Worker rejection rather than a constructed error, assert unchanged score/cooldown and return-to-game behavior. Keep browser/live gates separate.
+D028: revisit D018 browser executable availability and, if permitted downloads now work, run the existing isolated browser scenarios against current source without weakening assertions. If still blocked, record only a changed blocker and select a safe local menu/session lifecycle gap rather than repeating completed Lucky Box cases.
 
 Deferred D003: verify generated staging client and existing browser scenarios with the
 available permitted browser tooling. Check tooling availability first. Preserve

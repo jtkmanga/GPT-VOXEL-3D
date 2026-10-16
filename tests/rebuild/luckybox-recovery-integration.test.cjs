@@ -1,12 +1,16 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const acorn = require('acorn');
 const { createHarness } = require('./harness.cjs');
 const { stagingClientFixture } = require('./staging-client-fixture.cjs');
 const last = (connection, type) => connection.messages(type).at(-1);
 
-for (const competing of [false, true]) {
-  test(`D024 client claim recovery against Worker ${competing ? 'denies competing claimant' : 'replays owned receipt'}`, async t => {
+for (const mode of ['owned', 'competing', 'expired']) {
+  const competing = mode === 'competing';
+  test(`client claim recovery against Worker: ${mode}`, async t => {
     const h = createHarness(); t.after(() => h.close());
     const uid = 'synthetic-staging-client';
     async function login(id) {
@@ -61,5 +65,36 @@ for (const competing of [false, true]) {
     assert.equal(h.room().economy.score(uid), 0, 'claim recovery does not award a spin');
     c.secureRetryPendingBoxClaim(); await f.flush();
     assert.equal(f.sent.length, 2, 'settled recovery must not send again');
+    if (mode === 'expired') {
+      const timers = [];
+      c.setTimeout = fn => timers.push(fn);
+      c.console = { warn() {} };
+      const source = fs.readFileSync('src/client/wheel-frame.js', 'utf8');
+      const close = acorn.parse(source, { ecmaVersion: 'latest' }).body.find(node => node.id?.name === 'closeWheelModal');
+      vm.runInContext(source.slice(close.start, close.end), c);
+      await h.setTime(claimed.claim_expires_at); f.setTime(h.now());
+      connection.clear(); c.spinWheel(); await f.flush();
+      const spinId = f.sent.at(-1).requestId;
+      const rejection = last(connection, 'box_error');
+      assert.equal(rejection?.requestId, spinId);
+      assert.equal(rejection.message, 'Lucky Box claim expired');
+      assert.equal(connection.messages('box_reward').length, 0);
+      // Withhold the genuine Worker reply until the authored retry timeout fires.
+      timers[0]();
+      assert.equal(c.luckyBox._spinPendingRequestId, null);
+      assert.equal(elements.get('btn-close-wheel').classList.contains('hidden'), true);
+      for (const message of connection.messages()) c.secureHandleSocketMessage(message);
+      assert.equal(elements.get('btn-close-wheel').classList.contains('hidden'), false);
+      assert.equal(elements.get('btn-close-wheel').innerText, 'เล่นต่อ');
+      assert.equal(elements.get('btn-spin-wheel').classList.contains('hidden'), true);
+      assert.equal(c.state.wheelSpinning, false);
+      assert.equal(c.state.score, 0); assert.equal(h.room().economy.score(uid), 0);
+      assert.equal(row().next_spawn_at, claimed.next_spawn_at);
+      assert.equal(row().cycle, claimed.cycle);
+      c.closeWheelModal();
+      assert.equal(c.state.isPaused, false); assert.equal(c.state.isPlaying, true);
+      assert.equal(elements.get('wheel-modal').classList.contains('hidden'), true);
+      assert.equal(f.sent.length, 3, 'leaving the modal sends no new economy action');
+    }
   });
 }

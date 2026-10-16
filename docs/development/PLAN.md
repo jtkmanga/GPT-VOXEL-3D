@@ -71,4 +71,5 @@ item. Never substitute local results for live gates above.
 - DONE D024: two client-to-bundled-Worker recovery scenarios verify owned replay and competing-claim denial without changing box state or score; 18 targeted tests passed.
 - DONE D025: explicit correlated expiry rejection exposes return-to-play without reward; 19 targeted tests and full suite passed.
 - DONE D026: correlated late expiry handled independently of pending attempt, preserving newer/rewarded actions; 21 targeted tests and full suite passed.
-- NEXT D027: genuine Worker expiry reply through client timeout/exit integration, local evidence only.
+- DONE D027: genuine Worker expiry delivered after client timeout enables neutral exit with unchanged score/cooldown; 14 targeted tests passed, runtime unchanged.
+- NEXT D028: recheck browser executable availability and existing isolated scenarios; skip unchanged blocker and choose an untested local menu/session lifecycle gap if unavailable.
