@@ -391,6 +391,49 @@ test('D031 exhausted reconnect attempts return to menu without fresh-session fal
   assert.equal(f.timers.size, 0);
 });
 
+test('D032 callbacks from old sockets cannot mutate a replacement session after menu return', async () => {
+  const f = await fixture();
+  const original = await f.connect();
+  const created = f.nextSocket();
+  original.close(1006, 'Synthetic network loss');
+  await f.advance(250);
+  const pending = await created;
+  pending.open();
+  f.c.secureReturnToMenu();
+  await flush();
+  f.evaluate('state.isPlaying = true');
+  const replacement = await f.connect('5,4', f.session({ sessionId: 'synthetic-new-session' }));
+  // Let the cancelled reconnect's already-scheduled backoff observe its epoch.
+  await f.advance(1000);
+  const position = JSON.stringify(f.c.playerPos);
+  const timerCount = f.timers.size;
+  const sessionId = f.c.secureGetResumeTicket('5,4').sessionId;
+  for (const stale of [original, pending]) {
+    const sends = stale.sent.length;
+    stale.onopen();
+    stale.receive(f.welcome('4,4', f.session(), { id: 'stale-player', score: 999 }));
+    stale.receive({ type: 'auth_refreshed', session: f.session({ sessionId: 'stale-session' }) });
+    stale.onerror();
+    stale.onclose({ code: 1008, reason: 'Synthetic late policy close' });
+    assert.equal(stale.sent.length, sends);
+  }
+  await flush(); await f.advance(10_000);
+  assert.equal(f.evaluate('secureGameSocket'), replacement);
+  assert.equal(f.evaluate('secureGameReady'), true);
+  assert.equal(f.evaluate('state.isPlaying'), true);
+  assert.equal(f.evaluate('state.serverPlayerId'), 'synthetic-player');
+  assert.equal(f.evaluate('state.score'), 0);
+  assert.equal(f.evaluate('secureCurrentZoneId'), '5,4');
+  assert.equal(JSON.stringify(f.c.playerPos), position);
+  assert.equal(f.c.secureGetResumeTicket('5,4').sessionId, sessionId);
+  assert.equal(f.timers.size, timerCount);
+  assert.equal(f.sockets.length, 3);
+  assert.equal(f.events.filter(event => event.kind === 'alert').length, 0);
+  f.c.secureReturnToMenu();
+  await flush();
+  assert.equal(f.timers.size, 0);
+});
+
 test('P2 client cancelled reconnect and expired ticket cannot fall back to a new session', async () => {
   const f = await fixture();
   assert.equal(await f.c.secureResumeDisconnectedSocket('4,4', f.user.uid), false);

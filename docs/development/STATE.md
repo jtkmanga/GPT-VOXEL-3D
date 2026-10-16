@@ -2,9 +2,17 @@
 
 Updated: 2026-10-16 (Asia/Bangkok).
 Branch: `development/voxel-continuous`.
-Starting source commit: `5f30df901f28212f6a12c998ff9812f9df27f88b`.
-Task: D031 — exhausted reconnect attempts fail closed.
+Starting source commit: `a0b1ddfd08e182bc5e63cffb0bde715376b1d5db`.
+Task: D032 — stale callbacks cannot mutate a replacement session.
 Status: completed; browser execution and external D003 gates remain blocked.
+
+## D032 completed (2026-10-16)
+
+- Added p2-client.test.cjs regression: disconnect an authenticated socket, open a pending reconnect, return to menu, then connect to a different zone. Deliver late open/welcome/auth-refresh/error/policy-close callbacks from both old sockets. Verify replacement socket/readiness, gameplay, player ID, score, zone, position and session identity remain unchanged, with no sends, alerts or extra sockets and final timer cleanup.
+- Initial timer-count comparison included the cancelled reconnect's backoff. Settled that existing bounded delay after replacement entry before taking the baseline; kept all assertions. No runtime defect reproduced or runtime/generated-client change.
+- NODE_PATH=/workspace/scratch/voxel-d016/node_modules node --test tests/rebuild/p2-client.test.cjs: 22 passed, zero failures/skips. node --check, current-file credential scan (160 files) and git diff --check passed. Full npm not repeated for test-only change; D028 runtime evidence remains applicable.
+- Incremental audit: source minus 5f30df9 has 10 objects (1 commit, 5 trees, 4 blobs), no archive members/gaps. Nine candidates are unchanged synthetic fixtures, privately compared. Other advertised refs unchanged; prior scope/pattern/account limits remain.
+- Local mocked transport/auth/DOM/clock only; external browser/live/mobile/capacity blockers unchanged. No production/account/payment/deployment actions. Next: review cancellation during pending Firebase token refresh followed by same-UID new-session entry, with late token resolution.
 
 ## D031 completed (2026-10-16)
 

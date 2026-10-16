@@ -76,4 +76,5 @@ item. Never substitute local results for live gates above.
 - DONE D029: restored isolated Playwright; headless-shell archive still fails. Added reconnect-backoff menu cancellation regression, 19 local tests passed.
 - DONE D030: menu exit during reconnect authentication rejects late open/welcome and cleans resources; 20 local session tests passed, runtime unchanged.
 - DONE D031: all three failed reconnect attempts return to menu, retain resume-only authentication and release timers; 21 local session tests passed.
-- NEXT D032: old-session callbacks after menu return and new-session entry must not mutate the replacement session; local lifecycle regression.
+- DONE D032: stale callbacks from authenticated and pending sockets cannot mutate a replacement session; 22 local session tests passed.
+- NEXT D033: pending Firebase refresh cancelled by menu return, followed by same-UID new session and late token resolution; local lifecycle regression.
