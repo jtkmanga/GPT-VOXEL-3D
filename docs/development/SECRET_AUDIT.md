@@ -1,5 +1,18 @@
 # S001: public repository credential audit
 
+## D024 increment — 2026-10-16
+
+Public source 370e6d1906cdbfc2790f853f22d8441534f249c6 minus audited
+4f0726ab6f8722fbbdcab15bbfdc1581504aafd8: 15 objects (1 commit, 7 trees,
+7 blobs), no archive members/gaps; other advertised refs unchanged.
+Scanner exit 1 reviewed: two index.html:632 matches, blob
+1dfa80f6e404981ffee59da6d3ae72bf9d6f792c, identify unchanged Firebase public
+web configuration, not private/admin/database credentials. Assignment candidate
+at tests/rebuild/luckybox-retry.test.cjs:88, blob
+4e9eb39be184895ee291c571f28865d94fc5b42c, is the unchanged synthetic resume
+fixture. Compared privately against prior audited source; no values printed or
+used. Current-file scan passed. Prior archives/scope/pattern/account limits remain.
+
 ## D023 increment — 2026-10-16
 
 Public source 4f0726ab6f8722fbbdcab15bbfdc1581504aafd8 minus audited

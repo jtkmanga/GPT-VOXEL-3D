@@ -2,9 +2,17 @@
 
 Updated: 2026-10-16 (Asia/Bangkok).
 Branch: `development/voxel-continuous`.
-Starting source commit: `4f0726ab6f8722fbbdcab15bbfdc1581504aafd8`.
-Task: D023 — recover unresolved claim after resumed claimed snapshot.
+Starting source commit: `370e6d1906cdbfc2790f853f22d8441534f249c6`.
+Task: D024 — client claim recovery against bundled Worker authority.
 Status: completed; browser execution and external D003 gates remain blocked.
+
+## D024 completed (2026-10-16)
+
+- Added luckybox-recovery-integration.test.cjs: two scenarios connect authored client claim/welcome/recovery/message/modal code to the bundled Worker GameRoom through local transport ports. Initial ACK/denial is deliberately withheld, then a new authenticated local connection supplies a genuine welcome and processes the client's unchanged request ID.
+- Verified owned receipt replay opens the modal only after server acknowledgement; a competing claimant receives denial without pausing/opening a wheel. Both clear pending recovery, send no further settled replay, preserve the entire persisted box row (owner/cycle/cooldown) and award no score for claim recovery. No runtime defect reproduced or runtime/generated-client changes.
+- NODE_PATH=/workspace/scratch/voxel-d016/node_modules node --test tests/rebuild/luckybox-recovery-integration.test.cjs tests/rebuild/luckybox-retry.test.cjs tests/rebuild/p8-luckybox.test.cjs: 18 passed, zero failures/skips. Syntax/current-file credential/whitespace checks passed. Full npm suite not repeated for this test-only addition; D023 evidence remains attached to unchanged runtime.
+- Incremental audit: starting source minus 4f0726a contains 15 objects (1 commit, 7 trees, 7 blobs), no new archive members/gaps. index.html:632 public Firebase configuration and luckybox-retry.test.cjs:88 synthetic resume fixture were privately compared with prior audited source and are unchanged. Other refs unchanged; existing audit/account limits remain.
+- Transport/authentication/DOM/storage environment are local fixtures, not browser or live reconnect evidence. External blockers unchanged; no production/account/payment/deployment action.
 
 ## D023 completed (2026-10-16)
 
@@ -238,7 +246,7 @@ Starting source: 0e3fcd1746cd0c55f011a2b8fda58d86a82e5284.
 
 ## Next bounded task
 
-D024: connect the client pending-claim recovery regression to the existing bundled Worker harness, including a competing claimant and lost ACK. Verify server denial/receipt replay and unchanged cooldown/score end to end through local ports; do not claim live evidence or change ownership rules.
+D025: inspect Lucky Box modal recovery when its claim expires while a player waits before spinning. Reproduce whether server rejection leaves a usable way back to gameplay; implement only a verified local defect with behavioral coverage. Preserve server authority and never award from client time.
 
 Deferred D003: verify generated staging client and existing browser scenarios with the
 available permitted browser tooling. Check tooling availability first. Preserve

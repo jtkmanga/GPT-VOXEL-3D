@@ -68,4 +68,5 @@ item. Never substitute local results for live gates above.
 - DONE D021: invalidate stale wheel animation and hide/reset wheel on menu return; 13 targeted tests and full local suite passed.
 - DONE D022 (pending spin scope): two local resume/snapshot/modal/retry regressions passed; runtime unchanged. Socket authentication and live transport are not covered by these fixtures.
 - DONE D023: replay unresolved own claim after resumed unexpired claimed snapshot; two client regressions, 25 targeted checks and full suite passed. Server authorization remains required.
-- NEXT D024: combine client claim recovery with bundled Worker receipt/competing-claimant evidence through local ports.
+- DONE D024: two client-to-bundled-Worker recovery scenarios verify owned replay and competing-claim denial without changing box state or score; 18 targeted tests passed.
+- NEXT D025: inspect expired-claim wheel rejection and return-to-game usability with local behavioral coverage.
