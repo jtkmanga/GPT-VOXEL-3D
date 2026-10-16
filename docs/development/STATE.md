@@ -2,9 +2,17 @@
 
 Updated: 2026-10-16 (Asia/Bangkok).
 Branch: `development/voxel-continuous`.
-Starting source commit: `1bc889a03a5f881b525cb1d43303c3350db5252b`.
-Task: D029 — restore browser tooling and verify menu cancellation during reconnect.
+Starting source commit: `b5eb2345e00f17943fb42b5c87c5f4b313a622e4`.
+Task: D030 — menu cancellation during reconnect authentication.
 Status: completed; browser execution and external D003 gates remain blocked.
+
+## D030 completed (2026-10-16)
+
+- Added p2-client.test.cjs scenario executing actual reconnect after abnormal close, opening the replacement socket and sending resume authentication before menu return. Verified immediate pending-socket closure, ignored late open/welcome callbacks, no extra sends/connections, stopped/unpaused gameplay, no active/ready socket and zero timers after 120 seconds.
+- Initial test incorrectly expected eager expiry removal from the ticket map. Inspection showed secureGetResumeTicket intentionally prunes expired entries lazily. Added an actual accessor call with a null assertion before retaining the empty-map assertion; no assertions removed, runtime change or defect claim.
+- NODE_PATH=/workspace/scratch/voxel-d016/node_modules node --test tests/rebuild/p2-client.test.cjs: 20 passed, zero failures/skips. node --check, current-file credential scan (160 files) and git diff --check passed. Full npm not repeated for a test-only change; runtime unchanged from D028.
+- Incremental audit of source minus 1bc889a: 10 objects (1 commit, 5 trees, 4 blobs), no archive members/gaps. Nine candidates in p2-client.test.cjs are unchanged synthetic token/session fixtures, privately compared. Other advertised refs unchanged; prior scope/pattern/account limits remain.
+- Local mocked socket/auth/DOM/clock evidence only. Browser/live staging/mobile/capacity blockers unchanged; no production/account/payment/deployment action. Next: bounded review of repeated reconnect failure exhausting all three attempts and returning to menu without timers or a fresh-session fallback.
 
 ## D029 completed (2026-10-16)
 

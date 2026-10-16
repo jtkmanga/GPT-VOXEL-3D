@@ -325,6 +325,35 @@ test('D029 menu exit during reconnect backoff cannot reopen a socket or revive g
   assert.equal(f.timers.size, 0);
 });
 
+test('D030 menu exit during reconnect authentication rejects late welcome and releases resources', async () => {
+  const f = await fixture();
+  const original = await f.connect();
+  const created = f.nextSocket();
+  original.close(1006, 'Synthetic network loss');
+  await f.advance(250);
+  const resumed = await created;
+  resumed.open();
+  assert.equal(resumed.sent.length, 1, 'resume authentication has started');
+  assert.equal(f.evaluate('state.isPlaying'), true);
+  f.c.secureReturnToMenu();
+  await flush();
+  assert.equal(resumed.readyState, 3, 'pending socket closes immediately');
+  const sentBeforeLateCallbacks = resumed.sent.length;
+  resumed.onopen();
+  resumed.receive(f.welcome());
+  await flush(); await f.advance(120_000);
+  assert.equal(resumed.sent.length, sentBeforeLateCallbacks);
+  // Tickets expire lazily through the authored accessor, not a cleanup timer.
+  assert.equal(f.c.secureGetResumeTicket('4,4'), null);
+  assert.equal(f.evaluate('state.isPlaying'), false);
+  assert.equal(f.evaluate('state.isPaused'), false);
+  assert.equal(f.evaluate('secureGameSocket'), null);
+  assert.equal(f.evaluate('secureGameReady'), false);
+  assert.equal(f.evaluate('secureSessionTickets.size'), 0);
+  assert.equal(f.sockets.length, 2, 'late callbacks must not start another connection');
+  assert.equal(f.timers.size, 0);
+});
+
 test('P2 client cancelled reconnect and expired ticket cannot fall back to a new session', async () => {
   const f = await fixture();
   assert.equal(await f.c.secureResumeDisconnectedSocket('4,4', f.user.uid), false);

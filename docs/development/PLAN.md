@@ -74,4 +74,5 @@ item. Never substitute local results for live gates above.
 - DONE D027: genuine Worker expiry delivered after client timeout enables neutral exit with unchanged score/cooldown; 14 targeted tests passed, runtime unchanged.
 - DONE D028: browser interpreter environment is missing; fixed open shop surviving menu return with regression and full local suite.
 - DONE D029: restored isolated Playwright; headless-shell archive still fails. Added reconnect-backoff menu cancellation regression, 19 local tests passed.
-- NEXT D030: menu exit during reconnect socket authentication, with late welcome and cleanup evidence.
+- DONE D030: menu exit during reconnect authentication rejects late open/welcome and cleans resources; 20 local session tests passed, runtime unchanged.
+- NEXT D031: exhausted reconnect attempts return to menu without retained timers or fresh-session fallback; local session fixture only.
