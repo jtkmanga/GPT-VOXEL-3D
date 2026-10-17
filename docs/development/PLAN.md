@@ -81,4 +81,5 @@ item. Never substitute local results for live gates above.
 - DONE D034: browser interpreter unavailable; missing refresh ACK/policy-close client regression and separate Worker security suite pass (51 tests). Browser gate remains blocked.
 - DONE D035: lost client refresh request, genuine ZoneRoom expiry rejection and client teardown integrated locally; 26 client tests passed.
 - DONE D036: accepted refresh/withheld ACK preserves renewed Worker expiry; late/duplicate ACK restores one timer. 27 local client tests passed.
-- NEXT D037: delayed refresh ACK after renewed token expiry; review client timer and genuine server policy-close behavior locally.
+- DONE D037: expired delayed/duplicate ACK cannot override genuine Worker policy closure; 28 local client tests passed.
+- NEXT D038: consolidate full current-source local verification after accumulated tests and inspect browser prerequisites before bounded tooling recovery; retain separate browser/live gates.

@@ -325,6 +325,49 @@ test('D036 lost refresh ACK preserves renewed Worker authority beyond the old ex
   assert.equal(f.timers.size, 0);
 });
 
+test('D037 expired delayed refresh ACK cannot override genuine Worker policy closure', async t => {
+  const { createHarness } = require('./harness.cjs');
+  const h = createHarness();
+  t.after(() => h.close());
+  const f = await fixture();
+  f.c.scene = { add() {}, remove() {}, traverse() {} };
+  f.c.createTreasureChest = () => ({ position: { set() {} }, traverse() {} });
+  f.user.getIdToken = async () => h.token(f.user.uid, { exp: Math.floor(h.now() / 1000) + 61 });
+  const backend = await h.open('/play?zone=4,4');
+  const created = f.nextSocket();
+  const opening = f.c.secureOpenZoneSocket('4,4');
+  const socket = await created;
+  socket.open();
+  await backend.send(socket.sent[0]);
+  socket.receive(backend.messages('welcome').at(-1));
+  await opening;
+  await h.advance(1000); await f.advance(1000);
+  await backend.send(socket.sent[1]);
+  const ack = backend.messages('auth_refreshed').at(-1);
+  assert.ok(ack);
+  await h.advance(61_000); await f.advance(61_000);
+  assert.equal(h.now(), ack.session.tokenExpiresAt);
+  socket.receive(ack);
+  assert.equal(f.timers.size, 1);
+  const scheduled = [...f.timers].map(([id, timer]) => [id, timer.at]);
+  socket.receive(ack);
+  assert.deepEqual([...f.timers].map(([id, timer]) => [id, timer.at]), scheduled);
+  f.evaluate('state.isPaused = true');
+  f.c.syncMyPlayerData(true);
+  await backend.send(socket.sent.at(-1));
+  assert.equal(backend.client.closed, true);
+  assert.equal(backend.client.closeInfo.code, 1008);
+  socket.close(backend.client.closeInfo.code, backend.client.closeInfo.reason);
+  socket.receive(ack);
+  await flush(); await f.advance(120_000);
+  assert.equal(f.evaluate('state.isPlaying'), false);
+  assert.equal(f.evaluate('secureGameReady'), false);
+  assert.equal(f.evaluate('secureGameSocket'), null);
+  assert.equal(f.sockets.length, 1);
+  assert.equal(socket.sent.length, 3, 'policy closure cancels the pending refresh');
+  assert.equal(f.timers.size, 0);
+});
+
 for (const outcome of ['resolve', 'reject']) {
   test(`D033 old refresh ${outcome} cannot affect a same-UID replacement session`, async () => {
     const f = await fixture();

@@ -1,5 +1,18 @@
 # S001: public repository credential audit
 
+## D037 increment — 2026-10-18
+
+Public source f4993e559bf90f7a7ad91ba8612086e230e74f20 minus audited
+3e7deacd42d1db1db270699912f8dba3e2aaf7e7: 10 objects (1 commit, 5 trees,
+4 blobs), no archive members/gaps; other advertised refs unchanged.
+Nine assignment candidates in tests/rebuild/p2-client.test.cjs at lines
+65, 107, 169, 183, 185, 450, 631, 635 and 708, blob
+91ddeb7886c0424c2318f9f845fe2cf653a4b998, are unchanged synthetic fixtures,
+privately compared against the audited parent. Current-file scan passed.
+No discovered credentials used/disclosed; tests generate synthetic tokens only.
+Firebase public configuration is distinct from private/admin/database credentials.
+Prior archive coverage, scope/pattern limitations and account limits remain.
+
 ## D036 increment — 2026-10-16
 
 Public source 3e7deacd42d1db1db270699912f8dba3e2aaf7e7 minus audited

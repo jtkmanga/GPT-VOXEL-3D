@@ -1,10 +1,18 @@
 # Current development state
 
-Updated: 2026-10-16 (Asia/Bangkok).
+Updated: 2026-10-18 (Asia/Bangkok).
 Branch: `development/voxel-continuous`.
-Starting source commit: `3e7deacd42d1db1db270699912f8dba3e2aaf7e7`.
-Task: D036 — accepted refresh with withheld acknowledgement.
+Starting source commit: `f4993e559bf90f7a7ad91ba8612086e230e74f20`.
+Task: D037 — expired delayed refresh acknowledgement.
 Status: completed; browser execution and external D003 gates remain blocked.
+
+## D037 completed (2026-10-18)
+
+- Resumed after the prior usage-limit interruption, which executed no local task changes. Fresh GitHub public visibility/HEAD/refs checks matched the expected D036 source.
+- Added p2-client.test.cjs integration withholding genuine ZoneRoom refresh ACK until exact renewed token expiry. Late/duplicate delivery produces one unchanged client timer; an authored movement packet then receives genuine Worker policy closure 1008. Forwarding closure cancels pending refresh, and another late ACK cannot revive gameplay, send authentication or create sockets/timers.
+- NODE_PATH=/workspace/scratch/voxel-d016/node_modules node --test tests/rebuild/p2-client.test.cjs: 28 passed, zero failures/skips. node --check, current-file credential scan (160 files) and git diff --check passed. No assertions weakened or runtime/generated-client changes; full npm not repeated for this test-only addition.
+- Incremental audit: source minus 3e7deac has 10 objects (1 commit, 5 trees, 4 blobs), no archive members/gaps; nine unchanged synthetic candidates privately compared. Other advertised refs unchanged; prior scope/pattern/account limitations remain.
+- Synthetic SDK credentials, transport/storage/clock/DOM/rendering only; not live Firebase/staging/browser/mobile/capacity evidence. External blockers unchanged; no production/account/payment/deployment actions. Next: consolidate full current-source local verification after accumulated regressions and inspect browser prerequisites before a bounded tooling recovery attempt.
 
 ## D036 completed (2026-10-16)
 
