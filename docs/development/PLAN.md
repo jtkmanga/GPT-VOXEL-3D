@@ -82,4 +82,5 @@ item. Never substitute local results for live gates above.
 - DONE D035: lost client refresh request, genuine ZoneRoom expiry rejection and client teardown integrated locally; 26 client tests passed.
 - DONE D036: accepted refresh/withheld ACK preserves renewed Worker expiry; late/duplicate ACK restores one timer. 27 local client tests passed.
 - DONE D037: expired delayed/duplicate ACK cannot override genuine Worker policy closure; 28 local client tests passed.
-- NEXT D038: consolidate full current-source local verification after accumulated tests and inspect browser prerequisites before bounded tooling recovery; retain separate browser/live gates.
+- DONE D038: full local verification on D037 source: 552 active tests, historical/legacy suites, static/generated/syntax/config checks and 10 audit-tool tests passed. Browser prerequisites unavailable; no browser run.
+- NEXT D039: bounded isolated browser-tooling recovery; if unavailable, review delayed auth-refresh server-clock handling using deterministic local evidence. Retain separate browser/live gates.

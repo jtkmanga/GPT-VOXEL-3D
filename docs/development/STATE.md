@@ -2,9 +2,18 @@
 
 Updated: 2026-10-18 (Asia/Bangkok).
 Branch: `development/voxel-continuous`.
-Starting source commit: `f4993e559bf90f7a7ad91ba8612086e230e74f20`.
-Task: D037 — expired delayed refresh acknowledgement.
+Starting source commit: `35c104f7ab37757b2dbee4b136fa6ab60b02f28a`.
+Task: D038 — consolidated current-source local verification.
 Status: completed; browser execution and external D003 gates remain blocked.
+
+## D038 completed (2026-10-18)
+
+- Fresh public visibility and all advertised refs checked; only development advanced to D037. Verified the exact source in an isolated detached worktree, preserving earlier worktrees. No runtime/test changes or assertions weakened.
+- NODE_PATH=/workspace/scratch/voxel-d016/node_modules npm test: exit 0; 552 active tests passed, zero failures/skips, historical checkpoint suites and both unchanged legacy scenarios passed. This consolidates accumulated D029–D037 regressions rather than claiming prior results cover new tests.
+- Ran build-client.cjs --check, check-syntax.cjs (141 files/inline scripts), check-static.cjs, check-staging.cjs --allow-unconfigured and check-secrets.cjs (160 files): all passed. These are the verification runner's component commands; its branch-guarded entry point was not run in the detached worktree. Python audit-tool suite: 10 passed. git diff --check passed before publication. Raw logs remain private; only sanitized outcomes recorded here.
+- Browser prerequisite inspection: no Chromium command, system Python 3.12.14 has no Playwright package, and the previous D029 bin/python is missing. Existing p9-browser.py requires /usr/bin/chromium and repository-local Three.js. No installer/download or browser scenario ran in D038; previous archive failures remain historical. Browser gate remains blocked, not passed or skipped.
+- Incremental audit: source minus f4993e5 has 10 objects (1 commit, 5 trees, 4 blobs), no archive members/gaps; nine unchanged synthetic fixture candidates privately compared. Other refs unchanged; prior scope/pattern/account limitations remain.
+- Evidence is local fixture/static verification only, not real Google login, live staging, physical mobile, payment sandbox or capacity. No production/account/payment/deployment actions. External blockers unchanged. Next D039: bounded isolated browser-tooling recovery; if still unavailable, review current-source auth-refresh server-clock handling for delayed responses using a local deterministic regression.
 
 ## D037 completed (2026-10-18)
 
@@ -350,7 +359,7 @@ Starting source: 0e3fcd1746cd0c55f011a2b8fda58d86a82e5284.
 
 ## Next bounded task
 
-D030: review menu exit while a reconnect socket has been created but has not received welcome. Verify a late welcome cannot revive gameplay or retain timers/sockets using the local session fixture; do not repeat the completed backoff-only case.
+D039: bounded isolated browser-tooling recovery after D038 prerequisite inspection. If unavailable, review auth-refresh server-clock handling for delayed responses with a deterministic local regression; do not duplicate the completed expiry/policy-closure scenarios.
 
 Deferred D003: verify generated staging client and existing browser scenarios with the
 available permitted browser tooling. Check tooling availability first. Preserve
