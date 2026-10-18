@@ -2,9 +2,19 @@
 
 Updated: 2026-10-18 (Asia/Bangkok).
 Branch: `development/voxel-continuous`.
-Starting source commit: `2892fb0af2eea7bb692e228fc685e085e5494d74`.
-Task: D039 — Release Gates first: browser recovery and gate triage.
+Starting source commit: `fb179fb92ff1b491528c102beb6235ab6c12a09a`.
+Task: D040 — reconcile owner console evidence with staging storage architecture.
 Status: assessment completed; release gates blocked, NOT READY.
+
+## D040 assessed (2026-10-18)
+
+- Fresh GitHub public visibility and advertised refs match D039. Preserved published D039 worktree changes; D040 checkout was clean when resumed after interruption. No unfinished code edits or test changes discarded.
+- One bounded Playwright headless-shell installation retry exited 1 with malformed-ZIP and download-failure diagnostics. No browser execution/pass and no assertion changes. Moved to the next safe gate.
+- Reconciled owner screenshots with generated staging source: Firebase Auth is configured, while direct Firebase gameplay database access is guarded off and authoritative state uses Durable Object storage. Do not provision Firebase databases merely to obtain Rules. Separate Lucky Game Rules are excluded from staging evidence.
+- Added sanitized screenshot observations/limits to RELEASE_GATES.md: Google enabled and domain authorized; App Check web registration absent, Authentication Unenforced; ROOM/ZONE bindings visible but namespace targets unknown; manually deployed version prefix has no verified source mapping. No screenshots, personal data or key values committed.
+- Existing p9-config and p9-integration suites ran unchanged using NODE_PATH=/workspace/scratch/voxel-d016/node_modules: 42 passed, zero failures/skips. These are local fixture tests, including synthetic identity/storage; not live login, payment, mobile or capacity evidence. Runtime unchanged; no unnecessary new regressions/full-suite claim.
+- Current-file secret scanner, disabled staging scaffold check and git diff --check passed. Reused the already completed D039-source incremental audit (8 objects, zero findings/gaps/archive members); refs unchanged, no full-history repeat. Prior audit limitations remain.
+- Files changed: STATE.md, PLAN.md, RELEASE_GATES.md, SECRET_AUDIT.md only. No account/resource/deployment/payment changes. All gates remain open; next steps are authorized read-only revision/namespace/API restrictions inspection and browser recovery, followed by real staging tests. Preserve existing scheduled task; no new automation.
 
 ## D039 assessed (2026-10-18)
 

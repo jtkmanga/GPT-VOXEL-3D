@@ -95,3 +95,4 @@ Release Gate first. Never substitute local results for live gates above.
 - DONE D037: expired delayed/duplicate ACK cannot override genuine Worker policy closure; 28 local client tests passed.
 - DONE D038: full local verification on D037 source: 552 active tests, historical/legacy suites, static/generated/syntax/config checks and 10 audit-tool tests passed. Browser prerequisites unavailable; no browser run.
 - D039: Release Gate triage and browser tooling recovery; see current STATE.md and RELEASE_GATES.md. Earlier speculative auth-clock regression is deferred under the new gate-first priority.
+- DONE D040 (assessment only): reconciled owner screenshots and staging storage architecture; 42 existing local P9 tests pass. App Check, deployed source/namespace mapping and API restrictions remain unresolved. No Firebase database creation is justified solely to inspect Rules; see RELEASE_GATES.md. Browser download remains blocked.
