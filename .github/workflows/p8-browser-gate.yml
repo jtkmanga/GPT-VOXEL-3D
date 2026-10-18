@@ -61,4 +61,17 @@ jobs:
           /usr/bin/chromium --version
 
       - name: Run original P8 browser/client gate
-        run: python tests/rebuild/p1-browser.py
+        id: browser_test
+        shell: bash
+        run: |
+          set -o pipefail
+          python tests/rebuild/p1-browser.py 2>&1 | tee p8-browser.log
+
+      - name: Upload browser gate diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p8-browser-diagnostics
+          path: p8-browser.log
+          if-no-files-found: warn
+          retention-days: 3
