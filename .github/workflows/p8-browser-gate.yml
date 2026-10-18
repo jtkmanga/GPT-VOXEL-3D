@@ -8,6 +8,11 @@ on:
       - development/voxel-continuous
     paths:
       - ".github/workflows/p8-browser-gate.yml"
+      - "tests/rebuild/p1-browser.py"
+      - "index.html"
+      - "src/client/**"
+      - "package.json"
+      - "package-lock.json"
 
 permissions:
   contents: read
