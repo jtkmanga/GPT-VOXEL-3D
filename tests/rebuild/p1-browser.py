@@ -277,11 +277,18 @@ def run():
                 require(all(handler["callable"] for handler in handlers), f"Global handler contract changed: {handlers}")
                 passed("inline and dynamic UI handlers retain callable classic-script global bindings")
 
-                page.keyboard.down("w")
-                require(page.evaluate("keys.w === true"), "Real keyboard W keydown did not reach controls")
-                page.keyboard.up("w")
-                require(page.evaluate("keys.w === false"), "Real keyboard W keyup did not reach controls")
-                passed("real browser keyboard down/up reaches the existing movement controls")
+                # The game intentionally ignores movement while logged out. Exercise the
+                # browser's real keyboard event path without weakening that authority gate.
+                page.evaluate("state.isLoggedIn = true")
+                try:
+                    page.keyboard.down("w")
+                    require(page.evaluate("keys.w === true"), "Real keyboard W keydown did not reach controls")
+                    page.keyboard.up("w")
+                    require(page.evaluate("keys.w === false"), "Real keyboard W keyup did not reach controls")
+                finally:
+                    page.keyboard.up("w")
+                    page.evaluate("state.isLoggedIn = false; keys.w = false")
+                passed("real browser keyboard down/up reaches controls for an authenticated player")
 
                 modules = page.evaluate("""async () => {
                     const entry = await import('/src/client/entry.mjs');
