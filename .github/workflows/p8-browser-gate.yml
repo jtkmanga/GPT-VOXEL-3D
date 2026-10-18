@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - rebuild-p0-p8
+      - development/voxel-continuous
     paths:
       - ".github/workflows/p8-browser-gate.yml"
 
