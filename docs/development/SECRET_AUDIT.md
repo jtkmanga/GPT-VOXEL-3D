@@ -1,5 +1,15 @@
 # S001: public repository credential audit
 
+## D041 increment — 2026-10-19
+
+Public source fbd7f601be4aba01e1ec747cfd1c6be9de440c3a minus previously
+audited 8c209ec95c6c63acb67dcc64d5909db069fdfb76: 25 objects (5 commits,
+15 trees, 5 blobs), zero findings/archive members/gaps. Other advertised refs
+unchanged. Current-file scanner passed 161 files. Previous bounded-pattern and
+scope limitations remain; account settings unverified. Firebase public web
+configuration remains distinct from private/admin/database credentials. No
+credential values printed or used. No account or production changes.
+
 ## D040 increment — 2026-10-18
 
 Reused the completed scan of fb179fb92ff1b491528c102beb6235ab6c12a09a minus

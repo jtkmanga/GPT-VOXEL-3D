@@ -1,5 +1,21 @@
 # Release gate ledger
 
+## D041 update — 2026-10-19
+
+Verified [GitHub run 39177769472](https://github.com/jtkmanga/GPT-VOXEL-3D/actions/runs/39177769472),
+job 117823884798, source fbd7f601be4aba01e1ec747cfd1c6be9de440c3a:
+Chromium installation and `python tests/rebuild/p1-browser.py` succeeded.
+This supersedes the P8 installation blocker below. Source review confirms real
+keyboard assertions remain with synthetic active-game setup and cleanup.
+The workflow does not run `tests/rebuild/p9-browser.py`; generated staging browser
+coverage remains pending. Firebase/transport fixtures are not live login,
+multiplayer, payment, physical mobile or capacity evidence. Artifact contents
+were not retrieved; no per-case count is claimed from job metadata.
+Cloudflare read-only recheck still reaches `/login`; no authenticated inventory.
+No callable Firebase/Cloudflare connector tools are exposed in this session.
+Gates 2–7 retain D040 prerequisites. Overall NOT READY. Next safe browser task:
+P9 scenarios, without repeating completed P8 recovery. Historical ledger follows.
+
 Assessed 2026-10-18 (Asia/Bangkok), source
 fb179fb92ff1b491528c102beb6235ab6c12a09a. Status: NOT READY.
 This ledger is a readiness assessment, not a pass certificate.

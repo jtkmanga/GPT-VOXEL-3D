@@ -1,5 +1,22 @@
 # Current development state
 
+## D041 — browser CI evidence reconciled (2026-10-19)
+
+Starting source: fbd7f601be4aba01e1ec747cfd1c6be9de440c3a. Status: NOT READY.
+Preserved owner changes with a clean fast-forward from D040. Public visibility
+and advertised refs checked; only development advanced. GitHub run 39177769472,
+job 117823884798 succeeded at this source, including Chromium installation and
+the P8 browser/client gate. Keyboard assertions remain intact; active-game state
+setup is synthetic, not real authentication. P9 browser scenarios are not run
+by this workflow. See RELEASE_GATES.md for evidence scope.
+Incremental audit: 25 objects, zero findings/archive members/gaps. Current-file
+scan passed (161 files). Prior scope limits remain. Read-only Cloudflare recheck
+still reaches sign-in; no Firebase/Cloudflare connector tools exposed. Gates
+2–6 retain their recorded prerequisites. Documentation-only change; validation:
+credential scan and git diff --check. No runtime/assertion/account changes.
+Next: existing P9 browser scenarios and authorized account inspection, not
+another P8 recovery. Historical assessments follow.
+
 Updated: 2026-10-18 (Asia/Bangkok).
 Branch: `development/voxel-continuous`.
 Starting source commit: `fb179fb92ff1b491528c102beb6235ab6c12a09a`.
