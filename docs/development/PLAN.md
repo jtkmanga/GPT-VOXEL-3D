@@ -15,7 +15,7 @@ f98aa9a044616b1b965b889cf0c02a0d3b041f65.
 ## Scheduled iteration
 
 Read current GitHub branch HEAD, AGENTS.md, STATE.md and PLAN.md. Choose one
-unfinished local code/test task. If another run has advanced HEAD, discard stale
+unfinished Release Gate task in the priority order below. If another run has advanced HEAD, discard stale
 assumptions and reconcile. Publish a tested change plus updated STATE.md in a
 single commit using an expected-head lease. Do not keep committing identical
 status updates when blocked. Do not repeat a completed task unless changed code
@@ -40,11 +40,22 @@ not a pass. Secret/account remediation never proceeds without owner approval.
 Security audit S001 was completed before D002; see SECRET_AUDIT.md. Reuse its
 scanned refs/object baseline for incremental audits, while preserving its limits.
 
+## Release Gates first (owner instruction, 2026-10-18)
+
+Preserve unfinished correct edits and settle running checks before changing focus.
+Gate order: browser; read-only Cloudflare/Firebase isolation and security settings;
+real Google login/staging; multiplayer/mobile; VIP/payment sandbox; authorized
+incremental capacity; final security/release review. See RELEASE_GATES.md for
+current evidence and concrete blockers. A blocked gate does not stop other safe
+gates. Local tests are justified only by gate requirements, reproduced defects,
+or exhaustion of safe gate work; do not manufacture test-only activity.
+Do not create resources, deploy, enable payment or load an unapproved target.
+
 ## Safe work while external gates are blocked
 
 Per owner instruction, keep the hourly task enabled; a blocked subtask does not
-pause the project. Skip unchanged external blockers and select a bounded local
-item. Never substitute local results for live gates above.
+pause the project. Skip unchanged external blockers and inspect the next safe
+Release Gate first. Never substitute local results for live gates above.
 
 - DONE S002: incrementally inspect the previously excluded advertised PR #1 refs and new documentation objects; record scope in SECRET_AUDIT.md.
 - DONE S003: reproducible bounded Git/ZIP audit tool with 10 synthetic regression tests; see AUDIT_TOOL.md for usage and limits.
@@ -83,4 +94,4 @@ item. Never substitute local results for live gates above.
 - DONE D036: accepted refresh/withheld ACK preserves renewed Worker expiry; late/duplicate ACK restores one timer. 27 local client tests passed.
 - DONE D037: expired delayed/duplicate ACK cannot override genuine Worker policy closure; 28 local client tests passed.
 - DONE D038: full local verification on D037 source: 552 active tests, historical/legacy suites, static/generated/syntax/config checks and 10 audit-tool tests passed. Browser prerequisites unavailable; no browser run.
-- NEXT D039: bounded isolated browser-tooling recovery; if unavailable, review delayed auth-refresh server-clock handling using deterministic local evidence. Retain separate browser/live gates.
+- D039: Release Gate triage and browser tooling recovery; see current STATE.md and RELEASE_GATES.md. Earlier speculative auth-clock regression is deferred under the new gate-first priority.

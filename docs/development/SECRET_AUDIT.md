@@ -1,5 +1,15 @@
 # S001: public repository credential audit
 
+## D039 increment — 2026-10-18
+
+Public source 2892fb0af2eea7bb692e228fc685e085e5494d74 minus audited
+35c104f7ab37757b2dbee4b136fa6ab60b02f28a: 7 objects (1 commit, 3 trees,
+3 blobs), zero findings/archive members/gaps. All other advertised refs unchanged.
+Current scan passed (161 files after ledger addition); prior current/historical archive coverage reused.
+Firebase public web configuration remains distinct from private/admin/database
+credentials. No credential use or account action. Prior scope/pattern limitations
+and unverified account restrictions remain; not a global security certification.
+
 ## D038 increment — 2026-10-18
 
 Public source 35c104f7ab37757b2dbee4b136fa6ab60b02f28a minus audited

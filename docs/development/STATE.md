@@ -2,9 +2,19 @@
 
 Updated: 2026-10-18 (Asia/Bangkok).
 Branch: `development/voxel-continuous`.
-Starting source commit: `35c104f7ab37757b2dbee4b136fa6ab60b02f28a`.
-Task: D038 — consolidated current-source local verification.
-Status: completed; browser execution and external D003 gates remain blocked.
+Starting source commit: `2892fb0af2eea7bb692e228fc685e085e5494d74`.
+Task: D039 — Release Gates first: browser recovery and gate triage.
+Status: assessment completed; release gates blocked, NOT READY.
+
+## D039 assessed (2026-10-18)
+
+- Fresh public visibility/HEAD/advertised refs checked. Prior D038 worktree documentation exactly matches its published commit; prior test exited 0, so no unfinished D038 changes/test to abandon. Preserved earlier worktrees; new isolated checkout at current source.
+- Restored isolated Python environment and Playwright 1.64.0. First bounded install returned exit 1 with an empty log, not a diagnosed archive result. One diagnostic retry of `python -m playwright install chromium --only-shell` produced repeated malformed-ZIP errors ('End of central directory record signature not found') and final download failure code 1. No browser binary installed or browser scenario run; assertions unchanged.
+- Moved to gate 2: fresh read-only Cloudflare navigation reached https://dash.cloudflare.com/login, with no authenticated resource inventory. Plugin discovery found Firebase available but not installed/connected; suggested owner connection. No Firebase browser fallback, account changes, credentials or permissions used. Rules/API restrictions/App Check remain unverified.
+- Reviewed gates 3–7 prerequisites against current staging scaffold, P9/P8 and 2C2P preparation documents. Added RELEASE_GATES.md identifying required evidence and blockers, without treating historical deployment/browser claims as current. No verified live target, sandbox merchant lifecycle or approved load budget is available; no live login/payment/load attempted.
+- Updated PLAN.md to prioritize gates over speculative local regressions per new owner instruction. No runtime/tests changed; D038 local 552-test evidence remains source-applicable, not live evidence. check-staging.cjs --allow-unconfigured, current credential scan (161 files after ledger addition) and git diff --check passed; no new full-suite claim.
+- Incremental audit: source minus 35c104f has 7 objects (1 commit, 3 trees, 3 blobs), zero findings/archive members/gaps. Other refs unchanged; previous scope/pattern/account limitations remain.
+- Next: resume the earliest safely unblocked gate with fresh access/tooling evidence. Owner connection/approved staging identity is needed for account inspection; do not create resources or repeat unchanged status commits. Keep existing task enabled; no production, deployment, merge, payment or new automation.
 
 ## D038 completed (2026-10-18)
 
@@ -359,7 +369,7 @@ Starting source: 0e3fcd1746cd0c55f011a2b8fda58d86a82e5284.
 
 ## Next bounded task
 
-D039: bounded isolated browser-tooling recovery after D038 prerequisite inspection. If unavailable, review auth-refresh server-clock handling for delayed responses with a deterministic local regression; do not duplicate the completed expiry/policy-closure scenarios.
+Resume Release Gates per RELEASE_GATES.md when tooling/account access is available. Speculative auth-clock regression is deferred by the owner's gate-first instruction; do not add local tests simply to create activity.
 
 Deferred D003: verify generated staging client and existing browser scenarios with the
 available permitted browser tooling. Check tooling availability first. Preserve
