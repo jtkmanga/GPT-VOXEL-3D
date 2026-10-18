@@ -279,7 +279,7 @@ def run():
 
                 # The game intentionally ignores movement while logged out. Exercise the
                 # browser's real keyboard event path without weakening that authority gate.
-                page.evaluate("state.isLoggedIn = true")
+                page.evaluate("state.isLoggedIn = true; state.isPlaying = true; state.isPaused = false")
                 try:
                     page.keyboard.down("w")
                     require(page.evaluate("keys.w === true"), "Real keyboard W keydown did not reach controls")
@@ -287,8 +287,8 @@ def run():
                     require(page.evaluate("keys.w === false"), "Real keyboard W keyup did not reach controls")
                 finally:
                     page.keyboard.up("w")
-                    page.evaluate("state.isLoggedIn = false; keys.w = false")
-                passed("real browser keyboard down/up reaches controls for an authenticated player")
+                    page.evaluate("state.isLoggedIn = false; state.isPlaying = false; state.isPaused = false; keys.w = false")
+                passed("real browser keyboard down/up reaches controls during active gameplay")
 
                 modules = page.evaluate("""async () => {
                     const entry = await import('/src/client/entry.mjs');
