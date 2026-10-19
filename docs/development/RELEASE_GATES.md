@@ -1,5 +1,15 @@
 # Release gate ledger
 
+## D044 public access evidence — 2026-10-19
+
+[Run 39185788160](https://github.com/jtkmanga/GPT-VOXEL-3D/actions/runs/39185788160),
+source fb3bea56a6f1f2f943e591d69a6a05b2ac4cbd20, job 117847833258:
+public `/health` returned HTTP 403 from GitHub Actions. `/staging-config` was not
+attempted after failure. No response body/header values published. Exact account
+rule/cause unknown; no outage/bot-detection claim. Owner-only endpoint-policy
+diagnosis is blocked; no Cloud Browser login retries or access-control bypass.
+Existing browser fixture pass is independent of this live-access failure.
+
 ## D043 verified result — 2026-10-19
 
 [Run 39185662751](https://github.com/jtkmanga/GPT-VOXEL-3D/actions/runs/39185662751)

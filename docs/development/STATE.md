@@ -1,5 +1,19 @@
 # Current development state
 
+## D044 — public staging access blocker (2026-10-19)
+
+Starting source fb3bea56a6f1f2f943e591d69a6a05b2ac4cbd20. Run 39185788160,
+job 117847833258 reports `/health HTTP 403`. `/staging-config` was not reached
+because the health check stops on failure. This is an access blocker, not proof
+of service outage, bot detection, or a specific account rule. Do not retry login,
+evade access controls, change production or request credentials. Owner-side
+diagnosis of the existing staging public endpoint policy is needed for this
+portion; continue other gates. P9's 11-case browser pass at 001cc26 remains
+applicable to unchanged game/browser source. D043 rerun status is separate.
+Documentation only; credential/whitespace checks passed. Incremental audit:
+11 objects (1 commit, 5 trees, 5 blobs), zero findings/archives/gaps; prior limits
+remain. Overall NOT READY. No further public requests made after diagnosing 403.
+
 ## D043 — verified P9 browser result and public diagnostics (2026-10-19)
 
 Starting source 001cc266fa5d183ff9a268ec947a64f12ecf57ec. GitHub run
