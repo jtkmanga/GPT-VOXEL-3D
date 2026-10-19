@@ -1,5 +1,15 @@
 # Release gate ledger
 
+## D043 verified result — 2026-10-19
+
+[Run 39185662751](https://github.com/jtkmanga/GPT-VOXEL-3D/actions/runs/39185662751)
+at 001cc266fa5d183ff9a268ec947a64f12ecf57ec: P9 browser job 117847453208
+succeeded; decoded log reports 11 passed / 0 failed / 0 skipped. This closes the
+existing P9 Chromium fixture execution gap. It is not live Google/mobile/payment
+or capacity evidence. Public staging job 117847452901 failed at /health; overall
+workflow failure must not obscure the separate successful browser job. Safe
+HTTP status/type diagnostics added for the next run; live result still pending.
+
 ## D042 update — 2026-10-19
 
 P9 workflow added for development only; unchanged browser scenarios, no secrets

@@ -1,5 +1,10 @@
 # Development plan
 
+D043: existing P9 browser scenarios passed 11/11 in GitHub run 39185662751 at
+001cc26. Browser fixture coverage is verified; public staging health job failed.
+Investigate only sanitized public diagnostics; real login/mobile/payment/capacity
+and account-only isolation/security remain separate open gates.
+
 D042 owner steering (2026-10-19): stop Cloudflare Cloud Browser login attempts
 and repeated login prompts. Use development-only P9 GitHub Actions and existing
 public staging endpoints. Account-only inspection remains a recorded blocker,

@@ -35,6 +35,7 @@ jobs:
               try:
                   with client.open(origin + path, timeout=20) as response:
                       body = response.read(65537)
+                      print('HTTP', response.status, 'path', path, 'bytes', len(body))
                       assert response.status == 200 and len(body) <= 65536
                       if path == '/health':
                           assert body.decode().strip() == 'GPT-VOXEL-3D staging online'
@@ -43,8 +44,10 @@ jobs:
                           assert config.get('environment') == 'staging'
                           assert config.get('workerOrigin') == origin
                       print('PASS public staging read-only:', path)
-              except Exception:
-                  raise SystemExit('FAIL public staging read-only: ' + path + ' (response details omitted)')
+              except urllib.error.HTTPError as error:
+                  raise SystemExit('FAIL public staging read-only: ' + path + ' HTTP ' + str(error.code))
+              except Exception as error:
+                  raise SystemExit('FAIL public staging read-only: ' + path + ' ' + type(error).__name__ + ' (details omitted)')
           print('Scope: two unauthenticated GETs only; no deployment-source, account-isolation, login, payment or capacity certification.')
   staging-browser-fixtures:
     if: github.ref == 'refs/heads/development/voxel-continuous'

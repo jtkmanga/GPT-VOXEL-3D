@@ -1,5 +1,17 @@
 # Current development state
 
+## D043 — verified P9 browser result and public diagnostics (2026-10-19)
+
+Starting source 001cc266fa5d183ff9a268ec947a64f12ecf57ec. GitHub run
+39185662751, job 117847453208: P9 Chromium scenarios 11 passed, zero failed/skipped.
+Unchanged test assertions; synthetic auth/transport and mobile emulation only.
+Public read-only job 117847452901 failed at /health. Added safe status/type/size
+diagnostics without printing bodies, headers or exception details; no assertions
+weakened. Syntax/credential/whitespace validation passed. No game source changed.
+Incremental audit: 11 objects (1 commit, 5 trees, 5 blobs), no findings/archives/gaps.
+Next: inspect public diagnostics; account-only checks remain blocked without
+Cloudflare login retries. Overall NOT READY; no deployment/payment/load actions.
+
 ## D042 — P9 CI execution path (2026-10-19)
 
 Starting source: eaf86dffe69ddf8f625a48bc98a0a3129715daa7. NOT READY.
