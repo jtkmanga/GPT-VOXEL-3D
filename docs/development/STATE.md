@@ -1,5 +1,28 @@
 # Current development state
 
+## D042 — P9 CI execution path (2026-10-19)
+
+Starting source: eaf86dffe69ddf8f625a48bc98a0a3129715daa7. NOT READY.
+Preserved D041 local files after confirming they exactly match the published
+commit. Public visibility/refs checked; other refs unchanged. Added development-only
+P9 workflow using the existing unchanged browser assertions, Playwright 1.62.0,
+Chromium and Node 24 on ubuntu-24.04. Read-only repository permission, no retained
+checkout credentials, no deployment or external credentials. Artifact scope states
+synthetic authentication/transport and mobile emulation; CI result is pending.
+Added a separate bounded public-endpoint job: two unauthenticated GETs, no redirects,
+no response bodies logged; validates staging health/environment/origin only.
+P9 client/config suites passed 30 tests, zero failures/skips.
+Validated YAML parsing/permission shape, Python syntax, staging structural check,
+current-file scan (162 files) and whitespace. Existing P9 client/config tests run
+locally; these do not establish browser or live staging success.
+Incremental audit: 8 objects (1 commit, 3 trees, 4 blobs), no findings/archives/gaps.
+Owner explicitly stopped Cloudflare Cloud Browser login attempts: do not retry
+or prompt for that session. Read-only public health/config requests returned HTTP
+errors in this environment; no account/login/payment/load traffic attempted.
+Next: inspect P9 CI result, repair genuine failures without weakening assertions;
+use public endpoint diagnostics where available. Account-only isolation/API/App
+Check evidence remains blocked; do not loop on owner login. No new automation.
+
 ## D041 — browser CI evidence reconciled (2026-10-19)
 
 Starting source: fbd7f601be4aba01e1ec747cfd1c6be9de440c3a. Status: NOT READY.

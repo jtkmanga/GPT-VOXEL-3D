@@ -1,5 +1,13 @@
 # S001: public repository credential audit
 
+## D042 increment — 2026-10-19
+
+Public eaf86dffe69ddf8f625a48bc98a0a3129715daa7 minus audited fbd7f601be4aba01e1ec747cfd1c6be9de440c3a:
+8 objects (1 commit, 3 trees, 4 blobs), no findings/archive members/gaps. Other
+advertised refs unchanged. Current scan including new workflow: 162 files passed.
+No provider secrets requested or used. Public Firebase config remains distinct
+from private credentials. Prior bounded-pattern/account/scope limits remain.
+
 ## D041 increment — 2026-10-19
 
 Public source fbd7f601be4aba01e1ec747cfd1c6be9de440c3a minus previously

@@ -1,5 +1,10 @@
 # Development plan
 
+D042 owner steering (2026-10-19): stop Cloudflare Cloud Browser login attempts
+and repeated login prompts. Use development-only P9 GitHub Actions and existing
+public staging endpoints. Account-only inspection remains a recorded blocker,
+not a reason to stop other gates. P9 CI result pending; no live evidence implied.
+
 Continue the existing rebuild, not a new game. Base: rebuild-p0-p8 at
 0737017248bbc07e78749b297c384c0b1eceb1d8. Production main was observed at
 f98aa9a044616b1b965b889cf0c02a0d3b041f65.

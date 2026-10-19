@@ -1,0 +1,91 @@
+name: P9 Staging Browser Gate
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [development/voxel-continuous]
+    paths:
+      - .github/workflows/p9-browser-gate.yml
+      - tests/rebuild/p9-browser.py
+      - scripts/rebuild/build-staging-client.cjs
+      - src/client/**
+      - src/shared/**
+      - package.json
+      - package-lock.json
+
+permissions:
+  contents: read
+
+jobs:
+  public-staging-read-only:
+    if: github.ref == 'refs/heads/development/voxel-continuous'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Read existing public staging health and configuration
+        shell: python
+        run: |
+          import json, urllib.request, urllib.error
+          origin = 'https://gpt-voxel-3d-staging-01.hjinffv5426.workers.dev'
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, *args, **kwargs):
+                  return None
+          client = urllib.request.build_opener(NoRedirect())
+          for path in ('/health', '/staging-config'):
+              try:
+                  with client.open(origin + path, timeout=20) as response:
+                      body = response.read(65537)
+                      assert response.status == 200 and len(body) <= 65536
+                      if path == '/health':
+                          assert body.decode().strip() == 'GPT-VOXEL-3D staging online'
+                      else:
+                          config = json.loads(body)
+                          assert config.get('environment') == 'staging'
+                          assert config.get('workerOrigin') == origin
+                      print('PASS public staging read-only:', path)
+              except Exception:
+                  raise SystemExit('FAIL public staging read-only: ' + path + ' (response details omitted)')
+          print('Scope: two unauthenticated GETs only; no deployment-source, account-isolation, login, payment or capacity certification.')
+  staging-browser-fixtures:
+    if: github.ref == 'refs/heads/development/voxel-continuous'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: npm ci
+      - run: python -m pip install playwright==1.62.0
+      - run: python -m playwright install --with-deps chromium
+      - name: Provide browser executable required by existing P9 scenarios
+        shell: bash
+        run: |
+          set -euo pipefail
+          browser_path="$(python -c 'from playwright.sync_api import sync_playwright; p=sync_playwright().start(); print(p.chromium.executable_path); p.stop()')"
+          test -x "$browser_path"
+          sudo ln -sf "$browser_path" /usr/bin/chromium
+      - name: Run unchanged P9 browser scenarios (synthetic auth and transport)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tests/rebuild/p9-browser.py 2>&1 | tee p9-browser.log
+      - name: Preserve fixture evidence with source identity
+        if: always()
+        shell: bash
+        run: |
+          printf 'Source: %s\nScope: Chromium, generated staging client, synthetic auth/transport, emulated mobile. Not live authentication, payment, physical mobile or capacity evidence.\n' "$GITHUB_SHA" > p9-scope.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: p9-browser-fixture-evidence
+          path: |
+            p9-browser.log
+            p9-scope.txt
+          retention-days: 7
+          if-no-files-found: error

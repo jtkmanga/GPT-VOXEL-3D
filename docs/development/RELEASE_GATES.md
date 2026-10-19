@@ -1,5 +1,16 @@
 # Release gate ledger
 
+## D042 update — 2026-10-19
+
+P9 workflow added for development only; unchanged browser scenarios, no secrets
+or deployment. Await actual CI outcome before claiming browser success. Fixture
+auth/transport and mobile emulation do not close live gates. Owner has stopped
+Cloudflare Cloud Browser login attempts; do not retry this blocker. Public
+staging `/health` and `/staging-config` reads returned HTTP errors from the local
+execution environment; this does not prove the service is down. Account-only
+namespace isolation, deployed-source mapping, API restrictions and App Check
+remain unverified. No public endpoint result substitutes for those settings.
+
 ## D041 update — 2026-10-19
 
 Verified [GitHub run 39177769472](https://github.com/jtkmanga/GPT-VOXEL-3D/actions/runs/39177769472),
