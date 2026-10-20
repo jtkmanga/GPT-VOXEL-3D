@@ -45,6 +45,33 @@ jobs:
                           assert config.get('workerOrigin') == origin
                       print('PASS public staging read-only:', path)
               except urllib.error.HTTPError as error:
+                  # Emit only fixed labels and booleans, never raw headers/body,
+                  # cookies, proxy URLs, redirect targets or exception messages.
+                  headers = error.headers
+                  body = error.read(65537)
+                  lower = body.lower()
+                  diagnostic = {
+                      'body_truncated': len(body) > 65536,
+                      'cloudflare_server': headers.get('Server', '').lower() == 'cloudflare',
+                      'cf_ray_present': bool(headers.get('CF-Ray')),
+                      'challenge_header': headers.get('cf-mitigated', '').lower() == 'challenge',
+                      'html_content': headers.get_content_type() == 'text/html',
+                      'json_content': headers.get_content_type() == 'application/json',
+                      'via_header_present': bool(headers.get('Via')),
+                      'proxy_auth_header_present': bool(headers.get('Proxy-Authenticate')),
+                      'cloudflare_body_marker': b'cloudflare' in lower,
+                      'challenge_body_marker': b'/cdn-cgi/challenge-platform/' in lower,
+                      'access_body_marker': b'cloudflare access' in lower,
+                      'app_origin_error': False,
+                  }
+                  if len(body) <= 65536:
+                      try:
+                          payload = json.loads(body)
+                          diagnostic['app_origin_error'] = isinstance(payload, dict) and payload.get('error') == 'Origin not allowed'
+                      except (ValueError, UnicodeError):
+                          pass
+                  print('DIAGNOSTIC', json.dumps(diagnostic, sort_keys=True))
+                  print('Scope: markers are hints, not attribution proof; no bypass or retry.')
                   raise SystemExit('FAIL public staging read-only: ' + path + ' HTTP ' + str(error.code))
               except Exception as error:
                   raise SystemExit('FAIL public staging read-only: ' + path + ' ' + type(error).__name__ + ' (details omitted)')

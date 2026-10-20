@@ -1,5 +1,23 @@
 # Current development state
 
+## D045 — bounded staging HTTP diagnostics (2026-10-20)
+
+Starting source 8968ad81d7109edc3348ff43330e581014609d81; public repository,
+clean checkout, no unfinished edits. Owner phone health screenshot shows expected
+staging text; Domains screenshot shows enabled workers.dev URL and public access
+label. These do not prove account isolation or identify the Actions 403 cause.
+Run 39185788160 attempt 2 job 118441743705 still reports /health HTTP 403.
+Added boolean-only HTTP-error diagnostics to the existing P9 workflow: bounded
+body read, Cloudflare/challenge/proxy/app-origin hints. No raw headers, body,
+cookies, URLs or exception details emitted. Markers are not attribution proof.
+No extra requests, redirects, retries, credentials, deployments or assertion changes.
+Validation: YAML/Python syntax, four synthetic error-response cases covering
+origin JSON, challenge marker, oversized body and private-value redaction; all
+pass and retain failure exit. Current-file credential scan and diff check pass.
+Previously audited D044 tip remains unchanged; no new remote objects to audit.
+Files: workflow and STATE.md. Next: inspect CI diagnostics and act only on
+supported cause; account-only gates remain blocked. Overall NOT READY.
+
 ## D044 — public staging access blocker (2026-10-19)
 
 Starting source fb3bea56a6f1f2f943e591d69a6a05b2ac4cbd20. Run 39185788160,
