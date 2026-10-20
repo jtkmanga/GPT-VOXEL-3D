@@ -23,7 +23,9 @@ export function stagingContext(request, env) {
         !env.ROOM || !env.ZONE)
       throw Error('Invalid staging configuration');
     const origin = request.headers.get('Origin');
-    if (origin !== null && origin !== config.workerOrigin)
+    const publicProbe = request.method === 'GET' &&
+      ['/health', '/staging-config'].includes(url.pathname);
+    if (!publicProbe && origin !== null && origin !== config.workerOrigin)
       return { enabled: true, status: 403, error: 'Origin not allowed' };
     return { enabled: true, config };
   } catch (_) {
