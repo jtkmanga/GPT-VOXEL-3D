@@ -1,12 +1,12 @@
 {
-  "name": "gpt-voxel-3d-staging",
+  "name": "gpt-voxel-3d-staging-01",
   "main": "worker.js",
   "compatibility_date": "2026-09-27",
   "workers_dev": true,
   "preview_urls": false,
   "vars": {
     "APP_ENV": "staging",
-    "STAGING_WORKER_NAME": "gpt-voxel-3d-staging",
+    "STAGING_WORKER_NAME": "gpt-voxel-3d-staging-01",
     "STAGING_WORKER_ORIGIN": "",
     "ALLOWED_ORIGIN": "",
     "FIREBASE_PROJECT_ID": "",
