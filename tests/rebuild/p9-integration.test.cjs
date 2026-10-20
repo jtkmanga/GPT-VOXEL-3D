@@ -147,9 +147,13 @@ test('P9 missing, production-crossover and incoherent staging config fail closed
   }
 });
 
-test('P9 configured staging rejects cross-origin HTTP/WebSocket and wrong-host requests before any DO', async t => {
+test('P9 configured staging exposes read-only probes but rejects cross-origin protected routes before any DO', async t => {
   const h = fixture(t);
-  for (const path of ['/health', '/staging-config', '/entitlements', '/payments/webhook', '/play?zone=4,4']) {
+  for (const path of ['/health', '/staging-config']) {
+    const response = await h.request(path, { headers: { Origin: 'https://production-client.invalid' } });
+    assert.equal(response.status, 200, path);
+  }
+  for (const path of ['/entitlements', '/payments/webhook', '/play?zone=4,4']) {
     const response = await h.request(path, { headers: { Origin: 'https://production-client.invalid',
       ...(path.startsWith('/play') ? { Upgrade: 'websocket' } : {}) } });
     assert.equal(response.status, 403, path);
