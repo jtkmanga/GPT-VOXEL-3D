@@ -36,7 +36,31 @@ jobs:
           grep -q '"name": "gpt-voxel-3d-staging-01"' wrangler.staging.jsonc
           ! grep -q '"name": "voxel-run-v2-demo"' wrangler.staging.jsonc
           test -n "${{ vars.STAGING_PUBLIC_MANIFEST }}"
-          printf '%s' "${{ vars.STAGING_PUBLIC_MANIFEST }}" > /tmp/staging-public.json
+          STAGING_PUBLIC_MANIFEST="${{ vars.STAGING_PUBLIC_MANIFEST }}" node <<'NODE'
+          const fs = require('node:fs');
+          const raw = process.env.STAGING_PUBLIC_MANIFEST || '';
+          let apiKey;
+          try { apiKey = JSON.parse(raw)?.firebase?.apiKey; } catch {}
+          if (!apiKey) apiKey = raw.match(/AIza[A-Za-z0-9_-]{35}/)?.[0];
+          if (!/^AIza[A-Za-z0-9_-]{35}$/.test(apiKey || '')) {
+            console.error('FAIL staging manifest: Firebase public API key is missing or malformed; values withheld');
+            process.exit(1);
+          }
+          const manifest = {
+            environment: 'staging',
+            workerName: 'gpt-voxel-3d-staging-01',
+            workerOrigin: 'https://gpt-voxel-3d-staging-01.hjinffv5426.workers.dev',
+            firebase: {
+              apiKey,
+              authDomain: 'gpt-voxel-3d-staging.firebaseapp.com',
+              projectId: 'gpt-voxel-3d-staging',
+              appId: '1:1043756307296:web:12eedcd65502c7da92c405',
+              messagingSenderId: '1043756307296'
+            },
+            authMode: 'popup'
+          };
+          fs.writeFileSync('/tmp/staging-public.json', JSON.stringify(manifest));
+          NODE
           node scripts/rebuild/prepare-staging.cjs --config /tmp/staging-public.json --out work/staging/prepared
           node scripts/rebuild/check-staging.cjs --config work/staging/prepared/wrangler.jsonc
           grep -q '"name": "gpt-voxel-3d-staging-01"' work/staging/prepared/wrangler.jsonc
