@@ -43,8 +43,13 @@ async function main() {
   const result = await prepareStaging(options);
   console.log(`PASS prepared ${result.configured ? 'configured' : 'disabled'} staging artifacts under ignored work/staging; no external operation performed`);
 }
-if (require.main === module) main().catch(() => {
-  console.error('FAIL staging preparation; invalid or unsafe configuration (values deliberately withheld)');
+if (require.main === module) main().catch((error) => {
+  // Validator errors are deliberately value-free. Expose only a bounded
+  // reason so CI can diagnose staging configuration without printing the
+  // manifest, Firebase public key, or any privileged secret.
+  const reason = String(error?.message || 'unknown validation failure')
+    .replace(/[\r\n]+/g, ' ').slice(0, 180);
+  console.error(`FAIL staging preparation: ${reason} (configuration values withheld)`);
   process.exitCode = 1;
 });
 module.exports = { prepareStaging };
