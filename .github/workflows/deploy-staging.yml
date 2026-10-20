@@ -81,8 +81,10 @@ jobs:
         run: |
           import json, urllib.request
           origin='https://gpt-voxel-3d-staging-01.hjinffv5426.workers.dev'
+          opener=urllib.request.build_opener()
+          opener.addheaders=[('User-Agent','GPT-VOXEL-Staging-Health/1.0'),('Accept','text/plain, application/json')]
           for path in ('/health','/staging-config'):
-              with urllib.request.urlopen(origin+path, timeout=20) as r:
+              with opener.open(origin+path, timeout=20) as r:
                   body=r.read(65537)
                   assert r.status == 200 and len(body) <= 65536
                   if path == '/health':
