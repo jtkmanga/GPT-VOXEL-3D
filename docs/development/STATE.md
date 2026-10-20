@@ -1,5 +1,20 @@
 # Current development state
 
+## D048 — partial staging/security review (2026-10-20)
+
+Starting source 4bb729b27a52c3ba9b8a76d6ad956a95d85781cd; clean checkout.
+Owner takes P9 follow-up. No P9 changes/retries in this task. Deployment evidence
+and remaining gate dependencies recorded in SECURITY_REVIEW_2026-10-20.md.
+Reviewed token validation, session authority, staging boundary and payment guards.
+Existing p2-security, p8-security and p7-vip Node suites: 65 passed, zero failed
+or skipped. These are local security regressions, not live gate passes.
+Current credential scan and diff whitespace checks passed. Incremental audit
+4bb729b minus 7012dba: 5 objects (1 commit, 3 trees, 1 blob), no findings/gaps.
+No runtime code or external resources changed. Account revocation policy,
+App Check/API restrictions, namespace isolation and live gates remain open.
+Next: obtain account-only evidence and approved live test identities; do not
+repeat completed fixture tests or claim READY_FOR_FINAL_REVIEW.
+
 ## D047 — staging deployment preflight repair (2026-10-20)
 
 Starting source cdbf6eb89187f93307d2de687b25972331f3f5ea; public repo,
