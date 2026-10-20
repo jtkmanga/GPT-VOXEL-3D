@@ -1,0 +1,63 @@
+name: Deploy Staging Worker
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type DEPLOY-STAGING-ONLY'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-gpt-voxel-3d-staging-01
+  cancel-in-progress: false
+
+jobs:
+  deploy-staging:
+    if: github.ref == 'refs/heads/development/voxel-continuous' && inputs.confirm == 'DEPLOY-STAGING-ONLY'
+    runs-on: ubuntu-24.04
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci
+      - name: Guard staging identity and production isolation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/development/voxel-continuous"
+          grep -q '"name": "gpt-voxel-3d-staging-01"' wrangler.staging.jsonc
+          ! grep -q '"name": "voxel-run-v2-demo"' wrangler.staging.jsonc
+          test -n "${{ vars.STAGING_PUBLIC_MANIFEST }}"
+          printf '%s' "${{ vars.STAGING_PUBLIC_MANIFEST }}" > /tmp/staging-public.json
+          node scripts/rebuild/prepare-staging.cjs --config /tmp/staging-public.json --out work/staging/prepared
+          node scripts/rebuild/check-staging.cjs --config work/staging/prepared/wrangler.jsonc
+          grep -q '"name": "gpt-voxel-3d-staging-01"' work/staging/prepared/wrangler.jsonc
+      - name: Deploy staging only
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler deploy --config work/staging/prepared/wrangler.jsonc
+      - name: Verify public read-only probes
+        shell: python
+        run: |
+          import json, urllib.request
+          origin='https://gpt-voxel-3d-staging-01.hjinffv5426.workers.dev'
+          for path in ('/health','/staging-config'):
+              with urllib.request.urlopen(origin+path, timeout=20) as r:
+                  body=r.read(65537)
+                  assert r.status == 200 and len(body) <= 65536
+                  if path == '/health':
+                      assert body.decode().strip() == 'GPT-VOXEL-3D staging online'
+                  else:
+                      c=json.loads(body)
+                      assert c.get('environment') == 'staging'
+                      assert c.get('workerOrigin') == origin
+                  print('PASS', path)
