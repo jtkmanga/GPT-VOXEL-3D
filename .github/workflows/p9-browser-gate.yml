@@ -7,9 +7,11 @@ on:
     paths:
       - .github/workflows/p9-browser-gate.yml
       - tests/rebuild/p9-browser.py
+      - tests/rebuild/p9-integration.test.cjs
       - scripts/rebuild/build-staging-client.cjs
       - src/client/**
       - src/shared/**
+      - src/worker/**
       - package.json
       - package-lock.json
 
