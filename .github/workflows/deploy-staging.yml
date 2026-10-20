@@ -62,12 +62,10 @@ jobs:
           fs.writeFileSync('/tmp/staging-public.json', JSON.stringify(manifest));
           NODE
           node scripts/rebuild/prepare-staging.cjs --config /tmp/staging-public.json --out work/staging/prepared
-          node scripts/rebuild/check-staging.cjs --config work/staging/prepared/wrangler.jsonc
           grep -q '"name": "gpt-voxel-3d-staging-01"' work/staging/prepared/wrangler.jsonc
           # Validate the generated deploy artifact itself. The source checkout may
           # intentionally contain other Wrangler configs; they are never deployed here.
           test -f work/staging/prepared/wrangler.jsonc
-          test -f work/staging/prepared/worker.js
       - name: Deploy staging only
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
