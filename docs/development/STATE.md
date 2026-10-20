@@ -1,5 +1,25 @@
 # Current development state
 
+## D047 — staging deployment preflight repair (2026-10-20)
+
+Starting source cdbf6eb89187f93307d2de687b25972331f3f5ea; public repo,
+clean checkout. Run 39441787119 job 118693242110 prepared artifacts, then failed
+before deployment: shallow checkout omitted the pinned production baseline
+needed by check-staging.cjs. Deployment and public probes were skipped.
+Fetch full history so the existing baseline comparison can run unchanged.
+Pass STAGING_PUBLIC_MANIFEST through step env instead of shell interpolation.
+Reconciled concurrent commit 457190c: generated config references root worker.js,
+so check its actual location instead of a nonexistent copied worker.
+No validator/assertion/security relaxation or deployment performed by this task.
+Validation: P9 config/integration 42/42 local tests pass; YAML structure and
+shell-interpolation assertions pass; credential scan and git diff check pass.
+Incremental audit from bccf54d to starting source: 10 objects (2 commits,
+6 trees, 2 blobs), no findings/archives/gaps; current scan 163 files passes. Reconciled increment 457190c adds 5 objects
+(1 commit, 3 trees, 1 blob), no findings or gaps.
+Concurrent cdbf6eb removed the isolation check; this repair retains that check\nand supplies its required history instead.\nNext: run repaired staging workflow, require both public probes HTTP 200, then
+rerun P9. Stop on failure. Real authentication, mobile/multiplayer, sandbox
+payment, capacity and account isolation remain unverified. NOT READY.
+
 ## D046 — diagnostics result (2026-10-20)
 
 Starting source 900c0861150b4640f83a8c067554fadd35550155. Run 39382058916,

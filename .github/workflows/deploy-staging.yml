@@ -24,19 +24,22 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 24
       - run: npm ci
       - name: Guard staging identity and production isolation
         shell: bash
+        env:
+          STAGING_PUBLIC_MANIFEST: ${{ vars.STAGING_PUBLIC_MANIFEST }}
         run: |
           set -euo pipefail
           test "$GITHUB_REF" = "refs/heads/development/voxel-continuous"
           grep -q '"name": "gpt-voxel-3d-staging-01"' wrangler.staging.jsonc
           ! grep -q '"name": "voxel-run-v2-demo"' wrangler.staging.jsonc
-          test -n "${{ vars.STAGING_PUBLIC_MANIFEST }}"
-          STAGING_PUBLIC_MANIFEST="${{ vars.STAGING_PUBLIC_MANIFEST }}" node <<'NODE'
+          test -n "$STAGING_PUBLIC_MANIFEST"
+          node <<'NODE'
           const fs = require('node:fs');
           const raw = process.env.STAGING_PUBLIC_MANIFEST || '';
           let apiKey;
@@ -62,10 +65,12 @@ jobs:
           fs.writeFileSync('/tmp/staging-public.json', JSON.stringify(manifest));
           NODE
           node scripts/rebuild/prepare-staging.cjs --config /tmp/staging-public.json --out work/staging/prepared
+          node scripts/rebuild/check-staging.cjs --config work/staging/prepared/wrangler.jsonc
           grep -q '"name": "gpt-voxel-3d-staging-01"' work/staging/prepared/wrangler.jsonc
           # Validate the generated deploy artifact itself. The source checkout may
           # intentionally contain other Wrangler configs; they are never deployed here.
           test -f work/staging/prepared/wrangler.jsonc
+          test -f worker.js
       - name: Deploy staging only
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
