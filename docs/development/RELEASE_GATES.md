@@ -1,5 +1,23 @@
 # Release gate ledger
 
+## D052 live Firebase token refresh — 2026-10-21
+
+Source 36f339f5063d94ed01b3b79abcef2075c685aa6f added staging-only refresh
+evidence without exposing authentication material.
+[P8 Browser Gate #6](https://github.com/jtkmanga/GPT-VOXEL-3D/actions/runs/39628524322)
+and [P9 Staging Browser Gate #7](https://github.com/jtkmanga/GPT-VOXEL-3D/actions/runs/39628524469)
+both passed. Source 6bfc898ce633ed401e4582198b044dd79c4d8f48 then deployed through
+[Deploy Staging Worker #11](https://github.com/jtkmanga/GPT-VOXEL-3D/actions/runs/39628769690),
+which succeeded.
+
+Post-deploy physical Android Chrome evidence showed authenticated gameplay still
+active after foreground recovery while the staging banner displayed
+"AUTH REFRESHED #2 · TEST PAYMENTS ONLY". This is live evidence that refreshed
+Firebase authentication was accepted by the staging game socket and acknowledged
+by the server at least twice in the captured session. No token/secret was exposed.
+Google/session token refresh: PASS. Token/session revocation remains a separate
+open sub-gate.
+
 ## D051 Cloudflare deployed revision and namespace isolation — 2026-10-21
 
 Authorized read-only Cloudflare API inspection covered every Worker script in

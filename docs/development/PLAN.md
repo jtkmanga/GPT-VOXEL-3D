@@ -1,5 +1,13 @@
 # Development plan
 
+D052 (2026-10-21): live staging token refresh is now evidenced on a physical
+Android device. P8 #6 and P9 #7 passed for the staging refresh-evidence source,
+Deploy Staging #11 succeeded, and owner video after deployment showed the live
+game still active with the staging banner reporting AUTH REFRESHED #2. Treat the
+Google/session token-refresh sub-gate as PASS. Remaining Google/session work is
+actual account/session revocation evidence; continue multiplayer/mobile,
+payment-sandbox and authorized-capacity gates in parallel where safe.
+
 D051 (2026-10-21): read-only Cloudflare account inventory verified the deployed
 staging revision and complete ROOM/ZONE namespace isolation across every Worker
 script in the account. Current staging identity/origin, App Check binding,

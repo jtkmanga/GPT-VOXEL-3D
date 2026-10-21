@@ -1,5 +1,25 @@
 # Current development state
 
+## D052 — live staging token refresh evidence (2026-10-21)
+
+Source 36f339f5063d94ed01b3b79abcef2075c685aa6f added staging-only, non-secret
+visual evidence for successful Firebase ID-token refresh acknowledgements and
+sanitized refresh failures. P8 Browser Gate #6 and P9 Staging Browser Gate #7
+both passed on that source. Source 6bfc898ce633ed401e4582198b044dd79c4d8f48
+then auto-deployed the isolated staging changes through Deploy Staging Worker #11,
+which completed successfully.
+
+Owner physical Android Chrome evidence after Deploy Staging #11 showed the live
+staging game remaining active after foreground recovery with the purple staging
+banner reporting "AUTH REFRESHED #2 · TEST PAYMENTS ONLY". This demonstrates that
+the deployed client obtained refreshed Firebase authentication, the game socket
+accepted the refreshed credential, and the server returned the authenticated
+refresh acknowledgement at least twice during the captured session. No token or
+secret value was displayed or recorded. This closes the live token-refresh
+sub-gate for staging. Account/session revocation remains open and must be proven
+separately. Production/main and real payment remain untouched. Overall
+NOT READY_FOR_FINAL_REVIEW.
+
 ## D051 — Cloudflare staging isolation inventory (2026-10-21)
 
 Starting source d45608de7ebd2f555b0586f5ee28416c9a2917d8; public repository,
