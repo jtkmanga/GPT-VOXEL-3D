@@ -1,5 +1,12 @@
 # Development plan
 
+D049 (2026-10-21): P9 Staging Browser Gate #5 passed at 7e6d63e
+(run 39525636857). Both public-staging-read-only and staging-browser-fixtures
+succeeded; the earlier GitHub-Actions /health 403 blocker is closed. Do not
+repeat P9 unless a later change affects this gate. This does not substitute for
+account-only isolation/App Check/API restrictions, real Google/session,
+live multiplayer/physical mobile, payment sandbox or authorized capacity evidence.
+
 D043: existing P9 browser scenarios passed 11/11 in GitHub run 39185662751 at
 001cc26. Browser fixture coverage is verified; public staging health job failed.
 Investigate only sanitized public diagnostics; real login/mobile/payment/capacity

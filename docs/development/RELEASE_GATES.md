@@ -1,5 +1,22 @@
 # Release gate ledger
 
+## D049 P9 gate closed — 2026-10-21
+
+[Run 39525636857](https://github.com/jtkmanga/GPT-VOXEL-3D/actions/runs/39525636857),
+source 7e6d63e1b2587be10d21400d81b7bf921c83a0a1, completed successfully.
+Job 118979497328 (public-staging-read-only) passed both /health and
+/staging-config. Job 118979497559 (staging-browser-fixtures) also passed and
+produced the fixture evidence artifact. This supersedes the earlier P9 public
+403 blocker in D044/D046. The request identity was aligned with the already
+successful staging deploy probe; Worker origin/security policy was not relaxed.
+
+Gate 1 browser/P9 public-probe scope is therefore complete on this source.
+Remaining open evidence is account security/isolation including API restrictions
+and App Check, real Google session/token/revocation behavior, live multiplayer
+plus physical-mobile behavior, sandbox payment lifecycle, approved bounded
+capacity/load, and the final security/release reconciliation. Do not mark
+READY_FOR_FINAL_REVIEW yet.
+
 ## D044 public access evidence — 2026-10-19
 
 [Run 39185788160](https://github.com/jtkmanga/GPT-VOXEL-3D/actions/runs/39185788160),

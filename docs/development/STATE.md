@@ -1,5 +1,20 @@
 # Current development state
 
+## D049 — P9 gate closed on GitHub Actions (2026-10-21)
+
+Source 7e6d63e1b2587be10d21400d81b7bf921c83a0a1. GitHub Actions run
+39525636857 (P9 Staging Browser Gate #5) completed successfully. Job
+118979497328 (public-staging-read-only) passed both /health and /staging-config
+with the staging health-check request identity already proven by Deploy Staging
+Worker #9. Job 118979497559 (staging-browser-fixtures) also passed and produced
+the P9 fixture evidence artifact. This supersedes the earlier Actions-side 403
+blocker recorded in D044/D046. No Worker security boundary, production/main,
+real payment, account setting or privileged secret was weakened or changed by
+this P9 workflow adjustment. P9 browser/public-probe evidence is complete for its
+defined scope only; real Google session/revocation, account isolation/App Check/API
+restrictions, live multiplayer/physical mobile, payment sandbox and authorized
+capacity evidence remain open. Overall NOT READY_FOR_FINAL_REVIEW.
+
 ## D048 — partial staging/security review (2026-10-20)
 
 Starting source 4bb729b27a52c3ba9b8a76d6ad956a95d85781cd; clean checkout.
