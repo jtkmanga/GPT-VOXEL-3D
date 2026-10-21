@@ -32,13 +32,20 @@ export function validateStagingFirebasePublicConfig(value, { allowTest = false }
   return Object.freeze(firebase);
 }
 
+export function validateStagingAppCheckPublicConfig(value) {
+  record(value, ['provider', 'siteKey'], 'public App Check');
+  if (value.provider !== 'recaptcha-enterprise') throw new Error('App Check provider must be reCAPTCHA Enterprise');
+  const siteKey = text(value.siteKey, /^6L[A-Za-z0-9_-]{30,80}$/, 'reCAPTCHA Enterprise site key');
+  return Object.freeze({ provider: value.provider, siteKey });
+}
+
 export function validateStagingPublicConfig(value, { allowUnconfigured = false, allowTest = false } = {}) {
   if (allowUnconfigured && value?.configured === false) {
     record(value, ['environment', 'configured', 'authMode'], 'unconfigured staging');
     if (value.environment !== 'staging' || value.authMode !== 'popup') throw new Error('Invalid unconfigured staging');
     return STAGING_UNCONFIGURED;
   }
-  record(value, ['environment', 'workerName', 'workerOrigin', 'firebase', 'authMode'], 'public staging');
+  record(value, ['environment', 'workerName', 'workerOrigin', 'firebase', 'appCheck', 'authMode'], 'public staging');
   if (value.environment !== 'staging') throw new Error('Staging environment is required');
   const workerName = text(value.workerName, /^gpt-voxel-3d-staging-[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/, 'staging Worker name');
   const parsed = typeof value.workerOrigin === 'string' ? new URL(value.workerOrigin) : null;
@@ -52,7 +59,8 @@ export function validateStagingPublicConfig(value, { allowUnconfigured = false, 
   const testHost = allowTest && host === `${workerName}.invalid`;
   if (!safeWorkersHost && !testHost) throw new Error('Staging Worker origin must match its isolated Worker name');
   const firebase = validateStagingFirebasePublicConfig(value.firebase, { allowTest });
+  const appCheck = validateStagingAppCheckPublicConfig(value.appCheck);
   if (value.authMode !== 'popup' && value.authMode !== 'redirect') throw new Error('Google auth mode must be popup or redirect');
   return Object.freeze({ environment: 'staging', workerName, workerOrigin: parsed.origin,
-    firebase, authMode: value.authMode });
+    firebase, appCheck, authMode: value.authMode });
 }

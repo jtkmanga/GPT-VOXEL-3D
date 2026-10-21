@@ -7,7 +7,8 @@ const STAGING_ROOT = path.join(ROOT, 'work/staging');
 const PRODUCTION_MAIN = 'f98aa9a044616b1b965b889cf0c02a0d3b041f65';
 const SCAFFOLD_NAME = 'gpt-voxel-3d-staging-01';
 const VAR_KEYS = ['APP_ENV', 'STAGING_WORKER_NAME', 'STAGING_WORKER_ORIGIN', 'ALLOWED_ORIGIN',
-  'FIREBASE_PROJECT_ID', 'FIREBASE_PUBLIC_CONFIG', 'STAGING_AUTH_MODE', 'PAYMENT_MODE'];
+  'FIREBASE_PROJECT_ID', 'FIREBASE_PUBLIC_CONFIG', 'FIREBASE_APP_CHECK_SITE_KEY',
+  'STAGING_AUTH_MODE', 'PAYMENT_MODE'];
 
 function exactKeys(value, expected, label) {
   if (!value || typeof value !== 'object' || Array.isArray(value) ||
@@ -92,6 +93,7 @@ function varsForManifest(manifest) {
     STAGING_WORKER_ORIGIN: manifest.workerOrigin, ALLOWED_ORIGIN: manifest.workerOrigin,
     FIREBASE_PROJECT_ID: manifest.firebase.projectId,
     FIREBASE_PUBLIC_CONFIG: JSON.stringify(manifest.firebase),
+    FIREBASE_APP_CHECK_SITE_KEY: manifest.appCheck.siteKey,
     STAGING_AUTH_MODE: manifest.authMode, PAYMENT_MODE: 'provider-neutral-test'
   };
 }
@@ -119,8 +121,8 @@ async function validateStagingWrangler(value, configFile, { allowUnconfigured = 
       JSON.stringify(value.migrations) !== JSON.stringify(expectedMigrations)) {
     throw Error('Staging Durable Objects must be new classes in this Worker namespace only');
   }
-  const blank = ['STAGING_WORKER_ORIGIN', 'ALLOWED_ORIGIN', 'FIREBASE_PROJECT_ID', 'FIREBASE_PUBLIC_CONFIG']
-    .every(key => value.vars[key] === '');
+  const blank = ['STAGING_WORKER_ORIGIN', 'ALLOWED_ORIGIN', 'FIREBASE_PROJECT_ID',
+    'FIREBASE_PUBLIC_CONFIG', 'FIREBASE_APP_CHECK_SITE_KEY'].every(key => value.vars[key] === '');
   if (blank) {
     if (!allowUnconfigured || value.name !== SCAFFOLD_NAME || value.vars.STAGING_AUTH_MODE !== 'popup') {
       throw Error('Staging public configuration is missing; scaffold requires explicit allow-unconfigured');
@@ -132,7 +134,9 @@ async function validateStagingWrangler(value, configFile, { allowUnconfigured = 
   catch { throw Error('Staging Firebase public configuration is invalid'); }
   const { validateStagingPublicConfig } = await stagingModule();
   const manifest = validateStagingPublicConfig({ environment: 'staging', workerName: value.name,
-    workerOrigin: value.vars.STAGING_WORKER_ORIGIN, firebase, authMode: value.vars.STAGING_AUTH_MODE }, { allowTest });
+    workerOrigin: value.vars.STAGING_WORKER_ORIGIN, firebase,
+    appCheck: { provider: 'recaptcha-enterprise', siteKey: value.vars.FIREBASE_APP_CHECK_SITE_KEY },
+    authMode: value.vars.STAGING_AUTH_MODE }, { allowTest });
   if (value.vars.ALLOWED_ORIGIN !== manifest.workerOrigin || value.vars.FIREBASE_PROJECT_ID !== manifest.firebase.projectId) {
     throw Error('Staging browser/server origin or Firebase project crossover');
   }

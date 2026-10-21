@@ -4,7 +4,7 @@ import { validateStagingPublicConfig } from '../shared/staging.mjs';
 // setting or crossover never falls back to the preserved legacy deployment.
 export function stagingContext(request, env) {
   const selectors = ['STAGING_WORKER_NAME', 'STAGING_WORKER_ORIGIN',
-    'FIREBASE_PUBLIC_CONFIG', 'STAGING_AUTH_MODE', 'PAYMENT_MODE'];
+    'FIREBASE_PUBLIC_CONFIG', 'FIREBASE_APP_CHECK_SITE_KEY', 'STAGING_AUTH_MODE', 'PAYMENT_MODE'];
   const stagingHost = new URL(request.url).hostname.startsWith('gpt-voxel-3d-staging');
   if (env.APP_ENV === undefined && !stagingHost && selectors.every(key => env[key] === undefined))
     return { enabled: false };
@@ -16,7 +16,9 @@ export function stagingContext(request, env) {
     const config = validateStagingPublicConfig({
       environment: 'staging', workerName: env.STAGING_WORKER_NAME,
       workerOrigin: env.STAGING_WORKER_ORIGIN,
-      firebase: JSON.parse(env.FIREBASE_PUBLIC_CONFIG), authMode: env.STAGING_AUTH_MODE
+      firebase: JSON.parse(env.FIREBASE_PUBLIC_CONFIG),
+      appCheck: { provider: 'recaptcha-enterprise', siteKey: env.FIREBASE_APP_CHECK_SITE_KEY },
+      authMode: env.STAGING_AUTH_MODE
     }, { allowTest: url.hostname.endsWith('.invalid') });
     if (config.workerOrigin !== url.origin || env.ALLOWED_ORIGIN !== config.workerOrigin ||
         env.FIREBASE_PROJECT_ID !== config.firebase.projectId ||

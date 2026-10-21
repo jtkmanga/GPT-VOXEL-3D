@@ -22,6 +22,7 @@ PUBLIC = {
     "environment": "staging", "workerName": "gpt-voxel-3d-staging-p9-fixture", "workerOrigin": ORIGIN,
     "firebase": {"apiKey": "synthetic-public-staging-key", "authDomain": "voxel-staging-fixture.firebaseapp.com",
                  "projectId": "voxel-staging-fixture", "appId": "1:123456789:web:abcdef1234567890"},
+    "appCheck": {"provider": "recaptcha-enterprise", "siteKey": "6L" + ("A" * 38)},
     "authMode": "popup",
 }
 TIMEOUT = 45_000
@@ -29,7 +30,7 @@ TIMEOUT = 45_000
 FIXTURE = r"""
 (() => {
   const calls = { configs: [], popup: 0, redirect: 0, redirectResults: 0, tokenRefreshes: 0,
-    database: 0, sockets: [], packets: [], http: [] };
+    appCheckActivations: [], database: 0, sockets: [], packets: [], http: [] };
   const callbacks = [];
   const user = { uid: 'synthetic-p9-browser-user', displayName: 'Stage Player', email: '',
     photoURL: 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg"/%3E',
@@ -45,7 +46,13 @@ FIXTURE = r"""
   };
   function authFactory() { return auth; }
   authFactory.GoogleAuthProvider = class SyntheticGoogleProvider {};
-  window.firebase = { initializeApp(config) { calls.configs.push(config); }, auth: authFactory,
+  function appCheckFactory() {
+    return { activate(provider, autoRefresh) { calls.appCheckActivations.push({ key: provider.key, autoRefresh }); } };
+  }
+  appCheckFactory.ReCaptchaEnterpriseProvider = class SyntheticEnterpriseProvider {
+    constructor(key) { this.key = key; }
+  };
+  window.firebase = { initializeApp(config) { calls.configs.push(config); }, auth: authFactory, appCheck: appCheckFactory,
     database() { calls.database++; throw Error('The staging client must not initialize Firebase gameplay data'); } };
   window.__p9 = calls;
   class SyntheticSocket {
@@ -133,7 +140,8 @@ def run():
             route.fulfill(content_type="application/javascript", body=THREE.read_bytes())
             return
         if parsed.hostname == "www.gstatic.com" and parsed.path in (
-            "/firebasejs/10.8.0/firebase-app-compat.js", "/firebasejs/10.8.0/firebase-auth-compat.js", "/firebasejs/10.8.0/firebase-database-compat.js"
+            "/firebasejs/10.8.0/firebase-app-compat.js", "/firebasejs/10.8.0/firebase-auth-compat.js",
+            "/firebasejs/10.8.0/firebase-app-check-compat.js", "/firebasejs/10.8.0/firebase-database-compat.js"
         ):
             route.fulfill(content_type="application/javascript", body="/* Firebase fixture installed before scripts */")
             return
@@ -163,6 +171,7 @@ def run():
             page.wait_for_function("typeof renderer !== 'undefined' && !!renderer && typeof stagingResumeForeground === 'function'")
             require(page.evaluate("THREE.REVISION === '128' && renderer instanceof THREE.WebGLRenderer && !renderer.getContext().isContextLost()"), "Staging generated client failed real WebGL")
             require(page.evaluate("STAGING_CLIENT_ENABLED && __p9.configs.length === 1 && __p9.database === 0 && __p9.configs[0].projectId === 'voxel-staging-fixture'"), "Wrong staging SDK configuration")
+            require(page.evaluate("__p9.appCheckActivations.length === 1 && __p9.appCheckActivations[0].autoRefresh === true && __p9.appCheckActivations[0].key === STAGING_PUBLIC_CONFIG.appCheck.siteKey"), "App Check was not activated with auto-refresh")
             require(page.evaluate("innerWidth === 393 && navigator.maxTouchPoints > 0 && navigator.userAgent.includes('Android')"), "Mobile browser emulation was not applied")
             passed("isolated HTTPS staging client loads real WebGL in mobile Chromium emulation")
 

@@ -11,6 +11,7 @@
     "ALLOWED_ORIGIN": "",
     "FIREBASE_PROJECT_ID": "",
     "FIREBASE_PUBLIC_CONFIG": "",
+    "FIREBASE_APP_CHECK_SITE_KEY": "",
     "STAGING_AUTH_MODE": "popup",
     "PAYMENT_MODE": "provider-neutral-test"
   },

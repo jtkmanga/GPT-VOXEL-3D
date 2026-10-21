@@ -14,7 +14,8 @@ const fresh = () => scaffoldConfig();
 const fixture = () => ({ environment: 'staging', workerName: 'gpt-voxel-3d-staging-config-test',
   workerOrigin: 'https://gpt-voxel-3d-staging-config-test.invalid', authMode: 'popup',
   firebase: { apiKey: 'synthetic-public-staging-key', projectId: 'voxel-staging-test',
-    authDomain: 'voxel-staging-test.firebaseapp.com', appId: '1:123456:web:abc123de', messagingSenderId: '123456' } });
+    authDomain: 'voxel-staging-test.firebaseapp.com', appId: '1:123456:web:abc123de', messagingSenderId: '123456' },
+  appCheck: { provider: 'recaptcha-enterprise', siteKey: '6L' + 'A'.repeat(38) } });
 function configured() {
   const value = fresh(), manifest = fixture();
   value.name = manifest.workerName; value.vars = varsForManifest(manifest);
@@ -34,6 +35,7 @@ test('P9 prepared configuration coherently binds server, client origin, Firebase
   assert.equal(result.configured, true);
   assert.deepEqual(result.manifest.firebase, fixture().firebase);
   assert.equal(result.manifest.workerOrigin, fixture().workerOrigin);
+  assert.deepEqual(result.manifest.appCheck, fixture().appCheck);
   assert.equal(result.assets, path.join(STAGING_ROOT, 'assets'));
 });
 test('P9 fictional test endpoint cannot be validated as actual external staging configuration', async () => {
@@ -99,6 +101,8 @@ test('P9 staging config rejects partial or malformed public configuration', asyn
   await assert.rejects(validateStagingWrangler(partial, scaffoldFile, { allowUnconfigured: true }), /invalid/);
   const malformed = configured(); malformed.vars.FIREBASE_PUBLIC_CONFIG = '{';
   await assert.rejects(validate(malformed), /invalid/);
+  const missingAppCheck = configured(); missingAppCheck.vars.FIREBASE_APP_CHECK_SITE_KEY = '';
+  await assert.rejects(validate(missingAppCheck), /App Check|site key|reCAPTCHA/i);
 });
 test('P9 artifact outputs reject repository paths and symbolic-link escapes including dangling links', () => {
   assert.throws(() => assertIgnoredOutput(path.join(ROOT, 'index.html')), /ignored/);

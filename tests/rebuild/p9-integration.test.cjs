@@ -15,6 +15,7 @@ const WORKER_NAME = 'gpt-voxel-3d-staging-fixture';
 const FIREBASE = Object.freeze({ apiKey: 'synthetic-public-staging-key',
   authDomain: `${PROJECT_ID}.firebaseapp.com`, projectId: PROJECT_ID,
   appId: '1:123456:web:abcdef123456' });
+const APP_CHECK = Object.freeze({ provider: 'recaptcha-enterprise', siteKey: '6L' + 'A'.repeat(38) });
 const MONTH = 30 * 24 * 60 * 60 * 1000;
 const BOX_COOLDOWN = 4 * 60 * 60 * 1000;
 const last = (socket, type) => socket.messages(type).at(-1);
@@ -31,6 +32,7 @@ function fixture(t, env = {}) {
     STAGING_WORKER_NAME: WORKER_NAME, STAGING_WORKER_ORIGIN: ORIGIN,
     ALLOWED_ORIGIN: ORIGIN, FIREBASE_PROJECT_ID: PROJECT_ID,
     FIREBASE_PUBLIC_CONFIG: JSON.stringify(FIREBASE),
+    FIREBASE_APP_CHECK_SITE_KEY: APP_CHECK.siteKey,
     STAGING_AUTH_MODE: 'popup', PAYMENT_MODE: 'provider-neutral-test', ...env } });
   t.after(() => h.close());
   return h;
@@ -92,7 +94,7 @@ test('P9 staging public manifest exposes only configured browser fields, never p
   assert.equal(response.status, 200);
   const value = await response.json();
   assert.deepEqual(value, { environment: 'staging', workerName: WORKER_NAME,
-    workerOrigin: ORIGIN, firebase: FIREBASE, authMode: 'popup' });
+    workerOrigin: ORIGIN, firebase: FIREBASE, appCheck: APP_CHECK, authMode: 'popup' });
   const text = JSON.stringify(value);
   for (const secret of [h.env.PAYMENT_WEBHOOK_SECRET, h.env.SLIP2GO_API_SECRET,
     h.env.PAYMENT_RECEIVER_ACCOUNT]) assert.equal(text.includes(secret), false);
@@ -118,6 +120,7 @@ test('P9 missing, production-crossover and incoherent staging config fail closed
     { APP_ENV: undefined }, { APP_ENV: 'production' }, { APP_ENV: 'unknown' },
     { STAGING_WORKER_NAME: undefined }, { STAGING_WORKER_ORIGIN: undefined },
     { FIREBASE_PUBLIC_CONFIG: undefined }, { FIREBASE_PROJECT_ID: undefined },
+    { FIREBASE_APP_CHECK_SITE_KEY: undefined },
     { STAGING_AUTH_MODE: undefined }, { PAYMENT_MODE: undefined },
     { STAGING_WORKER_NAME: 'voxel-run-v2-demo' }, { FIREBASE_PROJECT_ID: 'lucky-game-6936b',
       FIREBASE_PUBLIC_CONFIG: JSON.stringify({ ...FIREBASE, projectId: 'lucky-game-6936b',
@@ -130,6 +133,7 @@ test('P9 missing, production-crossover and incoherent staging config fail closed
     { FIREBASE_PUBLIC_CONFIG: '{' },
     { FIREBASE_PUBLIC_CONFIG: JSON.stringify({ ...FIREBASE, projectId: 'unrelated-project' }) },
     { FIREBASE_PUBLIC_CONFIG: JSON.stringify({ ...FIREBASE, private_key: 'synthetic-forbidden-field' }) },
+    { FIREBASE_APP_CHECK_SITE_KEY: 'invalid-site-key' },
     { STAGING_AUTH_MODE: 'untrusted-mode' }, { PAYMENT_MODE: 'production' }
   ];
   for (const [index, config] of invalid.entries()) {

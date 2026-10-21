@@ -13,7 +13,9 @@ const protocol = require('../../src/shared/protocol.mjs');
 const publicFixture = authMode => ({ environment: 'staging', workerName: 'gpt-voxel-3d-staging-p9-fixture',
   workerOrigin: 'https://gpt-voxel-3d-staging-p9-fixture.invalid',
   firebase: { apiKey: 'synthetic-public-staging-key', authDomain: 'voxel-staging-fixture.firebaseapp.com',
-    projectId: 'voxel-staging-fixture', appId: '1:123456789:web:abcdef1234567890' }, authMode: authMode || 'popup' });
+    projectId: 'voxel-staging-fixture', appId: '1:123456789:web:abcdef1234567890' },
+  appCheck: { provider: 'recaptcha-enterprise', siteKey: '6L' + 'A'.repeat(38) },
+  authMode: authMode || 'popup' });
 const inline = html => [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].at(-1)[1];
 
 function runtimeFixture({ enabled = true, mode = 'popup' } = {}) {
@@ -75,6 +77,8 @@ test('P9 public manifest requires isolated matching staging Worker and Firebase 
     { firebase: { ...source.firebase, messagingSenderId: '541211602508' } },
     { firebase: { ...source.firebase, messagingSenderId: '999999' } },
     { firebase: { ...source.firebase, authDomain: 'other-staging.firebaseapp.com' } },
+    { appCheck: { provider: 'recaptcha-v3', siteKey: source.appCheck.siteKey } },
+    { appCheck: { provider: 'recaptcha-enterprise', siteKey: 'invalid-site-key' } },
     { authMode: 'invented-flow' }
   ]) assert.throws(() => validateStagingPublicConfig({ ...source, ...values }, { allowTest: true }));
 });
@@ -96,6 +100,9 @@ test('P9 staging bundle removes production Firebase/Worker defaults and contains
   assert.match(html, /gpt-voxel-3d-staging-p9-fixture\.invalid/);
   assert.match(html, /Free Server ฟรีไม่จำกัด/); assert.match(html, /ไม่จำกัดผู้เล่น/);
   assert.match(html, /50 บาท\/เดือน/); assert.match(html, /0\/100/);
+  assert.match(html, /firebase-app-check-compat\.js/);
+  assert.match(html, /ReCaptchaEnterpriseProvider/);
+  assert.match(html, /appCheck\.activate/);
   for (const forbidden of ['lucky-game-6936b', 'voxel-run-v2-demo', 'localhost', '127.0.0.1',
     'PAYMENT_WEBHOOK_SECRET', 'SLIP2GO_API_SECRET', 'FIREBASE_ADMIN_PRIVATE_KEY', '0999999999']) assert.ok(!html.includes(forbidden), forbidden);
   const disabled = await buildStagingClient(STAGING_UNCONFIGURED);

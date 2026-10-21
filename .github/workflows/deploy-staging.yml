@@ -60,6 +60,10 @@ jobs:
               appId: '1:1043756307296:web:12eedcd65502c7da92c405',
               messagingSenderId: '1043756307296'
             },
+            appCheck: {
+              provider: 'recaptcha-enterprise',
+              siteKey: '6LeTiPktAAAAAKLLxG6W5VGTuL1r4JyGdG2o8TFW'
+            },
             authMode: 'popup'
           };
           fs.writeFileSync('/tmp/staging-public.json', JSON.stringify(manifest));
@@ -93,4 +97,5 @@ jobs:
                       c=json.loads(body)
                       assert c.get('environment') == 'staging'
                       assert c.get('workerOrigin') == origin
+                      assert c.get('appCheck', {}).get('provider') == 'recaptcha-enterprise'
                   print('PASS', path)
