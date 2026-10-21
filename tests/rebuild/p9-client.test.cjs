@@ -174,6 +174,7 @@ test('P9 foreground token failure retires the active socket without logging raw 
   const f = runtimeFixture(); f.user.getIdToken = async () => { throw Error('sensitive refresh material'); };
   assert.equal(await f.context.stagingResumeForeground(), false);
   assert.deepEqual(f.events, [['close', 1008], 'menu']); assert.equal(f.ws.sent.length, 0);
+  assert.match(f.element('staging-status').innerText, /AUTH REFRESH FAILED/);
   assert.ok(!JSON.stringify(f.events).includes('sensitive refresh material'));
 });
 

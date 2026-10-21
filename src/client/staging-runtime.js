@@ -328,6 +328,23 @@ if (stagingPredictMovement) securePredictMovement = function(delta) {
 };
 
 let stagingForegroundRefresh = null;
+let stagingAuthRefreshCount = 0;
+function stagingSetStatus(text) {
+    const element = document.getElementById('staging-status');
+    if (element) element.innerText = text;
+}
+if (typeof secureHandleSocketMessage === 'function') {
+    const stagingBaseHandleSocketMessage = secureHandleSocketMessage;
+    secureHandleSocketMessage = function(message) {
+        if (message?.type === protocol.WS_MESSAGE.AUTH_REFRESHED) {
+            stagingAuthRefreshCount++;
+            stagingSetStatus(`STAGING · AUTH REFRESHED #${stagingAuthRefreshCount} · TEST PAYMENTS ONLY`);
+        } else if (message?.type === protocol.WS_MESSAGE.AUTH_ERROR) {
+            stagingSetStatus('STAGING · AUTH REJECTED · SESSION CLOSED');
+        }
+        return stagingBaseHandleSocketMessage(message);
+    };
+}
 function stagingClearInput() {
     for (const key of Object.keys(keys)) keys[key] = false;
     joystickVec.x = joystickVec.y = 0;
@@ -354,6 +371,7 @@ async function stagingResumeForeground() {
             return true;
         } catch (_) {
             if (auth.currentUser === user && secureConnectionIsCurrent(epoch) && secureGameSocket === ws) {
+                stagingSetStatus('STAGING · AUTH REFRESH FAILED · SESSION CLOSED');
                 secureCloseSocket(ws, 1008, 'Staging foreground authentication failed');
                 secureReturnToMenu();
             }
