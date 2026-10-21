@@ -1,5 +1,25 @@
 # Current development state
 
+## D050 — Firebase App Check live staging evidence (2026-10-21)
+
+Source eb6f7dc184e96eaad60c41ad4e9c9c1d0cd10a2d added staging-only Firebase
+App Check initialization using reCAPTCHA Enterprise/Fraud Defense with automatic
+token refresh. GitHub Actions run 39611885821 (P9 Staging Browser Gate #6)
+completed successfully and Deploy Staging Worker run 39612371440 (#10) deployed
+the same source to the isolated staging Worker.
+
+Owner account evidence then showed Firebase App Check registered for the staging
+Web app and Authentication enforcement enabled. At the captured enforcement
+screen Authentication reported 90% verified requests and 10% unverified unknown-
+origin requests for the displayed window; enforcement was active. A physical
+Android Chrome recording made after enforcement showed two Google sign-in flows
+returning to staging and authenticated gameplay loading successfully. This closes
+the live staging App Check registration/enforcement and basic Google sign-in
+compatibility evidence for Authentication. It does not prove token revocation,
+long-lived refresh behavior, or every historical request origin. Those remain
+separate live session evidence. Production/main, billing and real payment were
+not changed. Overall NOT READY_FOR_FINAL_REVIEW.
+
 ## D049 — P9 gate closed on GitHub Actions (2026-10-21)
 
 Source 7e6d63e1b2587be10d21400d81b7bf921c83a0a1. GitHub Actions run

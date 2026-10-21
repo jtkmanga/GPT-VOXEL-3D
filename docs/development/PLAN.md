@@ -1,5 +1,15 @@
 # Development plan
 
+D050 (2026-10-21): staging App Check is now integrated in source eb6f7dc,
+P9 #6 passed, and Deploy Staging #10 succeeded. Owner evidence shows the staging
+Web app registered with reCAPTCHA Enterprise/Fraud Defense and Authentication
+enforcement enabled. Post-enforcement physical Android Chrome evidence shows
+Google sign-in returning to staging and gameplay succeeding twice. Treat App Check
+registration/enforcement plus basic live sign-in compatibility as complete for
+staging. Still require live token refresh/revocation evidence, remaining account
+isolation/security reconciliation, multiplayer/mobile multi-session evidence,
+payment sandbox lifecycle and authorized capacity before Final Review.
+
 D049 (2026-10-21): P9 Staging Browser Gate #5 passed at 7e6d63e
 (run 39525636857). Both public-staging-read-only and staging-browser-fixtures
 succeeded; the earlier GitHub-Actions /health 403 blocker is closed. Do not

@@ -1,5 +1,24 @@
 # Release gate ledger
 
+## D050 App Check + live Google sign-in compatibility — 2026-10-21
+
+Source eb6f7dc184e96eaad60c41ad4e9c9c1d0cd10a2d initialized Firebase App Check
+for staging with reCAPTCHA Enterprise/Fraud Defense and automatic token refresh.
+[P9 Staging Browser Gate #6](https://github.com/jtkmanga/GPT-VOXEL-3D/actions/runs/39611885821)
+passed, and [Deploy Staging Worker #10](https://github.com/jtkmanga/GPT-VOXEL-3D/actions/runs/39612371440)
+successfully deployed the same source.
+
+Owner account evidence showed the staging Web app registered for App Check and
+Authentication status Enforced. The captured metrics window showed 90% verified
+and 10% unverified unknown-origin requests at that time. A post-enforcement
+physical Android Chrome recording showed two Google sign-in flows completing,
+returning to the staging origin, and authenticated gameplay loading successfully.
+This is sufficient live evidence for staging App Check registration/enforcement
+and basic Google-auth compatibility. It is not evidence of token revocation or
+long-duration refresh behavior, and it does not classify the historical 10%
+unknown-origin requests. Keep those as separate follow-up evidence. Do not mark
+READY_FOR_FINAL_REVIEW yet.
+
 ## D049 P9 gate closed — 2026-10-21
 
 [Run 39525636857](https://github.com/jtkmanga/GPT-VOXEL-3D/actions/runs/39525636857),
