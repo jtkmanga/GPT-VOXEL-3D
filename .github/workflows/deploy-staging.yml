@@ -1,6 +1,16 @@
 name: Deploy Staging Worker
 
 on:
+  push:
+    branches:
+      - development/voxel-continuous
+    paths:
+      - 'src/client/staging-runtime.js'
+      - 'scripts/rebuild/build-staging-client.cjs'
+      - 'src/shared/staging.mjs'
+      - 'src/worker/staging-boundary.mjs'
+      - 'wrangler.staging.jsonc'
+      - '.github/workflows/deploy-staging.yml'
   workflow_dispatch:
     inputs:
       confirm:
@@ -17,7 +27,7 @@ concurrency:
 
 jobs:
   deploy-staging:
-    if: github.ref == 'refs/heads/development/voxel-continuous' && inputs.confirm == 'DEPLOY-STAGING-ONLY'
+    if: github.ref == 'refs/heads/development/voxel-continuous' && (github.event_name == 'push' || inputs.confirm == 'DEPLOY-STAGING-ONLY')
     runs-on: ubuntu-24.04
     environment: staging
     steps:
