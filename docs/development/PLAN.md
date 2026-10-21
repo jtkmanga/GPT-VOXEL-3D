@@ -1,5 +1,13 @@
 # Development plan
 
+D051 (2026-10-21): read-only Cloudflare account inventory verified the deployed
+staging revision and complete ROOM/ZONE namespace isolation across every Worker
+script in the account. Current staging identity/origin, App Check binding,
+popup auth and non-production payment mode are coherent. Treat the Cloudflare
+deployed-revision and Durable Object isolation sub-gates as complete unless
+bindings or deployment change. Firebase API restrictions and later live gates
+remain open.
+
 D050 (2026-10-21): staging App Check is now integrated in source eb6f7dc,
 P9 #6 passed, and Deploy Staging #10 succeeded. Owner evidence shows the staging
 Web app registered with reCAPTCHA Enterprise/Fraud Defense and Authentication
@@ -33,8 +41,8 @@ f98aa9a044616b1b965b889cf0c02a0d3b041f65.
 
 1. DONE: inventory existing branches, preserve rebuild work, create isolated development branch, reproduce local baseline, add verification runner and durable progress record.
 2. DONE (local scope): D002 reviewed handoff/reconnect authority, ran 66 distinct targeted regressions including coin/Lucky Box and added two combined cutover/reconnect cases. No reproducible runtime defect found. Live integration remains a separate gate.
-3. PARTIAL (D041): P8 browser CI passed at fbd7f60 (run 39177769472). P9 generated-staging browser scenarios remain pending. Keep fixtures, live authentication and physical-device evidence distinct; do not repeat completed P8 recovery.
-4. Read-only inventory of existing Cloudflare/Firebase staging after authorized access becomes available; compare deployed revision and isolation. Do not invent resources or assume older deployment notes are current.
+3. DONE (D049/D050): P8 and current-source P9 browser CI passed. Keep fixtures, live authentication and physical-device evidence distinct; do not repeat without relevant source/config changes.
+4. PARTIAL (D051): Cloudflare deployed revision and ROOM/ZONE isolation verified read-only. Firebase App Check enforcement passed in D050; Firebase API restrictions remain open.
 5. Live staging integration on verified isolated resources, subject to owner confirmation for external changes. Check real Google sign-in, two-player movement, reconnect, rewards, name visibility and mobile controls.
 6. VIP/payment lifecycle work stays disabled until sandbox merchant lifecycle requirements are verified; never spend money. Capacity validation requires a separate approved test target and budget. No 10,000-player production claim from local fixtures.
 7. Present evidence and remaining risks for explicit production release authorization. Passing tests alone is not deployment authorization.

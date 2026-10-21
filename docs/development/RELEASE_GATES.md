@@ -1,5 +1,27 @@
 # Release gate ledger
 
+## D051 Cloudflare deployed revision and namespace isolation — 2026-10-21
+
+Authorized read-only Cloudflare API inspection covered every Worker script in
+the account. The account contains gpt-voxel-3d-staging-01 and
+voxel-run-v2-demo. Each script binds GameRoom and ZoneRoom to namespaces owned
+by that script, and all four namespace IDs are distinct. No script references
+the other script's ROOM or ZONE namespace. The staging Worker settings identify
+the expected staging origin/environment, contain the App Check binding, use
+popup auth and retain provider-neutral-test payment mode.
+
+The live staging deployment sends 100% to Cloudflare version
+f6c63718-5dd8-4848-a1d2-9d344368b303. GitHub
+[Deploy Staging Worker #10](https://github.com/jtkmanga/GPT-VOXEL-3D/actions/runs/39612371440)
+job 119264284523 passed the staging-isolation guard, deployed source eb6f7dc and
+passed both public probes. Deployed revision and Cloudflare ROOM/ZONE isolation:
+PASS. No account resource or setting was mutated during this inspection.
+
+This does not verify Firebase API-key restrictions. Live refresh/logout/token
+revocation, two-session multiplayer/physical mobile, payment sandbox lifecycle,
+authorized capacity and final review also remain open.
+
+
 ## D050 App Check + live Google sign-in compatibility — 2026-10-21
 
 Source eb6f7dc184e96eaad60c41ad4e9c9c1d0cd10a2d initialized Firebase App Check

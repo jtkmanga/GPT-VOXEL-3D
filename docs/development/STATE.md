@@ -1,5 +1,30 @@
 # Current development state
 
+## D051 — Cloudflare staging isolation inventory (2026-10-21)
+
+Starting source d45608de7ebd2f555b0586f5ee28416c9a2917d8; public repository,
+clean detached checkout used to preserve an older local documentation commit.
+Authorized read-only Cloudflare API inventory found exactly two Worker scripts.
+Every script setting was inspected: gpt-voxel-3d-staging-01 binds ROOM and ZONE
+to its own two SQLite Durable Object namespaces; voxel-run-v2-demo binds both
+classes to two different namespaces. Neither script references the other
+script's namespace IDs. Current staging settings identify the staging Worker and
+origin consistently, APP_ENV is staging, App Check is configured, auth uses
+popup mode, and payment remains provider-neutral-test.
+
+The current Cloudflare deployment routes 100% to version
+f6c63718-5dd8-4848-a1d2-9d344368b303, created 2026-10-21T13:56:35Z.
+GitHub Deploy Staging #10 job 119264284523 passed isolation, deployment and
+public probes at source eb6f7dc. This closes deployed-revision and Cloudflare
+ROOM/ZONE cross-script isolation sub-gates. No Cloudflare resource was changed.
+Incremental audit d45608d minus 99dd18e covered 28 objects with no gaps. Matches
+were reviewed as the intended public Firebase Web client configuration and
+synthetic fixture values; no private/admin credential was identified. Current
+file scan passed 164 files. Firebase API restrictions and the remaining live
+session, multiplayer/mobile, sandbox-payment and capacity evidence remain open.
+Overall NOT READY_FOR_FINAL_REVIEW.
+
+
 ## D050 — Firebase App Check live staging evidence (2026-10-21)
 
 Source eb6f7dc184e96eaad60c41ad4e9c9c1d0cd10a2d added staging-only Firebase
