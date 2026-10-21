@@ -33,6 +33,7 @@ jobs:
               def redirect_request(self, *args, **kwargs):
                   return None
           client = urllib.request.build_opener(NoRedirect())
+          client.addheaders = [('User-Agent', 'GPT-VOXEL-Staging-Health/1.0'), ('Accept', 'text/plain, application/json')]
           for path in ('/health', '/staging-config'):
               try:
                   with client.open(origin + path, timeout=20) as response:
