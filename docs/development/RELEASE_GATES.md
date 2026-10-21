@@ -1,5 +1,22 @@
 # Release gate ledger
 
+## D053 post-deploy Cloudflare revalidation — 2026-10-22
+
+Deploy Staging Worker #11 changed the live staging revision after D051, so the
+affected Cloudflare evidence was rechecked through the authorized read-only API.
+Deployment 6da96ec3-dc33-4924-980f-c98c688da3, created
+2026-10-21T15:47:10.402247Z, routes 100% of staging traffic to version
+38cf0acf-0f59-4a27-b297-088fe0acac9d.
+
+Current settings still require the staging environment and expected staging
+Worker name, retain the App Check binding and provider-neutral-test payment
+mode, and bind ROOM and ZONE to two distinct namespaces owned by the staging
+script. The account script inventory remains exactly the expected staging and
+demo scripts. No resource, setting, route, payment mode or production system was
+changed. Deployed revision and Cloudflare ROOM/ZONE isolation remain PASS on the
+post-refresh deployment. Firebase API-key restrictions, account/session
+revocation and later live gates remain separate open evidence.
+
 ## D052 live Firebase token refresh — 2026-10-21
 
 Source 36f339f5063d94ed01b3b79abcef2075c685aa6f added staging-only refresh

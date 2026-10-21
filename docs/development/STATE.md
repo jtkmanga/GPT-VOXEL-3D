@@ -1,5 +1,31 @@
 # Current development state
 
+## D053 — post-refresh-deploy Cloudflare revalidation (2026-10-22)
+
+Starting source b392580bbae6d5683ccabb3a818dd203acf786ca; public repository and
+clean detached checkout. Authorized read-only Cloudflare API inspection after
+Deploy Staging Worker #11 found deployment 6da96ec3-dc33-4924-980f-c98c688da3
+created 2026-10-21T15:47:10.402247Z, routing 100% of staging traffic to version
+38cf0acf-0f59-4a27-b297-088fe0acac9d. This supersedes the older live revision
+recorded in D051 without reopening its completed isolation checks.
+
+The current settings still identify APP_ENV as staging and the expected staging
+Worker, retain provider-neutral-test payment mode, and contain the App Check
+binding. ROOM and ZONE remain distinct Durable Object namespaces owned by the
+staging script. The account still contains only the expected staging and demo
+scripts; no Cloudflare resource or setting was changed. The deployed-revision
+and Cloudflare namespace-isolation sub-gates remain PASS after the refresh
+deployment.
+
+Incremental audit b392580 minus e92be97 covered 21 objects (3 commits, 11 trees,
+7 blobs), no archives or gaps. Matches were privately reviewed as synthetic P9
+fixtures or the intended public Firebase Web client configuration; no private or
+admin credential was identified. Current secret/config scan passed 164 files.
+Firebase API restrictions and account/session revocation remain blocked on
+owner-authorized Firebase/Google Cloud access. Live multiplayer/mobile,
+payment-sandbox and authorized-capacity evidence also remain open. Overall
+NOT READY_FOR_FINAL_REVIEW.
+
 ## D052 — live staging token refresh evidence (2026-10-21)
 
 Source 36f339f5063d94ed01b3b79abcef2075c685aa6f added staging-only, non-secret

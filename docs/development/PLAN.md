@@ -1,5 +1,13 @@
 # Development plan
 
+D053 (2026-10-22): read-only Cloudflare revalidation after Deploy Staging #11
+shows the new live revision receiving 100% of staging traffic while staging
+identity, App Check, provider-neutral-test payment mode and ROOM/ZONE ownership
+remain intact. Keep the Cloudflare deployed-revision/isolation sub-gates PASS on
+the refresh deployment. Continue with Firebase API restrictions and session
+revocation when owner-authorized account access is available; do not repeat this
+inventory unless the staging deployment or bindings change again.
+
 D052 (2026-10-21): live staging token refresh is now evidenced on a physical
 Android device. P8 #6 and P9 #7 passed for the staging refresh-evidence source,
 Deploy Staging #11 succeeded, and owner video after deployment showed the live
@@ -50,7 +58,7 @@ f98aa9a044616b1b965b889cf0c02a0d3b041f65.
 1. DONE: inventory existing branches, preserve rebuild work, create isolated development branch, reproduce local baseline, add verification runner and durable progress record.
 2. DONE (local scope): D002 reviewed handoff/reconnect authority, ran 66 distinct targeted regressions including coin/Lucky Box and added two combined cutover/reconnect cases. No reproducible runtime defect found. Live integration remains a separate gate.
 3. DONE (D049/D050): P8 and current-source P9 browser CI passed. Keep fixtures, live authentication and physical-device evidence distinct; do not repeat without relevant source/config changes.
-4. PARTIAL (D051): Cloudflare deployed revision and ROOM/ZONE isolation verified read-only. Firebase App Check enforcement passed in D050; Firebase API restrictions remain open.
+4. PARTIAL (D053): Cloudflare deployed revision and ROOM/ZONE isolation revalidated read-only after Deploy Staging #11. Firebase App Check enforcement passed in D050; Firebase API restrictions remain open.
 5. Live staging integration on verified isolated resources, subject to owner confirmation for external changes. Check real Google sign-in, two-player movement, reconnect, rewards, name visibility and mobile controls.
 6. VIP/payment lifecycle work stays disabled until sandbox merchant lifecycle requirements are verified; never spend money. Capacity validation requires a separate approved test target and budget. No 10,000-player production claim from local fixtures.
 7. Present evidence and remaining risks for explicit production release authorization. Passing tests alone is not deployment authorization.
