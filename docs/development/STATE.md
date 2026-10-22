@@ -1,5 +1,35 @@
 # Current development state
 
+## D057 — physical mobile multiplayer/economy evidence + handoff-label fix (2026-10-22)
+
+Owner supplied a 79-second physical Android Chrome recording on live staging.
+The recording shows continuous mobile-control gameplay with another live remote
+player rendered in the same world. A distant remote avatar initially has no
+name label; when the player approaches, the remote name "jid" becomes visible,
+then disappears again after distance increases. The real-time leaderboard is
+visible throughout. The local score advances from 10 to 11 and the leaderboard
+entry advances from 10 to 11 in the same captured session, providing live
+server-authoritative coin/leaderboard update evidence. The Lucky Box UI changes
+from ready-to-open to a 03:59:59 server countdown and continues decrementing,
+providing live Lucky Box claim/countdown evidence.
+
+The recording also exposed a defect in D055's staging-only revocation evidence
+label: a normal old source socket closed with "Session ownership transferred"
+after a zone handoff could set the purple banner to SESSION REVOKED after
+secureHandoffInProgress had already cleared, even though gameplay correctly
+continued on the target socket. Source 9ddd04a135db41dbd5ce2cdeda944a96d2d54df4
+removes normal ownership-transfer closure from revocation labeling and adds a
+regression that rejects the label both during and after handoff completion.
+Deploy Staging Worker #13 and P9 Staging Browser Gate #9 pass on this source.
+
+D056 remains valid because its live same-account replacement evidence included
+the active session being policy-closed and returned to menu, not merely the
+purple banner. Gate 4 gains partial PASS evidence for physical mobile controls,
+concurrent nearby-player rendering/proximity name behavior, live coin +
+leaderboard update, and Lucky Box countdown. Bidirectional two-account movement,
+explicit LOS occlusion, reconnect, and cross-session economy consistency remain
+open. Overall NOT READY_FOR_FINAL_REVIEW.
+
 ## D056 — live same-account session replacement PASS (2026-10-22)
 
 Owner physical Android Chrome recording after Deploy Staging #12 exercised the

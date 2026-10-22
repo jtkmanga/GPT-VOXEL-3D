@@ -1,5 +1,32 @@
 # Release gate ledger
 
+## D057 Gate 4 partial live mobile/multiplayer evidence — 2026-10-22
+
+A 79-second physical Android Chrome recording on live staging shows:
+- continuous mobile joystick/gameplay;
+- another live remote avatar in the same world;
+- the remote name hidden at distance, visible as "jid" when nearby, then hidden
+  again after separation;
+- score changing 10 -> 11 with the same real-time leaderboard entry changing
+  10 -> 11;
+- Lucky Box state changing from ready to a 03:59:59 countdown and continuing to
+  decrement.
+
+These observations are live Gate 4 evidence for physical mobile controls,
+nearby-player rendering/proximity name behavior, coin/leaderboard state, and
+Lucky Box countdown. They do not yet prove bidirectional movement from two
+separately observed accounts, explicit wall/tree LOS occlusion, network
+reconnect, or cross-session item-state equality.
+
+The video also found a staging-only evidence UI false positive: a normal
+"Session ownership transferred" close from the old socket after a successful
+zone handoff could display SESSION REVOKED after handoff state cleared while the
+game correctly continued. Source 9ddd04a135db41dbd5ce2cdeda944a96d2d54df4
+removes that reason from revocation labeling. [Deploy Staging Worker #13](https://github.com/jtkmanga/GPT-VOXEL-3D/actions/runs/39780764534)
+and [P9 Staging Browser Gate #9](https://github.com/jtkmanga/GPT-VOXEL-3D/actions/runs/39780764324)
+pass. This correction does not invalidate D056, whose revocation evidence also
+showed the active client being policy-closed and returned to menu.
+
 ## D056 live same-account session replacement/revocation PASS — 2026-10-22
 
 Post-Deploy-Staging-#12 physical Android Chrome evidence shows the D055 live

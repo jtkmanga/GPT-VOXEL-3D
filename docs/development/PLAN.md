@@ -1,5 +1,14 @@
 # Development plan
 
+D057 (2026-10-22): physical Android staging video adds Gate 4 evidence for
+mobile movement/controls, concurrent nearby-player rendering, distance-scoped
+name visibility, coin score + real-time leaderboard update, and Lucky Box
+four-hour countdown after claim. Do not call the full multiplayer/mobile gate
+complete yet: still capture bidirectional two-account movement, explicit
+line-of-sight occlusion, reconnect and cross-session item consistency. The same
+video exposed a staging evidence-only false SESSION REVOKED label on normal zone
+ownership transfer; fixed at 9ddd04a, Deploy Staging #13 and P9 #9 pass.
+
 D056 (2026-10-22): physical Android Chrome evidence proves same-account
 session replacement live: the newer staging session acquires authority and the
 older session is policy-closed, returns to menu and displays SESSION REVOKED.
