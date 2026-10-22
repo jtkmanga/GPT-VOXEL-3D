@@ -53,8 +53,9 @@ def start_identity_and_socket(page, index, run_id):
           await firebase.auth().signInAnonymously();
           mode = 'anonymous';
         } catch (e) {
-          if (safeCode(e) !== 'auth/operation-not-allowed') {
-            return {ok:false, stage:'anonymous-auth', code:safeCode(e)};
+          const anonymousCode = safeCode(e);
+          if (!['auth/operation-not-allowed', 'auth/admin-restricted-operation'].includes(anonymousCode)) {
+            return {ok:false, stage:'anonymous-auth', code:anonymousCode};
           }
           const email = 'gate6-' + runId + '-' + index + '@example.invalid';
           const password = 'G6!' + runId + '-' + index + '-TempOnly';
