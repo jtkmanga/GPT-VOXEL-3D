@@ -1,5 +1,25 @@
 # Current development state
 
+## D055 — staging session-revocation evidence path deployed (2026-10-22)
+
+Source 00900bd2364cde8727de1b0d9c396e90dc96a858 adds a staging-only visible
+status for server policy closure of a replaced/no-longer-owned session while
+deliberately ignoring normal active zone-handoff ownership transfer. It does not
+change production/main session authority or weaken reconnect behavior.
+
+Deploy Staging Worker #12 completed successfully on this source. P8 Browser Gate
+#7 and P9 Staging Browser Gate #8 also completed successfully; P9 public staging
+probes passed and browser fixtures retained their existing auth/transport checks.
+The staging client can now show "SESSION REVOKED" without exposing UID, token,
+resume ticket or other authentication material when the live server revokes a
+superseded session.
+
+This prepares a direct physical-device Gate 3 check: start the same staging
+account in session A, then start the same account in session B. The durable
+single-owner session authority must retire A and A must visibly fail closed.
+Until that live two-session result is captured, session revocation remains open.
+Gate 2 remains PASS. Overall NOT READY_FOR_FINAL_REVIEW.
+
 ## D054 — Firebase staging restrictions reconciled (2026-10-22)
 
 Owner console evidence from 2026-10-21 is reconciled with D050-D053. The staging

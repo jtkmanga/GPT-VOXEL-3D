@@ -1,5 +1,22 @@
 # Release gate ledger
 
+## D055 session replacement/revocation live-test path — 2026-10-22
+
+Source 00900bd2364cde8727de1b0d9c396e90dc96a858 exposes a staging-only
+"SESSION REVOKED" status when the server closes a superseded/no-longer-owned
+session, while normal in-progress zone handoffs are excluded from that label.
+
+[Deploy Staging Worker #12](https://github.com/jtkmanga/GPT-VOXEL-3D/actions/runs/39776362055),
+[P8 Browser Gate #7](https://github.com/jtkmanga/GPT-VOXEL-3D/actions/runs/39776362306)
+and [P9 Staging Browser Gate #8](https://github.com/jtkmanga/GPT-VOXEL-3D/actions/runs/39776362212)
+all completed successfully. Public staging probes in P9 also passed.
+
+This is tooling/evidence readiness, not the live Gate 3 pass. The remaining
+session-revocation proof is one physical/live same-account two-session takeover:
+session B acquires authority and session A is retired/fails closed with the
+staging revocation status. Firebase account-level refresh-token revocation remains
+a distinct hardening concern and is not claimed by this test.
+
 ## D054 Gate 2 Cloudflare/Firebase staging security/isolation PASS — 2026-10-22
 
 Owner Google Cloud/Firebase console evidence shows the staging Firebase Web API

@@ -1,5 +1,12 @@
 # Development plan
 
+D055 (2026-10-22): staging session-revocation evidence UI is deployed at
+00900bd2. Deploy Staging #12, P8 #7 and P9 #8 all pass. Next Gate 3 live action:
+run the same authorized staging account in two browser sessions; the second
+session must replace authority and the first must close with the staging
+SESSION REVOKED status. Record only the result, never tokens or account details.
+This can also bootstrap Gate 4 two-session/mobile evidence.
+
 D054 (2026-10-22): reconcile owner Firebase/Google Cloud console evidence:
 the staging browser API key is Website-restricted to the intended staging origins,
 API restrictions are enabled, Authorized Domains are staging-scoped, and live
