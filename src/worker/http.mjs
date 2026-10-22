@@ -1,5 +1,5 @@
 import { PAYMENT_PRICES } from '../shared/catalog.mjs';
-import { verifyFirebaseIdToken } from './firebase-auth.mjs';
+import { verifyFirebaseActiveIdToken } from './firebase-auth.mjs';
 import { verifyPaymentEvent, PaymentBoundaryError } from './payment-events.mjs';
 
 // Server-to-server provider adapter. A Firebase login or browser payment flag
@@ -75,10 +75,7 @@ export async function handleVerifySlip(request, env) {
   let verified;
 
   try {
-    verified = await verifyFirebaseIdToken(
-      match[1],
-      env.FIREBASE_PROJECT_ID
-    );
+    verified = await verifyFirebaseActiveIdToken(match[1], env);
   } catch {
     return jsonResponse(request, env, {
       ok: false,
@@ -307,10 +304,7 @@ export async function handleGetEntitlements(request, env) {
   let verified;
 
   try {
-    verified = await verifyFirebaseIdToken(
-      match[1],
-      env.FIREBASE_PROJECT_ID
-    );
+    verified = await verifyFirebaseActiveIdToken(match[1], env);
   } catch {
     return jsonResponse(request, env, {
       ok: false,
