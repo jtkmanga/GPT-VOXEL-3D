@@ -32,6 +32,27 @@ def page_metric(page):
       };
     }""")
 
+def stop_snapshot(metrics, target):
+    acks = [v for m in metrics for v in m["ackLatencies"]]
+    closes = {}
+    for m in metrics:
+        code = str(int(m.get("closeCode") or 0))
+        if code != "0":
+            closes[code] = closes.get(code, 0) + 1
+    return {
+      "targetSessions": target,
+      "activeSessions": sum(1 for m in metrics if m["readyState"] == 1 and m["welcomed"]),
+      "welcomeSuccess": sum(1 for m in metrics if m["welcomed"]),
+      "movementAcks": sum(m["movementAcks"] for m in metrics),
+      "movementAckP95Ms": percentile(acks, .95),
+      "unexpectedCloses": sum(m["unexpectedCloses"] for m in metrics),
+      "authErrors": sum(m["authErrors"] for m in metrics),
+      "serverErrors": sum(m["serverErrors"] for m in metrics),
+      "clientErrors": sum(m["clientErrors"] for m in metrics),
+      "movementRejected": sum(m["movementRejected"] for m in metrics),
+      "closeCodes": closes
+    }
+
 def start_identity_and_socket(page, index, run_id):
     result = page.evaluate("""async ({index, runId, origin}) => {
       const safeCode = e => String(e?.code || e?.name || 'unknown').slice(0, 80);
@@ -243,10 +264,13 @@ def main():
               authority_violation = len(player_ids) != len(set(player_ids)) or rejected > 0
               error_rate = (unexpected + errors) / target
               if authority_violation:
+                report["stopSnapshot"] = stop_snapshot(metrics, target)
                 report["stopReason"] = "authority-state-violation"; save(); return 5
               if error_rate > 0.01:
+                report["stopSnapshot"] = stop_snapshot(metrics, target)
                 report["stopReason"] = "error-or-close-rate-above-1-percent"; save(); return 6
               if len(acks) >= target * 5 and p95 is not None and p95 > 500:
+                report["stopSnapshot"] = stop_snapshot(metrics, target)
                 report["stopReason"] = "movement-ack-p95-above-500ms"; save(); return 7
 
             metrics = [page_metric(page) for page in pages[:target]]

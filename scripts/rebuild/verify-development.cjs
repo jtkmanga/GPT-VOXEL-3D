@@ -20,7 +20,18 @@ function runSteps(run) {
     const passed = !result.error && !result.signal && result.status === 0;
     results.push({ name, passed, exitCode: result.status ?? null,
       signal: result.signal ?? null, errorCode: result.error?.code ?? null });
-    if (!passed) break;
+    if (!passed) {
+      const file = path.join(directory, `${name}.log`);
+      let tail = '';
+      try {
+        tail = fs.readFileSync(file, 'utf8').slice(-12000)
+          .replace(/AIza[A-Za-z0-9_-]{30,}/g, '[redacted-firebase-key]')
+          .replace(/(?:ghp_|github_pat_|sk_live_|rk_live_)[A-Za-z0-9_]{16,}/g, '[redacted-token]')
+          .replace(/-----BEGIN [^-]*PRIVATE KEY-----[\\s\\S]*?-----END [^-]*PRIVATE KEY-----/g, '[redacted-private-key]');
+      } catch {}
+      if (tail) process.stderr.write(`\nFAILED STEP LOG TAIL (${name}, redacted):\n${tail}\n`);
+      break;
+    }
   }
   return { passed: results.length === STEPS.length && results.every(r => r.passed), results };
 }
