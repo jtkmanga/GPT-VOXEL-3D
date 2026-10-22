@@ -179,6 +179,11 @@ test('P9 staging exposes policy session revocation without exposing identifiers 
   f.context.stagingOnSocketClose(f.ws, { code: 1008, reason: 'Session ownership transferred' });
   assert.equal(f.element('staging-status').innerText, '');
   f.context.secureHandoffInProgress = false;
+  f.context.stagingOnSocketClose(f.ws, { code: 1008, reason: 'Session ownership transferred' });
+  assert.equal(f.element('staging-status').innerText, '');
+  f.context.stagingOnSocketClose(f.ws, { code: 1008, reason: 'Session no longer owned' });
+  assert.equal(f.element('staging-status').innerText, 'STAGING · SESSION REVOKED · TEST PAYMENTS ONLY');
+  f.element('staging-status').innerText = '';
   f.context.stagingOnSocketClose(f.ws, { code: 1000, reason: 'normal close' });
   assert.equal(f.element('staging-status').innerText, '');
 });

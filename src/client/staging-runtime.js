@@ -337,7 +337,7 @@ function stagingOnSocketClose(_ws, event) {
     if (!STAGING_CLIENT_ENABLED || !event || event.code !== 1008) return;
     const handoffActive = typeof secureHandoffInProgress !== 'undefined' && secureHandoffInProgress;
     if (handoffActive) return;
-    if (['Session replaced', 'Session ownership transferred', 'Session no longer owned'].includes(String(event.reason || ''))) {
+    if (['Session replaced', 'Session no longer owned'].includes(String(event.reason || ''))) {
         stagingSetStatus('STAGING · SESSION REVOKED · TEST PAYMENTS ONLY');
     }
 }
