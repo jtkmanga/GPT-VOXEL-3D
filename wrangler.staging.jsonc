@@ -12,6 +12,7 @@
     "FIREBASE_PROJECT_ID": "",
     "FIREBASE_PUBLIC_CONFIG": "",
     "FIREBASE_APP_CHECK_SITE_KEY": "",
+    "FIREBASE_ONLINE_USER_CHECK": "false",
     "STAGING_AUTH_MODE": "popup",
     "PAYMENT_MODE": "provider-neutral-test",
     "TWOC2P_SANDBOX_ENABLED": "false",
