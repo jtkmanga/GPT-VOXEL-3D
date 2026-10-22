@@ -31,10 +31,11 @@ function runtimeFixture({ enabled = true, mode = 'popup' } = {}) {
     signInWithPopup: async () => events.push('popup'), signInWithRedirect: async () => events.push('redirect'),
     getRedirectResult: async () => events.push('redirect-result'), signOut: async () => events.push('sign-out') };
   const context = vm.createContext({ STAGING_PUBLIC_CONFIG: publicFixture(mode), STAGING_CLIENT_ENABLED: enabled,
-    protocol, auth, googleProvider: {}, WebSocket: { OPEN: 1 },
+    protocol, auth, firebase: { appCheck: () => ({ getToken: async () => ({ token: 'synthetic-p9-app-check-token' }) }) }, googleProvider: {}, WebSocket: { OPEN: 1 },
     URL, URLSearchParams, crypto: { randomUUID: () => '12345678-1234-1234-1234-123456789abc' },
     fetch: async (url, options) => {
       sandboxCalls.push({ url, method: options?.method, hasAuthorization: options?.headers?.Authorization?.startsWith('Bearer '),
+        hasAppCheck: options?.headers?.['X-Firebase-AppCheck'] === 'synthetic-p9-app-check-token',
         body: JSON.parse(options?.body || '{}') });
       return { ok: true, async json() { return { ok: true, invoiceNo: 'TESTINV001',
         webPaymentUrl: 'https://sandbox-pgw-ui.2c2p.com/payment/4.5/#/token/synthetic-local-token' }; } };
@@ -145,7 +146,7 @@ test('P9 legacy speed, coin and slip entrypoints stay disabled while VIP uses on
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(f.sandboxCalls.length, 1);
   assert.deepEqual(f.sandboxCalls[0], {
-    url: publicFixture().workerOrigin + '/payments/2c2p/checkout', method: 'POST', hasAuthorization: true,
+    url: publicFixture().workerOrigin + '/payments/2c2p/checkout', method: 'POST', hasAuthorization: true, hasAppCheck: true,
     body: { requestId: 'vip1sandbox:12345678123412341234123456789abc' }
   });
   assert.ok(f.events.some(event => Array.isArray(event) && event[0] === 'sandbox-navigation' &&

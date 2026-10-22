@@ -1,5 +1,23 @@
 # Current development state
 
+## D070 — reconcile Gate 7 reviewed history baseline (2026-10-23)
+
+Starting source 675d85413af328e3c09446da574a0b6ee0bc6f56. Independently
+reviewed the 72 newly reachable objects since 8231d5e. All ten scanner candidates
+are dynamic debug-token script construction or synthetic P9 fixture values;
+no archive members or coverage gaps. See SECRET_AUDIT.md for classification.
+Advance only the Gate 7 audit baseline to the reviewed source, preserving the
+scanner patterns and rejection of new findings. Files changed: Gate 7 workflow,
+STATE.md, SECRET_AUDIT.md, index.html and tests/rebuild/p9-client.test.cjs. The generated index.html is refreshed from unchanged authored source; the P9
+checkout fixture now supplies synthetic App Check and asserts its HTTP header.
+No production deployment or configuration changes.
+Validation: bounded history audit reviewed; git diff --check. Full verify-development.cjs passed all six steps (tests, generated client,
+syntax, static, staging isolation and current-file secret checks). Gate 5 E2E and final
+review remain open; no READY_FOR_FINAL_REVIEW claim. Next: inspect current CI,
+finish authenticated sandbox checkout/callback/entitlement evidence, and review
+provider maintenance prerequisites independently.
+
+
 ## D069 — Gate 6 bounded live staging capacity canary PASS (2026-10-22)
 
 Owner-approved Gate 6 live staging canary run #6 completed successfully with the

@@ -1,5 +1,18 @@
 # S001: public repository credential audit
 
+## D070 reviewed incremental history — 2026-10-23
+
+Reviewed 8231d5e..675d854: 72 objects (9 commits, 37 trees, 26 blobs),
+zero archive members and zero coverage gaps. All 10 scanner candidates were
+inspected at their exact blob/line locations. Seven are dynamic JavaScript
+construction using json.dumps(debug_token), not a stored token, in historical
+Gate 5/6 browser scripts. Three are synthetic P9 fixture configuration/token
+values (p9-browser.py lines 23, 52, 79). No private credential was identified.
+The Gate 7 reviewed baseline advances to 675d854; patterns and fail-on-new-finding
+behavior remain unchanged. Current-file checks remain required. No credentials
+used and no account changes. Prior scanner scope limitations remain.
+
+
 ## D068 increment — 2026-10-22
 
 Public source 8231d5e51830d038dbaa60e4a819a2785a051e61 minus audited
