@@ -23,5 +23,5 @@ import worker from './src/worker/router.mjs';
 
 export { GameRoom } from './src/worker/game-room.mjs';
 export { ZoneRoom } from './src/worker/zone-room.mjs';
-export { verifyFirebaseIdToken, verifyFirebaseActiveIdToken } from './src/worker/firebase-auth.mjs';
+export { verifyFirebaseIdToken } from './src/worker/firebase-auth.mjs';
 export default worker;

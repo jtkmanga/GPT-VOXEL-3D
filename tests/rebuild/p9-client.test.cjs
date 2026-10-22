@@ -19,7 +19,7 @@ const publicFixture = authMode => ({ environment: 'staging', workerName: 'gpt-vo
 const inline = html => [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].at(-1)[1];
 
 function runtimeFixture({ enabled = true, mode = 'popup' } = {}) {
-  const events = [], elements = new Map(), windowListeners = new Map(), documentListeners = new Map();
+  const events = [], sandboxCalls = [], elements = new Map(), windowListeners = new Map(), documentListeners = new Map();
   let epoch = 7, release;
   const user = { uid: 'synthetic-staging-browser-user', getIdToken: async () => 'synthetic-staging-token' };
   const ws = { readyState: 1, sent: [], send(value) { this.sent.push(JSON.parse(value)); } };
@@ -32,12 +32,21 @@ function runtimeFixture({ enabled = true, mode = 'popup' } = {}) {
     getRedirectResult: async () => events.push('redirect-result'), signOut: async () => events.push('sign-out') };
   const context = vm.createContext({ STAGING_PUBLIC_CONFIG: publicFixture(mode), STAGING_CLIENT_ENABLED: enabled,
     protocol, auth, googleProvider: {}, WebSocket: { OPEN: 1 },
+    URL, URLSearchParams, crypto: { randomUUID: () => '12345678-1234-1234-1234-123456789abc' },
+    fetch: async (url, options) => {
+      sandboxCalls.push({ url, method: options?.method, hasAuthorization: options?.headers?.Authorization?.startsWith('Bearer '),
+        body: JSON.parse(options?.body || '{}') });
+      return { ok: true, async json() { return { ok: true, invoiceNo: 'TESTINV001',
+        webPaymentUrl: 'https://sandbox-pgw-ui.2c2p.com/payment/4.5/#/token/synthetic-local-token' }; } };
+    },
+    sessionStorage: { setItem(key) { events.push(['session-write', key]); }, getItem() { return null; }, removeItem() {} },
     state: { isPlaying: true, selectedServerId: 'free1' },
     keys: { w: true, a: false, s: true, d: false }, joystickVec: { x: 1, y: -1 },
     secureJumpIntent: true, secureJumpHeld: true, secureGameSocket: ws,
     secureCurrentZoneId: '5,5', secureReconnectInProgress: false,
     document: { hidden: false, getElementById: element, addEventListener: (key, fn) => documentListeners.set(key, fn) },
-    window: { addEventListener: (key, fn) => windowListeners.set(key, fn) },
+    window: { addEventListener: (key, fn) => windowListeners.set(key, fn),
+      location: { search: '', assign: url => { const parsed = new URL(url); events.push(['sandbox-navigation', parsed.origin, parsed.pathname]); } } },
     alert: message => events.push(message), startGame: async () => { events.push('start'); return true; },
     secureConnectionEpoch: () => epoch, secureConnectionIsCurrent: value => value === epoch,
     secureResumeDisconnectedSocket: async (...values) => { events.push(['resume', ...values]); return true; },
@@ -46,7 +55,7 @@ function runtimeFixture({ enabled = true, mode = 'popup' } = {}) {
     secureAbortClientConnections: () => { epoch++; context.secureGameSocket = null; events.push('abort'); }
   });
   vm.runInContext(fs.readFileSync(path.resolve(__dirname, '../../src/client/staging-runtime.js'), 'utf8'), context);
-  return { context, auth, ws, user, events, element, windowListeners, documentListeners,
+  return { context, auth, ws, user, events, sandboxCalls, element, windowListeners, documentListeners,
     bumpEpoch() { epoch++; }, holdToken() { user.getIdToken = () => new Promise(resolve => { release = resolve; }); },
     releaseToken() { user.getIdToken = async () => 'synthetic-staging-token'; release('synthetic-staging-token'); } };
 }
@@ -129,9 +138,18 @@ test('P9 Google popup and mobile redirect invoke only the configured SDK flow an
   assert.ok(!JSON.stringify(redirect.events).includes('sensitive SDK token'));
 });
 
-test('P9 every staging purchase entrypoint is disabled for speed, coins and VIP with no QR or slip action', async () => {
+test('P9 legacy speed, coin and slip entrypoints stay disabled while VIP uses only the bounded sandbox checkout', async () => {
   const f = runtimeFixture();
-  for (const type of ['speed', 'coin', 'vip1']) assert.equal(f.context.openPaymentModal(type, 1, 'forged'), false);
+  for (const type of ['speed', 'coin']) assert.equal(f.context.openPaymentModal(type, 1, 'forged'), false);
+  assert.equal(f.context.openPaymentModal('vip1', 1, 'forged'), undefined);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(f.sandboxCalls.length, 1);
+  assert.deepEqual(f.sandboxCalls[0], {
+    url: publicFixture().workerOrigin + '/payments/2c2p/checkout', method: 'POST', hasAuthorization: true,
+    body: { requestId: 'vip1sandbox:12345678123412341234123456789abc' }
+  });
+  assert.ok(f.events.some(event => Array.isArray(event) && event[0] === 'sandbox-navigation' &&
+    event[1] === 'https://sandbox-pgw-ui.2c2p.com' && event[2] === '/payment/4.5/'));
   assert.equal(await f.context.verifyAndBuySlip(), false); assert.equal(f.context.grantPurchasedItem(), false);
   assert.equal(f.element('slip-file-input').disabled, true); assert.equal(f.element('btn-verify-slip').disabled, true);
   assert.equal(f.element('promptpay-qr-img').src, ''); assert.equal(f.ws.sent.length, 0);

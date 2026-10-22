@@ -23,6 +23,8 @@ function stagingHarness() {
       FIREBASE_PROJECT_ID: projectId,
       FIREBASE_PUBLIC_CONFIG: JSON.stringify({ apiKey: 'synthetic-public-staging-key',
         projectId, authDomain: `${projectId}.firebaseapp.com`, appId: '1:123456:web:abcdef123456' }),
+      FIREBASE_APP_CHECK_SITE_KEY: '6L' + 'A'.repeat(38),
+      FIREBASE_ONLINE_USER_CHECK: 'false',
       STAGING_AUTH_MODE: 'popup', PAYMENT_MODE: 'provider-neutral-test' } });
 }
 

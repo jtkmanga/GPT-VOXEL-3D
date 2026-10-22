@@ -231,7 +231,7 @@ function createHarness(options = {}) {
     }
   };
   const context = vm.createContext({
-    Request, Response: WorkerResponse, Headers, URL, URLSearchParams,
+    Request, Response: WorkerResponse, Headers, URL, URLSearchParams, AbortSignal,
     FormData, File, Blob, TextEncoder, TextDecoder, atob, btoa,
     crypto: runtimeCrypto, fetch: mockFetch, Date: FakeDate,
     WebSocketPair: MockWebSocketPair, structuredClone,
@@ -242,7 +242,11 @@ function createHarness(options = {}) {
   });
   const workerPath = options.workerPath ?? path.resolve(__dirname, '../../worker.js');
   if (!workerBundles.has(workerPath)) {
-    workerBundles.set(workerPath, buildSync({ entryPoints: [workerPath], bundle: true,
+    const firebaseAuthPath = path.resolve(path.dirname(workerPath), 'src/worker/firebase-auth.mjs');
+    const harnessEntry = `export { default, GameRoom, ZoneRoom, verifyFirebaseIdToken } from ${JSON.stringify(workerPath)};\n` +
+      `export { verifyFirebaseActiveIdToken } from ${JSON.stringify(firebaseAuthPath)};\n`;
+    workerBundles.set(workerPath, buildSync({ stdin: { contents: harnessEntry,
+      resolveDir: path.dirname(workerPath), sourcefile: 'rebuild-harness-entry.mjs' }, bundle: true,
       write: false, format: 'iife', globalName: '__workerModule', platform: 'neutral',
       banner: { js: '"use strict";' } }).outputFiles[0].text);
   }

@@ -1,5 +1,44 @@
 # Current development state
 
+## D067 — Gate 6 level 5 PASS; Gate 7 fixture drift repaired locally (2026-10-22)
+
+Starting commit f596d4acfa86e1004db2c57926a071b5b3330e32; public repository and clean
+detached checkout. Gate 6 canary run #5 artifact proves the approved level 2 and
+level 5 stages passed before GitHub cancelled the job during a newer push. Level
+5 reached 5/5 active and welcomed sessions with five unique player IDs, 535
+movement acknowledgements, 356.0 ms movement-ack p95, and zero auth/server/client
+errors, unexpected closes or movement rejections. This is bounded staging
+evidence only. The artifact is incomplete and does not close Gate 6 because the
+approved level 10 stage did not run; the same job was re-requested without
+changing thresholds or scope.
+
+Gate 7 on f596d4a exposed four independent source/fixture drift failures rather
+than a staging hardening regression: two movement fixtures lacked the required
+synthetic App Check public key; the P9 purchase assertion still expected VIP to
+be disabled after the bounded staging-only sandbox checkout was enabled; the
+generated production client was stale behind its authored source; and the local
+Worker harness did not model AbortSignal while exposing a staging-only verifier
+through the production entrypoint. The repair adds only synthetic App Check data
+with online account lookup explicitly off in local fixtures, keeps legacy
+speed/coin/slip purchase entrypoints disabled while checking the fixed 2C2P
+sandbox origin/path, regenerates index.html from authored sources, and moves the
+extra verifier export into the local harness entry so worker.js retains its
+frozen public production contract.
+
+Local verification passed: 558/558 active tests, 44/44 targeted P9/coin/handoff/
+zone tests, 32/32 P2 contract/security tests, generated-client, syntax, static,
+staging-isolation and secret/config checks. Production Wrangler configuration is
+unchanged. Files changed: index.html, worker.js, tests/rebuild/harness.cjs,
+tests/rebuild/p9-browser.py, tests/rebuild/p9-client.test.cjs,
+tests/rebuild/staging-coin-regression.test.cjs,
+tests/rebuild/staging-handoff-budget.test.cjs and this state record.
+
+Unresolved: publish only with an expected-head fast-forward, obtain green Gate 7
+and P9 CI on the resulting source, and complete Gate 6 level 10. Gate 5 still
+requires a completed owner-approved sandbox payment plus native callback and
+entitlement evidence; maintenance/exchange-key capabilities remain separate.
+Overall NOT READY_FOR_FINAL_REVIEW.
+
 ## D066 — 2C2P Thailand sandbox basic integration PASS; Gate 6 CI attestation blocker identified (2026-10-22)
 
 Owner-approved Gate 5 sandbox probe run #3 completed successfully against the

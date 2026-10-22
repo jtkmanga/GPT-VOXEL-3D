@@ -209,10 +209,10 @@ def run():
             require(page.evaluate("document.body.innerText.includes('Free Server ฟรีไม่จำกัด') && document.body.innerText.includes('ไม่จำกัดผู้เล่น') && document.body.innerText.includes('50 บาท/เดือน')"), "Product labels changed")
             passed("trusted entitlement fixture selects isolated VIP while preserving Free and 50 THB labels")
 
-            page.evaluate("for(const type of ['speed','coin','vip1']) openPaymentModal(type,1,'forged'); verifyAndBuySlip()")
+            page.evaluate("for(const type of ['speed','coin']) openPaymentModal(type,1,'forged'); verifyAndBuySlip()")
             require(page.evaluate("document.getElementById('btn-verify-slip').disabled && document.getElementById('slip-file-input').disabled && document.getElementById('promptpay-qr-img').getAttribute('src') === ''"), "Payment remained enabled in staging")
             require(all("sensitive" not in dialog for dialog in dialogs), "Sensitive SDK error reached a dialog")
-            passed("all payment entrypoints remain disabled; no QR/slip charge flow exists")
+            passed("legacy speed, coin, QR and slip entrypoints remain disabled; VIP sandbox is covered separately")
 
             page.reload(wait_until="load")
             page.wait_for_function("state.isLoggedIn && typeof stagingResumeForeground === 'function'")

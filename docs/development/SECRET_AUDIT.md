@@ -1,5 +1,17 @@
 # S001: public repository credential audit
 
+## D067 increment — 2026-10-22
+
+Public source f596d4acfa86e1004db2c57926a071b5b3330e32 minus audited
+99d8c2ec9db4f3cfb16e9fe9f6fe2a4c54eed430: 226 objects (39 commits, 131
+trees, 56 blobs), no archive members and no coverage gaps. Eighteen assignment
+candidates were reviewed privately by location: they are CI secret-variable use,
+synthetic test credentials, synthetic public App Check configuration and local
+2C2P fixtures; no usable provider credential was found. No candidate value was
+used against a provider or copied into this record. Current-file secret/config
+scan passed 172 rebuild/source files with production configuration unchanged.
+The bounded-pattern and excluded-tip limitations below remain applicable.
+
 ## D064 increment — 2026-10-22
 
 Public source 99d8c2ec9db4f3cfb16e9fe9f6fe2a4c54eed430 minus audited
