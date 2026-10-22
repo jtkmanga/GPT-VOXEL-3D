@@ -9,6 +9,7 @@ ORIGIN = "https://gpt-voxel-3d-staging-01.hjinffv5426.workers.dev"
 HPP_ORIGIN = "https://sandbox-pgw-ui.2c2p.com"
 CARD_DOC = "https://developer.2c2p.com/docs/reference-test-information-th.md"
 OUT = Path("work/gate5/2c2p-e2e.json")
+# E2E run verifies App Check propagation before any sandbox payment authority.
 
 
 def official_sandbox_card():
