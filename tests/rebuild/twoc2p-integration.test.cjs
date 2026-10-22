@@ -29,6 +29,7 @@ const BASE_ENV = {
   STAGING_WORKER_ORIGIN: ORIGIN, ALLOWED_ORIGIN: ORIGIN,
   FIREBASE_PROJECT_ID: PROJECT, STAGING_AUTH_MODE: 'popup',
   PAYMENT_MODE: 'provider-neutral-test',
+  FIREBASE_APP_CHECK_SITE_KEY: '6L' + 'A'.repeat(38),
   FIREBASE_PUBLIC_CONFIG: JSON.stringify({ apiKey: 'AIza' + '0'.repeat(35),
     projectId: PROJECT, authDomain: PROJECT + '.firebaseapp.com',
     appId: '1:123456789:web:12345678' })

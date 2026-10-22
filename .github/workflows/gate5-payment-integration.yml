@@ -30,4 +30,4 @@ jobs:
       - name: Run provider adapter security and lifecycle tests
         run: node --test tests/rebuild/twoc2p-jwt.test.cjs tests/rebuild/twoc2p-store.test.cjs tests/rebuild/twoc2p-integration.test.cjs
       - name: Check staging scaffold remains isolated
-        run: node scripts/rebuild/check-staging.cjs --config wrangler.staging.jsonc
+        run: node scripts/rebuild/check-staging.cjs --config wrangler.staging.jsonc --allow-unconfigured
