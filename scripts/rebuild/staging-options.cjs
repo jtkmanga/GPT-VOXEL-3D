@@ -8,7 +8,12 @@ const PRODUCTION_MAIN = 'f98aa9a044616b1b965b889cf0c02a0d3b041f65';
 const SCAFFOLD_NAME = 'gpt-voxel-3d-staging-01';
 const VAR_KEYS = ['APP_ENV', 'STAGING_WORKER_NAME', 'STAGING_WORKER_ORIGIN', 'ALLOWED_ORIGIN',
   'FIREBASE_PROJECT_ID', 'FIREBASE_PUBLIC_CONFIG', 'FIREBASE_APP_CHECK_SITE_KEY',
-  'STAGING_AUTH_MODE', 'PAYMENT_MODE'];
+  'STAGING_AUTH_MODE', 'PAYMENT_MODE',
+  'TWOC2P_SANDBOX_ENABLED', 'TWOC2P_SANDBOX_CHECKOUT_ENABLED', 'TWOC2P_SANDBOX_BACKEND_ENABLED',
+  'TWOC2P_SANDBOX_MERCHANT_CAPABILITIES_VERIFIED', 'TWOC2P_SANDBOX_E2E_VERIFIED',
+  'TWOC2P_SANDBOX_E2E_TEST_MODE', 'TWOC2P_SANDBOX_MONTHLY_POLICY_VERIFIED',
+  'TWOC2P_SANDBOX_BILLING_TIMEZONE', 'TWOC2P_SANDBOX_INITIAL_SEQUENCE_NO',
+  'TWOC2P_SANDBOX_MERCHANT_ID'];
 
 function exactKeys(value, expected, label) {
   if (!value || typeof value !== 'object' || Array.isArray(value) ||
@@ -94,7 +99,15 @@ function varsForManifest(manifest) {
     FIREBASE_PROJECT_ID: manifest.firebase.projectId,
     FIREBASE_PUBLIC_CONFIG: JSON.stringify(manifest.firebase),
     FIREBASE_APP_CHECK_SITE_KEY: manifest.appCheck.siteKey,
-    STAGING_AUTH_MODE: manifest.authMode, PAYMENT_MODE: 'provider-neutral-test'
+    STAGING_AUTH_MODE: manifest.authMode, PAYMENT_MODE: 'provider-neutral-test',
+    TWOC2P_SANDBOX_ENABLED: 'true', TWOC2P_SANDBOX_CHECKOUT_ENABLED: 'true',
+    TWOC2P_SANDBOX_BACKEND_ENABLED: 'true',
+    TWOC2P_SANDBOX_MERCHANT_CAPABILITIES_VERIFIED: 'true',
+    TWOC2P_SANDBOX_E2E_VERIFIED: 'false', TWOC2P_SANDBOX_E2E_TEST_MODE: 'true',
+    TWOC2P_SANDBOX_MONTHLY_POLICY_VERIFIED: 'true',
+    TWOC2P_SANDBOX_BILLING_TIMEZONE: 'UTC',
+    TWOC2P_SANDBOX_INITIAL_SEQUENCE_NO: '',
+    TWOC2P_SANDBOX_MERCHANT_ID: 'JT04'
   };
 }
 async function validateStagingWrangler(value, configFile, { allowUnconfigured = false, allowTest = false } = {}) {
@@ -111,6 +124,18 @@ async function validateStagingWrangler(value, configFile, { allowUnconfigured = 
   if (Object.values(value.vars).some(item => typeof item !== 'string')) throw Error('Staging vars must be strings');
   if (value.vars.APP_ENV !== 'staging' || value.vars.PAYMENT_MODE !== 'provider-neutral-test' ||
       value.name !== value.vars.STAGING_WORKER_NAME) throw Error('Staging identity/payment configuration mismatch');
+  const paymentTestEnabled = value.vars.TWOC2P_SANDBOX_ENABLED === 'true';
+  if (paymentTestEnabled && (value.vars.TWOC2P_SANDBOX_CHECKOUT_ENABLED !== 'true' ||
+      value.vars.TWOC2P_SANDBOX_BACKEND_ENABLED !== 'true' ||
+      value.vars.TWOC2P_SANDBOX_MERCHANT_CAPABILITIES_VERIFIED !== 'true' ||
+      value.vars.TWOC2P_SANDBOX_E2E_VERIFIED !== 'false' ||
+      value.vars.TWOC2P_SANDBOX_E2E_TEST_MODE !== 'true' ||
+      value.vars.TWOC2P_SANDBOX_MONTHLY_POLICY_VERIFIED !== 'true' ||
+      value.vars.TWOC2P_SANDBOX_BILLING_TIMEZONE !== 'UTC' ||
+      value.vars.TWOC2P_SANDBOX_INITIAL_SEQUENCE_NO !== '' ||
+      value.vars.TWOC2P_SANDBOX_MERCHANT_ID !== 'JT04')) {
+    throw Error('Staging sandbox payment test configuration mismatch');
+  }
   exactKeys(value.assets, ['directory', 'binding', 'run_worker_first'], 'staging assets');
   if (value.assets.binding !== 'ASSETS' || value.assets.run_worker_first !== true ||
       typeof value.assets.directory !== 'string') throw Error('Staging assets must run through the Worker guard');
