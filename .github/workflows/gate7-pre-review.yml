@@ -48,5 +48,5 @@ jobs:
         run: |
           set -euo pipefail
           git diff --check
-          test "$(git show f98aa9a044616b1b965b889cf0c02a0d3b041f65:wrangler.jsonc | sha256sum | cut -d' ' -f1)" = "$(sha256sum wrangler.jsonc | cut -d' ' -f1)"
+          test "$(git show 2e5a29602a2103054cbd1cf12f170996da4089c5:wrangler.jsonc | sha256sum | cut -d' ' -f1)" = "$(sha256sum wrangler.jsonc | cut -d' ' -f1)"
           echo "PASS production wrangler unchanged from verified baseline"
