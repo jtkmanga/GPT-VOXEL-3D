@@ -173,12 +173,14 @@ def main():
 
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
+    debug_token = os.environ.get("FIREBASE_APPCHECK_DEBUG_TOKEN", "").strip()
     report = {
       "formatVersion": 1,
       "mode": "live-staging-authorized-browser-canary",
       "origin": ORIGIN,
       "levels": [],
       "authMode": None,
+      "appCheckMode": "registered-ci-debug-provider",
       "complete": False,
       "stopReason": None,
       "limitations": [
@@ -195,6 +197,11 @@ def main():
     def save():
         out.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
 
+    if not debug_token:
+        report["stopReason"] = "ci-appcheck-debug-token-not-configured"
+        save()
+        return 11
+
     try:
       with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
@@ -203,6 +210,7 @@ def main():
             while len(pages) < target:
               i = len(pages)
               context = browser.new_context()
+              context.add_init_script("self.FIREBASE_APPCHECK_DEBUG_TOKEN = " + json.dumps(debug_token) + ";")
               page = context.new_page()
               contexts.append(context)
               pages.append(page)
