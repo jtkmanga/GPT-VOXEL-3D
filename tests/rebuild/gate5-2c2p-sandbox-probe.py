@@ -2,7 +2,7 @@
 import base64, hashlib, hmac, json, re, sys, time, urllib.request
 from urllib.parse import urlparse
 
-DOC_URL = "https://developer.2c2p.com/docs/sandbox"
+DOC_URL = "https://developer.2c2p.com/v4.0.2/docs/sandbox"
 API_URL = "https://sandbox-pgw.2c2p.com/payment/4.5/paymentToken"
 EXPECTED_HPP = "https://sandbox-pgw-ui.2c2p.com"
 OUT = "work/gate5/2c2p-sandbox-probe.json"
