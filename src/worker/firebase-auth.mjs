@@ -1,5 +1,7 @@
 const CERTS_URL = 'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com';
 let cachedCerts = null, certsExpireAt = 0, certsFetchPromise = null, certsFetchedAt = 0;
+const APP_CHECK_JWKS_URL = 'https://firebaseappcheck.googleapis.com/v1/jwks';
+let cachedAppCheckJwks = null, appCheckJwksExpireAt = 0, appCheckJwksPromise = null;
 
 function decodeBase64(value) {
   const normalized = value.replace(/-/g,'+').replace(/_/g,'/');
@@ -132,5 +134,85 @@ export async function verifyFirebaseActiveIdToken(token, env, appCheckToken) {
   if (!Number.isFinite(validSince) || validSince < 0 ||
       (validSince > 0 && identity.authTime < validSince))
     throw Error('Firebase token is revoked');
+  return identity;
+}
+
+function stagingAppCheckConfig(env) {
+  if (!env || env.APP_ENV !== 'staging' || env.STAGING_WORKER_NAME !== 'gpt-voxel-3d-staging-01' ||
+      typeof env.FIREBASE_PUBLIC_CONFIG !== 'string') throw Error('Firebase App Check unavailable');
+  let config;
+  try { config = JSON.parse(env.FIREBASE_PUBLIC_CONFIG); }
+  catch (_) { throw Error('Firebase App Check unavailable'); }
+  const appId = config?.appId, match = typeof appId === 'string' &&
+    /^1:(\d+):web:[A-Za-z0-9]+$/.exec(appId);
+  if (!match || config.projectId !== env.FIREBASE_PROJECT_ID) throw Error('Firebase App Check unavailable');
+  return { appId, projectNumber: match[1] };
+}
+async function getAppCheckJwk(kid) {
+  const now = Date.now();
+  if (!cachedAppCheckJwks || now >= appCheckJwksExpireAt || !cachedAppCheckJwks.has(kid)) {
+    if (!appCheckJwksPromise) {
+      appCheckJwksPromise = (async () => {
+        const response = await fetch(APP_CHECK_JWKS_URL);
+        if (!response.ok) throw Error('Firebase App Check keys unavailable');
+        const body = await response.json();
+        const keys = Array.isArray(body?.keys) ? body.keys : [];
+        if (!keys.length || keys.length > 20) throw Error('Firebase App Check keys unavailable');
+        const next = new Map();
+        for (const key of keys) {
+          if (!key || key.kty !== 'RSA' || typeof key.kid !== 'string' || !key.kid ||
+              typeof key.n !== 'string' || typeof key.e !== 'string' ||
+              (key.alg !== undefined && key.alg !== 'RS256') ||
+              (key.use !== undefined && key.use !== 'sig')) throw Error('Firebase App Check keys unavailable');
+          next.set(key.kid, key);
+        }
+        const match = response.headers.get('cache-control')?.match(/max-age=(\d+)/i);
+        const maxAge = match ? Number(match[1]) : 21600;
+        cachedAppCheckJwks = next;
+        appCheckJwksExpireAt = Date.now() +
+          Math.min(Math.max(Number.isFinite(maxAge) ? maxAge : 21600, 60), 21600) * 1000;
+      })();
+    }
+    const pending = appCheckJwksPromise;
+    try { await pending; }
+    finally { if (appCheckJwksPromise === pending) appCheckJwksPromise = null; }
+  }
+  const key = cachedAppCheckJwks?.get(kid);
+  if (!key) throw Error('Unknown Firebase App Check signing key');
+  return key;
+}
+export async function verifyFirebaseAppCheckToken(token, env) {
+  if (typeof token !== 'string' || token.length < 100 || token.length > 8192) throw Error('Invalid App Check token');
+  const parts = token.split('.');
+  if (parts.length !== 3 || parts.some(part => !/^[A-Za-z0-9_-]+$/.test(part))) throw Error('Invalid App Check token');
+  let header, claims;
+  try {
+    header = JSON.parse(new TextDecoder().decode(decodeBase64(parts[0])));
+    claims = JSON.parse(new TextDecoder().decode(decodeBase64(parts[1])));
+  } catch (_) { throw Error('Invalid App Check token'); }
+  const { appId, projectNumber } = stagingAppCheckConfig(env);
+  const now = Math.floor(Date.now() / 1000);
+  if (!header || typeof header !== 'object' || Array.isArray(header) || header.alg !== 'RS256' ||
+      header.typ !== 'JWT' || typeof header.kid !== 'string' || !header.kid ||
+      !claims || typeof claims !== 'object' || Array.isArray(claims) ||
+      claims.iss !== `https://firebaseappcheck.googleapis.com/${projectNumber}` ||
+      !Array.isArray(claims.aud) || !claims.aud.includes(`projects/${projectNumber}`) ||
+      claims.sub !== appId || !Number.isInteger(claims.exp) || claims.exp <= now ||
+      !Number.isInteger(claims.iat) || claims.iat < 0 || claims.iat > now ||
+      (claims.nbf !== undefined && (!Number.isInteger(claims.nbf) || claims.nbf > now)))
+    throw Error('Invalid App Check token claims');
+  const jwk = await getAppCheckJwk(header.kid);
+  const publicKey = await crypto.subtle.importKey('jwk', jwk,
+    { name:'RSASSA-PKCS1-v1_5', hash:'SHA-256' }, false, ['verify']);
+  const valid = await crypto.subtle.verify({ name:'RSASSA-PKCS1-v1_5' }, publicKey,
+    decodeBase64(parts[2]), new TextEncoder().encode(parts[0] + '.' + parts[1]));
+  if (!valid) throw Error('Invalid App Check token signature');
+  return { appId, exp: claims.exp };
+}
+export async function verifyFirebaseRequestTokens(idToken, appCheckToken, env) {
+  const [identity] = await Promise.all([
+    verifyFirebaseIdToken(idToken, env?.FIREBASE_PROJECT_ID),
+    verifyFirebaseAppCheckToken(appCheckToken, env)
+  ]);
   return identity;
 }

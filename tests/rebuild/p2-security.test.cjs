@@ -73,6 +73,29 @@ test('P2 real Firebase verifier rejects invalid signatures, expired tokens and i
   assert.ok(h.records.fetches.every(record => record.url === CERTS_URL));
 });
 
+test('P2 custom backend request verifier requires valid Firebase ID and App Check tokens', async t => {
+  const h = createHarness({ env: {
+    APP_ENV: 'staging',
+    STAGING_WORKER_NAME: 'gpt-voxel-3d-staging-01',
+    FIREBASE_PROJECT_ID: 'rebuild-synthetic-project',
+    FIREBASE_PUBLIC_CONFIG: JSON.stringify({
+      apiKey: 'AIza' + '0'.repeat(35),
+      projectId: 'rebuild-synthetic-project',
+      appId: '1:123456789:web:abcdef1234567890'
+    })
+  }});
+  t.after(() => h.close());
+  const uid = 'synthetic-request-verifier';
+  assert.equal((await h.runtime.verifyFirebaseRequestTokens(
+    h.token(uid), h.appCheckToken(), h.env)).uid, uid);
+  await assert.rejects(h.runtime.verifyFirebaseRequestTokens(
+    h.token(uid), 'invalid-app-check-token', h.env));
+  await assert.rejects(h.runtime.verifyFirebaseRequestTokens(
+    'invalid-id-token', h.appCheckToken(), h.env));
+  assert.ok(h.records.fetches.some(record => record.url ===
+    'https://firebaseappcheck.googleapis.com/v1/jwks'));
+});
+
 test('P2 staging online Firebase user check rejects disabled revoked and missing users', async t => {
   const firebaseEnv = {
     APP_ENV: 'staging',

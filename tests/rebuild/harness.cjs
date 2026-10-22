@@ -12,6 +12,8 @@ const workerBundles = new Map();
 const PROJECT_ID = 'rebuild-synthetic-project';
 const CERTS_URL = 'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com';
 const SLIP_URL = 'https://connect.slip2go.com/api/verify-slip/qr-image/info';
+const APP_CHECK_JWKS_URL = 'https://firebaseappcheck.googleapis.com/v1/jwks';
+const APP_CHECK_APP_ID = '1:123456789:web:abcdef1234567890';
 const NativeResponse = globalThis.Response;
 let signingFixture;
 
@@ -36,6 +38,7 @@ function firebaseFixture() {
   const certificate = der(0x30, der(0x30, Buffer.concat([...skippedFields, spki])));
   signingFixture = {
     privateKey,
+    publicJwk: publicKey.export({ format: 'jwk' }),
     kid: 'rebuild-synthetic-rsa-key',
     certificate: `-----BEGIN CERTIFICATE-----\n${certificate.toString('base64')}\n-----END CERTIFICATE-----`
   };
@@ -200,6 +203,9 @@ function createHarness(options = {}) {
     if (request.url === CERTS_URL) return NativeResponse.json({ [fixture.kid]: fixture.certificate }, {
       headers: { 'cache-control': 'public, max-age=3600' }
     });
+    if (request.url === APP_CHECK_JWKS_URL) return NativeResponse.json({ keys: [{
+      ...fixture.publicJwk, kid: fixture.kid, alg: 'RS256', use: 'sig'
+    }] }, { headers: { 'cache-control': 'public, max-age=21600' } });
     if (request.url.startsWith('https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=')) {
       const body = await request.json();
       const parts = typeof body?.idToken === 'string' ? body.idToken.split('.') : [];
@@ -244,14 +250,14 @@ function createHarness(options = {}) {
   if (!workerBundles.has(workerPath)) {
     const firebaseAuthPath = path.resolve(path.dirname(workerPath), 'src/worker/firebase-auth.mjs');
     const harnessEntry = `export { default, GameRoom, ZoneRoom, verifyFirebaseIdToken } from ${JSON.stringify(workerPath)};\n` +
-      `export { verifyFirebaseActiveIdToken } from ${JSON.stringify(firebaseAuthPath)};\n`;
+      `export { verifyFirebaseActiveIdToken, verifyFirebaseAppCheckToken, verifyFirebaseRequestTokens } from ${JSON.stringify(firebaseAuthPath)};\n`;
     workerBundles.set(workerPath, buildSync({ stdin: { contents: harnessEntry,
       resolveDir: path.dirname(workerPath), sourcefile: 'rebuild-harness-entry.mjs' }, bundle: true,
       write: false, format: 'iife', globalName: '__workerModule', platform: 'neutral',
       banner: { js: '"use strict";' } }).outputFiles[0].text);
   }
   const source = workerBundles.get(workerPath);
-  vm.runInContext(`${source}\n;globalThis.__runtime = {worker: __workerModule.default, GameRoom: __workerModule.GameRoom, ZoneRoom: __workerModule.ZoneRoom, verifyFirebaseIdToken: __workerModule.verifyFirebaseIdToken, verifyFirebaseActiveIdToken: __workerModule.verifyFirebaseActiveIdToken};`, context, { filename: workerPath });
+  vm.runInContext(`${source}\n;globalThis.__runtime = {worker: __workerModule.default, GameRoom: __workerModule.GameRoom, ZoneRoom: __workerModule.ZoneRoom, verifyFirebaseIdToken: __workerModule.verifyFirebaseIdToken, verifyFirebaseActiveIdToken: __workerModule.verifyFirebaseActiveIdToken, verifyFirebaseAppCheckToken: __workerModule.verifyFirebaseAppCheckToken, verifyFirebaseRequestTokens: __workerModule.verifyFirebaseRequestTokens};`, context, { filename: workerPath });
   const runtime = context.__runtime;
   const rooms = new Map();
   const zones = new Map();
@@ -313,6 +319,14 @@ function createHarness(options = {}) {
   }
   env.ROOM = namespace(runtime.GameRoom, rooms, 'ROOM');
   env.ZONE = namespace(runtime.ZoneRoom, zones, 'ZONE');
+  function appCheckToken(overrides = {}, headerOverrides = {}) {
+    const now = Math.floor(currentTime / 1000);
+    const header = { alg:'RS256', typ:'JWT', kid:fixture.kid, ...headerOverrides };
+    const claims = { iss:'https://firebaseappcheck.googleapis.com/123456789',
+      aud:['projects/123456789'], sub:APP_CHECK_APP_ID, iat:now-1, exp:now+3600, ...overrides };
+    const content = [header, claims].map(value => Buffer.from(JSON.stringify(value)).toString('base64url')).join('.');
+    return `${content}.${sign('RSA-SHA256', Buffer.from(content), fixture.privateKey).toString('base64url')}`;
+  }
   function token(uid = 'synthetic-user', overrides = {}, headerOverrides = {}) {
     const now = Math.floor(currentTime / 1000);
     const header = { alg: 'RS256', kid: fixture.kid, ...headerOverrides };
@@ -425,7 +439,7 @@ function createHarness(options = {}) {
     return entry.instance;
   }
   return {
-    env, worker: runtime.worker, runtime, records, context, token, request, open, connect, moveTo, place,
+    env, worker: runtime.worker, runtime, records, context, token, appCheckToken, request, open, connect, moveTo, place,
     advance, settle, now: () => currentTime,
     setTime(value) { if (value < currentTime) throw Error('Synthetic clock cannot move backwards'); return advance(value - currentTime); },
     room: (server = 'free1') => env.ROOM.object(server === 'vip1' ? 'vip1-v2-demo' : 'free-v2-demo').instance,
