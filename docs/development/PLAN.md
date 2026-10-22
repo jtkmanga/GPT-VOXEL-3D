@@ -1,5 +1,13 @@
 # Development plan
 
+D056 (2026-10-22): physical Android Chrome evidence proves same-account
+session replacement live: the newer staging session acquires authority and the
+older session is policy-closed, returns to menu and displays SESSION REVOKED.
+Mark server-session replacement/revocation PASS. Gate 3 remaining hard check is
+Firebase account-level refresh-token revocation/disabled-user behavior; do not
+conflate that with Durable Object session replacement. Begin Gate 4 live
+multiplayer/mobile evidence in parallel.
+
 D055 (2026-10-22): staging session-revocation evidence UI is deployed at
 00900bd2. Deploy Staging #12, P8 #7 and P9 #8 all pass. Next Gate 3 live action:
 run the same authorized staging account in two browser sessions; the second

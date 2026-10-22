@@ -1,5 +1,21 @@
 # Release gate ledger
 
+## D056 live same-account session replacement/revocation PASS — 2026-10-22
+
+Post-Deploy-Staging-#12 physical Android Chrome evidence shows the D055 live
+takeover scenario succeeding: a second authorized staging session acquired
+same-account game authority, and the superseded session was closed with policy
+failure, returned to menu, and displayed
+"STAGING · SESSION REVOKED · TEST PAYMENTS ONLY".
+
+This proves the game server's durable single-owner session replacement and
+fail-closed client behavior on real staging/mobile. Same-account server-session
+revocation: PASS.
+
+Scope: this is not Firebase Admin refresh-token revocation. Account-level
+revocation/disabled-user behavior remains a separate Gate 3 item if required for
+the full token/session-revocation requirement.
+
 ## D055 session replacement/revocation live-test path — 2026-10-22
 
 Source 00900bd2364cde8727de1b0d9c396e90dc96a858 exposes a staging-only

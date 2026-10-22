@@ -1,5 +1,25 @@
 # Current development state
 
+## D056 — live same-account session replacement PASS (2026-10-22)
+
+Owner physical Android Chrome recording after Deploy Staging #12 exercised the
+same-account two-session takeover prepared in D055. A new authorized staging
+session entered gameplay, after which the superseded session was policy-closed
+and returned to the menu. After dismissing the connection-loss alert, the purple
+staging banner visibly reported "STAGING · SESSION REVOKED · TEST PAYMENTS ONLY".
+
+This is direct live evidence that the Durable Object single-owner session
+authority retires the superseded session and the older client fails closed rather
+than silently reconnecting around a policy rejection. No token, UID, email,
+resume ticket or other credential was captured in the release record. The
+same-account session-replacement revocation sub-gate is PASS.
+
+Gate 3 now has live login/logout/re-login, post-App-Check gameplay, token refresh
+(D052), and server-session replacement/revocation evidence. Firebase account-level
+refresh-token revocation/disabled-user behavior remains a distinct open check
+before treating the broader token/session revocation requirement as fully closed.
+Overall NOT READY_FOR_FINAL_REVIEW.
+
 ## D055 — staging session-revocation evidence path deployed (2026-10-22)
 
 Source 00900bd2364cde8727de1b0d9c396e90dc96a858 adds a staging-only visible
