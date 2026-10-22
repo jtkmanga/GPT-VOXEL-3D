@@ -18,7 +18,8 @@ const ACTIVE_ENV = {
   TWOC2P_SANDBOX_ENABLED: 'true', TWOC2P_SANDBOX_CHECKOUT_ENABLED: 'true',
   TWOC2P_SANDBOX_BACKEND_ENABLED: 'true',
   TWOC2P_SANDBOX_MERCHANT_CAPABILITIES_VERIFIED: 'true',
-  TWOC2P_SANDBOX_E2E_VERIFIED: 'true', TWOC2P_SANDBOX_MONTHLY_POLICY_VERIFIED: 'true',
+  TWOC2P_SANDBOX_E2E_VERIFIED: 'true', TWOC2P_SANDBOX_E2E_TEST_MODE: 'false',
+  TWOC2P_SANDBOX_MONTHLY_POLICY_VERIFIED: 'true',
   TWOC2P_SANDBOX_BILLING_TIMEZONE: 'UTC',
   TWOC2P_SANDBOX_INITIAL_SEQUENCE_NO: '1',
   TWOC2P_SANDBOX_MERCHANT_ID: MERCHANT, TWOC2P_SANDBOX_SECRET_KEY: SECRET
@@ -145,7 +146,7 @@ test('2C2P HTTP payment actions remain disabled by default without any provider 
 
 test('2C2P HTTP every activation and action gate is mandatory and fails closed', async t => {
   for (const flag of ['TWOC2P_SANDBOX_ENABLED', 'TWOC2P_SANDBOX_CHECKOUT_ENABLED',
-    'TWOC2P_SANDBOX_MERCHANT_CAPABILITIES_VERIFIED', 'TWOC2P_SANDBOX_E2E_VERIFIED',
+    'TWOC2P_SANDBOX_MERCHANT_CAPABILITIES_VERIFIED',
     'TWOC2P_SANDBOX_MONTHLY_POLICY_VERIFIED']) {
     for (const value of [undefined, 'false', true, 'TRUE']) {
       const { h, calls } = fixture(t, { ...ACTIVE_ENV, [flag]: value });
@@ -153,6 +154,20 @@ test('2C2P HTTP every activation and action gate is mandatory and fails closed',
       assert.equal(calls.length, 0);
     }
   }
+  for (const e2e of [undefined, 'false', true, 'TRUE']) {
+    const { h, calls } = fixture(t, { ...ACTIVE_ENV,
+      TWOC2P_SANDBOX_E2E_VERIFIED: e2e, TWOC2P_SANDBOX_E2E_TEST_MODE: 'false' });
+    assert.equal((await checkout(h)).status, 503, 'E2E attestation/test mode');
+    assert.equal(calls.length, 0);
+  }
+});
+
+test('2C2P owner-approved E2E test mode can exercise staging without falsely pre-attesting E2E', async t => {
+  const { h, calls } = fixture(t, { ...ACTIVE_ENV,
+    TWOC2P_SANDBOX_E2E_VERIFIED: 'false', TWOC2P_SANDBOX_E2E_TEST_MODE: 'true' });
+  const response = await checkout(h);
+  assert.equal(response.status, 200);
+  assert.equal(calls.length, 1);
 });
 
 test('2C2P HTTP incomplete or wrong staging identities never reach the provider', async t => {
