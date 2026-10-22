@@ -784,6 +784,7 @@
                     clearTimeout(timer);
                     if (typeof secureUnregisterClientSocket === 'function') secureUnregisterClientSocket(ws);
                     if (typeof secureClearSocketRefresh === 'function') secureClearSocketRefresh(ws);
+                    if (typeof stagingOnSocketClose === 'function') stagingOnSocketClose(ws, event);
                     if (typeof secureContinuousHandoffSocketClosed === 'function') secureContinuousHandoffSocketClosed(ws, event);
                     if (!welcomed && !settled) {
                         settled = true;

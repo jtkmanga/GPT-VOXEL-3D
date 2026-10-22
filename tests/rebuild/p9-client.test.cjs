@@ -170,6 +170,19 @@ test('P9 background clears held input; persisted-page and online recovery reuse 
   assert.equal(offline.events.some(Array.isArray), false);
 });
 
+test('P9 staging exposes policy session revocation without exposing identifiers or confusing active handoff', () => {
+  const f = runtimeFixture();
+  f.context.stagingOnSocketClose(f.ws, { code: 1008, reason: 'Session replaced' });
+  assert.equal(f.element('staging-status').innerText, 'STAGING · SESSION REVOKED · TEST PAYMENTS ONLY');
+  f.element('staging-status').innerText = '';
+  f.context.secureHandoffInProgress = true;
+  f.context.stagingOnSocketClose(f.ws, { code: 1008, reason: 'Session ownership transferred' });
+  assert.equal(f.element('staging-status').innerText, '');
+  f.context.secureHandoffInProgress = false;
+  f.context.stagingOnSocketClose(f.ws, { code: 1000, reason: 'normal close' });
+  assert.equal(f.element('staging-status').innerText, '');
+});
+
 test('P9 foreground token failure retires the active socket without logging raw authentication material', async () => {
   const f = runtimeFixture(); f.user.getIdToken = async () => { throw Error('sensitive refresh material'); };
   assert.equal(await f.context.stagingResumeForeground(), false);
