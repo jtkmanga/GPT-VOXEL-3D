@@ -61,7 +61,20 @@ def checkout(page):
         body:JSON.stringify({requestId})
       });
       const body = await response.json().catch(() => ({}));
-      if (!response.ok || !body?.ok) return {ok:false, stage:'checkout-response', status:response.status};
+      if (!response.ok || !body?.ok) {
+        const known = new Map([
+          ['Staging sign-in required','staging-sign-in-required'],
+          ['Origin not allowed','origin-not-allowed'],
+          ['2C2P sandbox payment actions are disabled','payment-actions-disabled'],
+          ['2C2P sandbox signing boundary is unavailable','signing-boundary-unavailable'],
+          ['Sandbox payment authority unavailable','payment-authority-unavailable'],
+          ['Sandbox payment token request failed','payment-token-request-failed'],
+          ['Sandbox payment token request rejected','payment-token-request-rejected'],
+          ['Sandbox payment token response unverified','payment-token-response-unverified'],
+          ['Sandbox hosted checkout unavailable','hosted-checkout-unavailable']
+        ]);
+        return {ok:false, stage:known.get(body?.error)||'checkout-response', status:response.status};
+      }
       return {ok:true, invoiceNo:body.invoiceNo, webPaymentUrl:body.webPaymentUrl};
     }""", "gate5e2e:" + uuid.uuid4().hex)
 
@@ -172,6 +185,8 @@ def main():
             stage = "checkout"
             created = checkout(page)
             if not created.get("ok"):
+                report["checkoutHttpStatus"] = int(created.get("status") or 0)
+                report["errorStage"] = str(created.get("stage") or "checkout-failed")[:80]
                 raise RuntimeError(str(created.get("stage") or "checkout-failed"))
             invoice_no, hpp_url = created.get("invoiceNo"), created.get("webPaymentUrl")
             hosted = urlparse(str(hpp_url or ""))
@@ -193,12 +208,14 @@ def main():
             context.close()
             browser.close()
     except Exception as error:
-        report["errorStage"] = stage
+        if "errorStage" not in report:
+            report["errorStage"] = stage
         report["errorClass"] = type(error).__name__
     OUT.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
     print(json.dumps({key: report.get(key) for key in (
         "complete", "environment", "checkoutCreated", "hppSubmitted", "otpSubmitted",
-        "returnedToStaging", "backendStatus", "entitlementActive", "temporaryUserDeleted", "errorStage")},
+        "returnedToStaging", "backendStatus", "entitlementActive", "temporaryUserDeleted",
+        "checkoutHttpStatus", "errorStage")},
         sort_keys=True))
     return 0 if report["complete"] else 1
 
