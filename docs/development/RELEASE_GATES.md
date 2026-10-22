@@ -1,5 +1,39 @@
 # Release gate ledger
 
+## D064 Gate 5/6 live prerequisite check — 2026-10-22
+
+Current authorized read-only Cloudflare settings for
+`gpt-voxel-3d-staging-01` show the expected ROOM/ZONE bindings,
+provider-neutral PAYMENT_MODE and `usage_model: standard`. No
+`TWOC2P_SANDBOX_*` merchant, secret or activation binding is present. Values and
+account identifiers are intentionally omitted.
+
+Gate 5 remains blocked before live sandbox work: a dedicated 2C2P sandbox
+merchant must verify THB Hosted Payment Page, monthly RPP, native backend
+notifications, renewal ordering, cancellation and refund test capabilities;
+credentials must then be provisioned privately and the first simulated
+transaction explicitly authorized. No real or sandbox payment was attempted.
+
+Cloudflare's Workers pricing documentation, last updated 2026-10-02, identifies
+Standard as the Workers Paid usage model and documents request/CPU and Durable
+Object overage billing beyond included allocations:
+https://developers.cloudflare.com/workers/platform/pricing/. The current
+connector could not return billing usage or subscriptions. Because remaining
+included usage and a zero-cost budget are unverified, Gate 6 live load is
+blocked and no traffic was generated.
+
+Predeclared first canary after those prerequisites: staging only, 2 -> 5 -> 10
+authorized WebSocket sessions, 60 seconds per step. Capture connection success,
+time-to-welcome, movement-ack p95, unexpected closes, authority/state violations
+and Worker/Durable Object usage. Stop on any production route, charge/overage
+signal, authority/state violation, error or unexpected-close rate above 1%, or
+movement-ack p95 above 500 ms. Passing this canary would be bounded evidence
+only, not a 10,000-CCU claim.
+
+**Gate 5: BLOCKED on merchant sandbox/account prerequisites.**
+
+**Gate 6: BLOCKED on current usage visibility and verified zero-cost budget.**
+
 ## D063 Gate 3 Google/session PASS — 2026-10-22
 
 A ~70-second physical Android split-screen recording closes the remaining

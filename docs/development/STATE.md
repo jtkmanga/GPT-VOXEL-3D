@@ -1,5 +1,52 @@
 # Current development state
 
+## D064 — Gate 5/6 live prerequisites assessed; no-cost load remains blocked (2026-10-22)
+
+Starting commit 99d8c2ec9db4f3cfb16e9fe9f6fe2a4c54eed430; public repository and
+clean detached checkout. Reconciled the two documentation-only commits after
+742d6d0d3b57df9679841ae3cf0fa222bbadf221. They close Gate 3 with new owner
+evidence and do not change Gate 2-4 runtime/configuration, so those passed gates
+were not repeated.
+
+Authorized read-only Cloudflare inspection of the current staging Worker
+`gpt-voxel-3d-staging-01` confirms `usage_model: standard`, the expected
+ROOM/ZONE Durable Object bindings and the existing provider-neutral PAYMENT_MODE
+binding. No `TWOC2P_SANDBOX_*` merchant, credential or activation binding is
+present. No binding value was recorded. Therefore the prepared 2C2P adapter is
+still disabled and Gate 5 cannot begin an end-to-end sandbox lifecycle until a
+dedicated sandbox merchant, verified capabilities, private credential
+provisioning and explicit authority for the first simulated transaction exist.
+No payment route, flag, provider call or transaction was attempted.
+
+The current Cloudflare pricing documentation (updated 2026-10-02) identifies the
+Standard usage model with Workers Paid and states that Worker and Durable Object
+usage can incur overage charges beyond included allocations. Read-only billing
+usage/subscription queries were unavailable through the current connector, so
+remaining included usage and a zero-cost budget could not be proven. Gate 6
+live load was therefore not run.
+
+The first proposed bounded Gate 6 canary, once current usage and zero-cost budget
+are verified, is staging-only: 2 -> 5 -> 10 concurrent authorized WebSocket
+sessions, 60 seconds per step. Record connection success, time-to-welcome,
+movement-ack p95, unexpected closes, authority/state violations and Cloudflare
+Worker/Durable Object usage. Stop before the next step on any production route,
+any unexpected charge/overage signal, any authority/state violation, more than
+1% connection or unexpected-close errors, or movement-ack p95 above 500 ms.
+This is only a predeclared canary; it is not permission to run while billing
+visibility is absent and it is not 10,000-CCU evidence.
+
+Incremental credential audit 742d6d0..99d8c2e covered 14 objects (2 commits,
+6 trees, 6 blobs), with no findings, archive members or coverage gaps. Current
+secret/config scan passed 164 rebuild/source files and production configuration
+remains unchanged. Files changed by this bounded task: STATE.md, PLAN.md,
+RELEASE_GATES.md and SECRET_AUDIT.md only. Overall NOT READY_FOR_FINAL_REVIEW.
+
+Next external prerequisites: owner confirms/activates the dedicated 2C2P
+sandbox merchant capabilities without sharing credentials in chat; separately,
+owner provides current Cloudflare Workers/Durable Objects included-usage evidence
+and approves the exact no-cost 2/5/10 canary. Continue other safe work if either
+remains blocked.
+
 ## D063 — Gate 3 Google/session PASS with disabled-user active-session evidence (2026-10-22)
 
 Owner supplied a ~70-second physical Android split-screen recording with Firebase

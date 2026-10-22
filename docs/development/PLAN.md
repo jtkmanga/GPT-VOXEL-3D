@@ -1,5 +1,17 @@
 # Development plan
 
+D064 (2026-10-22): read-only Cloudflare settings confirm current staging still
+uses provider-neutral payment mode and has no `TWOC2P_SANDBOX_*` activation or
+merchant bindings, so Gate 5 remains blocked on a dedicated sandbox merchant,
+verified capabilities, private credentials and explicit simulated-transaction
+authority. The staging Worker reports Standard usage model; current Cloudflare
+docs associate Standard with Workers Paid and possible Worker/Durable Object
+overages. Billing usage could not be read through the connector, so no live load
+was run. Before Gate 6, verify included-usage headroom and approve the exact
+zero-cost canary: 2 -> 5 -> 10 authorized staging WebSockets for 60 seconds per
+step with connection, latency, close, authority/state and account-usage metrics;
+apply the D064 stop conditions. Do not treat this plan as live capacity evidence.
+
 D063 (2026-10-22): physical split-screen evidence closes Gate 3. A staging
 identity was actively playing before being disabled in Firebase Console; after a
 brief propagation interval the active client left gameplay and returned to the
