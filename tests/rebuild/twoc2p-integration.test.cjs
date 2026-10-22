@@ -1,6 +1,7 @@
 'use strict';
 
 // Exercise the bundled public Worker and its actual SQLite-backed coordinator.
+// Authenticated HTTP fixtures include both Firebase ID and App Check proof.
 // Every 2C2P response below is locally synthesized. No provider requests,
 // public demo credentials or real payment transactions are used by this suite.
 const test = require('node:test');
