@@ -1,0 +1,52 @@
+name: Gate 7 Pre-Review
+
+on:
+  push:
+    branches: [development/voxel-continuous]
+    paths:
+      - 'src/**'
+      - 'scripts/rebuild/**'
+      - 'tests/rebuild/**'
+      - 'worker.js'
+      - 'index.html'
+      - 'wrangler.staging.jsonc'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gate7-pre-review
+  cancel-in-progress: true
+
+jobs:
+  pre-review:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci
+      - name: Development verification suite
+        run: node scripts/rebuild/verify-development.cjs
+      - name: Incremental committed-history credential audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/rebuild/audit-git-secrets.py             --include "$(git rev-parse HEAD)"             --exclude 99d8c2ec9db4f3cfb16e9fe9f6fe2a4c54eed430             > /tmp/gate7-secret-audit.json
+          node -e "const r=require('/tmp/gate7-secret-audit.json'); if(r.findings.length||r.gaps.length) process.exit(1); console.log('PASS incremental secret audit:',r.objects,'objects')"
+      - name: Production config and branch diff guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          test "$(git show f98aa9a044616b1b965b889cf0c02a0d3b041f65:wrangler.jsonc | sha256sum | cut -d' ' -f1)" = "$(sha256sum wrangler.jsonc | cut -d' ' -f1)"
+          echo "PASS production wrangler unchanged from verified baseline"
