@@ -1,5 +1,14 @@
 # Development plan
 
+D063 (2026-10-22): physical split-screen evidence closes Gate 3. A staging
+identity was actively playing before being disabled in Firebase Console; after a
+brief propagation interval the active client left gameplay and returned to the
+unauthenticated menu, while D062 already proves disabled-user sign-in denial.
+Gate 3 Google/session is PASS together with D050/D052/D056. Do not require
+instantaneous revocation. Carry the lack of independent Worker-side
+revoked/disabled-token checking as an explicit Final Security Review hardening
+item. Continue Gate 5 payment sandbox and Gate 6 authorized capacity.
+
 D062 (2026-10-22): owner mobile evidence proves a disabled staging Firebase
 user cannot sign in again, but the video starts unauthenticated so it does not
 close active-session force-refresh revocation. Re-enable the test user, sign in

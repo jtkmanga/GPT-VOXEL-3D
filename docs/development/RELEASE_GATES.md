@@ -1,5 +1,34 @@
 # Release gate ledger
 
+## D063 Gate 3 Google/session PASS — 2026-10-22
+
+A ~70-second physical Android split-screen recording closes the remaining
+active-session disabled-user requirement. The staging identity is visibly in
+authenticated Free Server gameplay first. Firebase Authentication is then changed
+out-of-band to Disabled while the game remains active. Firebase Console confirms
+the disabled state.
+
+The game continues briefly and records one AUTH REFRESHED acknowledgement during
+the propagation window, then automatically leaves gameplay and returns to the
+unauthenticated staging menu without an observed manual logout/exit action.
+D062 separately proves the disabled identity cannot create a new sign-in.
+
+Current Gate 3 live evidence therefore covers:
+- Google login, logout and re-login after App Check Enforcement (D050);
+- forced ID-token refresh accepted during normal operation (D052);
+- same-account server-session replacement/revocation (D056);
+- disabled-user sign-in denial (D062);
+- active disabled-user session eventually fails closed to unauthenticated state
+  in the physical staging client (D063).
+
+**Release Gate 3 Google/session: PASS.**
+
+Revocation propagation is not claimed to be instantaneous. Final Security Review
+must separately consider whether the custom Cloudflare backend should add an
+independent online revoked/disabled-user check, because local Firebase JWT
+signature/claim verification alone is not equivalent to Admin-SDK
+check-revoked semantics.
+
 ## D062 disabled-user sign-in denial PASS; active-session revocation still open — 2026-10-22
 
 Physical mobile Firebase Console evidence shows a staging test user marked

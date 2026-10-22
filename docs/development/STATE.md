@@ -1,5 +1,32 @@
 # Current development state
 
+## D063 — Gate 3 Google/session PASS with disabled-user active-session evidence (2026-10-22)
+
+Owner supplied a ~70-second physical Android split-screen recording with Firebase
+Authentication console and the live staging game visible together. The target
+staging identity was already authenticated and actively playing Free Server
+before the Firebase user was disabled out-of-band. Firebase Console then visibly
+confirmed the user as Disabled while gameplay continued briefly.
+
+During the captured interval the staging client displayed one successful
+AUTH REFRESHED acknowledgement before the account invalidation propagated. The
+active session subsequently left gameplay and returned to the unauthenticated
+staging menu without an observed manual logout/exit action. This is accepted as
+live fail-closed evidence for the active disabled-user session. D062 separately
+proved that the disabled user could not establish a new sign-in.
+
+Combined with D050 post-App-Check login/re-login, D052 live token refresh and D056
+server-session replacement/revocation, the defined Gate 3 Google/session scope is
+PASS for staging. Revocation/disable propagation is not instantaneous; no claim
+of zero-latency invalidation is made.
+
+Security scope note for Final Review: the custom Cloudflare Worker verifies
+Firebase ID-token signature/claims locally and does not independently perform an
+Admin-SDK-style revoked/disabled-user check on every accepted token. The live
+client fail-closed behavior is proven, but server-side revocation checking remains
+a hardening consideration for Final Security Review rather than an unrecorded
+assumption. Production/main remain untouched. Overall NOT READY_FOR_FINAL_REVIEW.
+
 ## D062 — disabled-user live evidence (partial Gate 3) (2026-10-22)
 
 Owner mobile Firebase Console evidence shows a staging test user successfully
