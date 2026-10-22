@@ -13,7 +13,7 @@ const STEPS = Object.freeze([
   ['secrets', 'scripts/rebuild/check-secrets.cjs']
 ]);
 
-function runSteps(run) {
+function runSteps(run, onFailure = () => {}) {
   const results = [];
   for (const [name, ...args] of STEPS) {
     const result = run(args, name);
@@ -21,15 +21,7 @@ function runSteps(run) {
     results.push({ name, passed, exitCode: result.status ?? null,
       signal: result.signal ?? null, errorCode: result.error?.code ?? null });
     if (!passed) {
-      const file = path.join(directory, `${name}.log`);
-      let tail = '';
-      try {
-        tail = fs.readFileSync(file, 'utf8').slice(-12000)
-          .replace(/AIza[A-Za-z0-9_-]{30,}/g, '[redacted-firebase-key]')
-          .replace(/(?:ghp_|github_pat_|sk_live_|rk_live_)[A-Za-z0-9_]{16,}/g, '[redacted-token]')
-          .replace(/-----BEGIN [^-]*PRIVATE KEY-----[\\s\\S]*?-----END [^-]*PRIVATE KEY-----/g, '[redacted-private-key]');
-      } catch {}
-      if (tail) process.stderr.write(`\nFAILED STEP LOG TAIL (${name}, redacted):\n${tail}\n`);
+      onFailure(name, result);
       break;
     }
   }
@@ -50,6 +42,16 @@ function main() {
       return spawnSync(process.execPath, args, { cwd: ROOT,
         stdio: ['ignore', fd, fd], timeout: 15 * 60 * 1000 });
     } finally { fs.closeSync(fd); }
+  }, name => {
+    const file = path.join(directory, `${name}.log`);
+    let tail = '';
+    try {
+      tail = fs.readFileSync(file, 'utf8').slice(-12000)
+        .replace(/AIza[A-Za-z0-9_-]{30,}/g, '[redacted-firebase-key]')
+        .replace(/(?:ghp_|github_pat_|sk_live_|rk_live_)[A-Za-z0-9_]{16,}/g, '[redacted-token]')
+        .replace(/-----BEGIN [^-]*PRIVATE KEY-----[\s\S]*?-----END [^-]*PRIVATE KEY-----/g, '[redacted-private-key]');
+    } catch {}
+    if (tail) process.stderr.write(`\nFAILED STEP LOG TAIL (${name}, redacted):\n${tail}\n`);
   });
   const report = { schemaVersion: 1, sourceCommit, branch, dirty, startedAt,
     completedAt: new Date().toISOString(), scope: 'local-code-only',
