@@ -8,7 +8,7 @@ const PRODUCTION_MAIN = 'f98aa9a044616b1b965b889cf0c02a0d3b041f65';
 const SCAFFOLD_NAME = 'gpt-voxel-3d-staging-01';
 const VAR_KEYS = ['APP_ENV', 'STAGING_WORKER_NAME', 'STAGING_WORKER_ORIGIN', 'ALLOWED_ORIGIN',
   'FIREBASE_PROJECT_ID', 'FIREBASE_PUBLIC_CONFIG', 'FIREBASE_APP_CHECK_SITE_KEY',
-  'STAGING_AUTH_MODE', 'PAYMENT_MODE',
+  'FIREBASE_ONLINE_USER_CHECK', 'STAGING_AUTH_MODE', 'PAYMENT_MODE',
   'TWOC2P_SANDBOX_ENABLED', 'TWOC2P_SANDBOX_CHECKOUT_ENABLED', 'TWOC2P_SANDBOX_BACKEND_ENABLED',
   'TWOC2P_SANDBOX_MERCHANT_CAPABILITIES_VERIFIED', 'TWOC2P_SANDBOX_E2E_VERIFIED',
   'TWOC2P_SANDBOX_E2E_TEST_MODE', 'TWOC2P_SANDBOX_MONTHLY_POLICY_VERIFIED',
@@ -99,6 +99,7 @@ function varsForManifest(manifest) {
     FIREBASE_PROJECT_ID: manifest.firebase.projectId,
     FIREBASE_PUBLIC_CONFIG: JSON.stringify(manifest.firebase),
     FIREBASE_APP_CHECK_SITE_KEY: manifest.appCheck.siteKey,
+    FIREBASE_ONLINE_USER_CHECK: 'true',
     STAGING_AUTH_MODE: manifest.authMode, PAYMENT_MODE: 'provider-neutral-test',
     TWOC2P_SANDBOX_ENABLED: 'true', TWOC2P_SANDBOX_CHECKOUT_ENABLED: 'true',
     TWOC2P_SANDBOX_BACKEND_ENABLED: 'true',
@@ -124,6 +125,8 @@ async function validateStagingWrangler(value, configFile, { allowUnconfigured = 
   if (Object.values(value.vars).some(item => typeof item !== 'string')) throw Error('Staging vars must be strings');
   if (value.vars.APP_ENV !== 'staging' || value.vars.PAYMENT_MODE !== 'provider-neutral-test' ||
       value.name !== value.vars.STAGING_WORKER_NAME) throw Error('Staging identity/payment configuration mismatch');
+  if (value.vars.FIREBASE_ONLINE_USER_CHECK !== 'true' &&
+      value.vars.STAGING_WORKER_ORIGIN !== '') throw Error('Staging online Firebase user check must remain enabled');
   const paymentTestEnabled = value.vars.TWOC2P_SANDBOX_ENABLED === 'true';
   if (paymentTestEnabled && (value.vars.TWOC2P_SANDBOX_CHECKOUT_ENABLED !== 'true' ||
       value.vars.TWOC2P_SANDBOX_BACKEND_ENABLED !== 'true' ||
