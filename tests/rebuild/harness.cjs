@@ -322,8 +322,14 @@ function createHarness(options = {}) {
   function appCheckToken(overrides = {}, headerOverrides = {}) {
     const now = Math.floor(currentTime / 1000);
     const header = { alg:'RS256', typ:'JWT', kid:fixture.kid, ...headerOverrides };
-    const claims = { iss:'https://firebaseappcheck.googleapis.com/123456789',
-      aud:['projects/123456789'], sub:APP_CHECK_APP_ID, iat:now-1, exp:now+3600, ...overrides };
+    let appId = APP_CHECK_APP_ID;
+    try {
+      const configured = JSON.parse(env.FIREBASE_PUBLIC_CONFIG || '{}')?.appId;
+      if (typeof configured === 'string' && /^1:\d+:web:[A-Za-z0-9]+$/.test(configured)) appId = configured;
+    } catch (_) {}
+    const projectNumber = appId.split(':')[1];
+    const claims = { iss:`https://firebaseappcheck.googleapis.com/${projectNumber}`,
+      aud:[`projects/${projectNumber}`], sub:appId, iat:now-1, exp:now+3600, ...overrides };
     const content = [header, claims].map(value => Buffer.from(JSON.stringify(value)).toString('base64url')).join('.');
     return `${content}.${sign('RSA-SHA256', Buffer.from(content), fixture.privateKey).toString('base64url')}`;
   }
