@@ -1,5 +1,36 @@
 # Release gate ledger
 
+## D059 remote movement PASS; live reconnect retest pending — 2026-10-22
+
+A ~127-second physical Android split-screen recording provides explicit
+two-session movement evidence: the peer avatar changes position/disappears in
+the opposite live session as the other account is controlled. Remote movement
+observation: PASS.
+
+The same recording performs a real mobile-network interruption from Android
+quick settings. It exposed a client retry-window defect: the previous three
+resume attempts covered only ~1.75 seconds, after which the client displayed
+the Game Server disconnected alert and required manual re-entry. Therefore that
+capture is a valid defect reproduction, not a reconnect PASS.
+
+Source e29e7241e20926fc17ec5832503000c92c2c2923 expands bounded reconnect to
+six resume-only attempts totaling about 11.75 seconds. It preserves the original
+resume ticket requirement, identity/server/zone fencing and policy-rejection
+fail-closed behavior. Source 908864f1ea13acc6b27f8280bdf7263a05ab7c9b extends
+staging auto-deploy to this shared client source.
+[Deploy Staging Worker #14](https://github.com/jtkmanga/GPT-VOXEL-3D/actions/runs/39784978282)
+succeeded.
+
+Source 3190954f1758bf25beb4da6fed735111b6e9d342 adds the actual
+p2-client reconnect/session tests to P9.
+[P9 Staging Browser Gate #11](https://github.com/jtkmanga/GPT-VOXEL-3D/actions/runs/39785157294)
+completed successfully; its reconnect/session unit step passed before the
+existing staging browser fixtures and public probes also passed.
+
+Reconnect remains open until a post-Deploy-#14 physical network-toggle capture
+shows automatic recovery without manual server re-entry. Explicit LOS occlusion
+behind a wall/tree also remains open.
+
 ## D058 concurrent split-screen state consistency — 2026-10-22
 
 A ~70-second physical Android split-screen recording keeps two live staging Free

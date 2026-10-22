@@ -1,5 +1,39 @@
 # Current development state
 
+## D059 — remote-motion evidence + brief-network-loss reconnect fix (2026-10-22)
+
+Owner supplied a ~127-second physical Android split-screen recording with both
+staging sessions visible. The capture shows the remote peer appearing and changing
+position/disappearing in the opposite session while the controlled peer moves,
+which closes the explicit remote-movement observation sub-gate. The recording
+also includes an actual mobile-network interruption using the Android quick
+settings while both sessions are in-game.
+
+The network test reproduced a real defect: the existing client exhausted its
+three resume retries after only about 1.75 seconds, then showed the Game Server
+disconnected alert and returned to server selection before the mobile radio had
+recovered. The user then re-entered manually, so this recording is a valid
+network-interruption reproduction but not a reconnect PASS.
+
+Source e29e7241e20926fc17ec5832503000c92c2c2923 fixes the defect by retaining
+the same server-issued resume capability while extending bounded reconnect
+backoff to six attempts (250ms, 500ms, 1s, 2s, 4s, 4s; about 11.75s total).
+Policy close codes still fail closed, account/server/zone scope is still fenced,
+expired/missing resume tickets still cannot create a fresh session, and no
+production/main behavior was deployed. A new D059 unit regression proves recovery
+after the former three-attempt window; the existing exhausted-retry regression
+was expanded to all six attempts.
+
+Source 908864f1ea13acc6b27f8280bdf7263a05ab7c9b also adds the shared secure
+socket client to staging auto-deploy paths. Deploy Staging Worker #14 completed
+successfully and includes the reconnect fix. Source
+3190954f1758bf25beb4da6fed735111b6e9d342 adds the reconnect/session unit gate
+to P9; P9 Staging Browser Gate #11 completed successfully, including the new
+unit gate and existing browser/public-probe checks. Live reconnect must now be
+retested after Deploy Staging #14 before the reconnect sub-gate can PASS.
+Explicit wall/tree LOS occlusion also remains open. Overall
+NOT READY_FOR_FINAL_REVIEW.
+
 ## D058 — split-screen concurrent-session consistency evidence (2026-10-22)
 
 Owner supplied a ~70-second physical Android split-screen recording with two live

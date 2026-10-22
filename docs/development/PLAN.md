@@ -1,5 +1,14 @@
 # Development plan
 
+D059 (2026-10-22): physical split-screen video closes explicit remote-motion
+observation but reproduces a real mobile reconnect defect: three retries ended
+after ~1.75s, before the radio recovered, forcing manual re-entry. Fix e29e724
+extends only resume-ticket retries to ~11.75s without fresh-session fallback or
+policy bypass. Deploy Staging #14 is successful; P9 #11 passes with the new
+reconnect/session unit gate. Retest the same 3-5 second network toggle without
+pressing Exit/Free Server; if gameplay resumes by itself, close reconnect. LOS
+behind a wall/tree remains separate and open.
+
 D058 (2026-10-22): split-screen physical Android evidence shows two distinct
 live Free Server identities at once with cross-session leaderboard/score and
 Lucky Box countdown consistency. It also proves one session can exit to server
