@@ -411,3 +411,105 @@ if (!STAGING_CLIENT_ENABLED) {
         alert('Staging Google redirect could not complete. Check the authorized staging domain.');
     });
 }
+
+
+const stagingOriginalOpenPaymentModal = typeof openPaymentModal === 'function' ? openPaymentModal : null;
+function stagingSandboxRequestId() {
+    const nonce = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID().replace(/-/g, '')
+        : Math.random().toString(36).slice(2) + Date.now().toString(36);
+    return ('vip1sandbox:' + nonce).slice(0, 96);
+}
+async function stagingStartVipSandboxCheckout() {
+    if (!STAGING_CLIENT_ENABLED || !auth.currentUser) {
+        alert('กรุณาล็อกอินด้วย Google Account ก่อนทดสอบ VIP Sandbox');
+        return false;
+    }
+    const user = auth.currentUser;
+    try {
+        stagingSetStatus('STAGING · CREATING 2C2P SANDBOX CHECKOUT');
+        const token = await stagingGetIdToken(user, true);
+        if (auth.currentUser !== user) return false;
+        const response = await fetch(STAGING_PUBLIC_CONFIG.workerOrigin + '/payments/2c2p/checkout', {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ requestId: stagingSandboxRequestId() })
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok || !result?.ok || typeof result.invoiceNo !== 'string' ||
+            typeof result.webPaymentUrl !== 'string') {
+            throw new Error(result?.error || 'Sandbox checkout unavailable');
+        }
+        const hosted = new URL(result.webPaymentUrl);
+        if (hosted.origin !== 'https://sandbox-pgw-ui.2c2p.com' || hosted.pathname !== '/payment/4.5/') {
+            throw new Error('Unexpected sandbox payment destination');
+        }
+        if (typeof sessionStorage !== 'undefined') {
+            sessionStorage.setItem('voxel_staging_2c2p_invoice', result.invoiceNo);
+        }
+        stagingSetStatus('STAGING · 2C2P SANDBOX · NO REAL MONEY');
+        window.location.assign(result.webPaymentUrl);
+        return true;
+    } catch (error) {
+        stagingSetStatus('STAGING · SANDBOX CHECKOUT FAILED');
+        alert('2C2P Sandbox: ' + (error?.message || 'ไม่สามารถเริ่มรายการทดสอบได้'));
+        return false;
+    }
+}
+if (stagingOriginalOpenPaymentModal) {
+    openPaymentModal = function(type, price, title) {
+        if (STAGING_CLIENT_ENABLED && type === 'vip1') {
+            void stagingStartVipSandboxCheckout();
+            return;
+        }
+        return stagingOriginalOpenPaymentModal(type, price, title);
+    };
+}
+
+function stagingSandboxPaymentReturnRequested() {
+    try {
+        return STAGING_CLIENT_ENABLED && typeof window.location?.search === 'string' &&
+            new URLSearchParams(window.location.search).get('payment') === 'sandbox-return';
+    } catch (_) { return false; }
+}
+async function stagingReconcileSandboxPaymentReturn() {
+    if (!stagingSandboxPaymentReturnRequested() || !auth.currentUser ||
+        typeof sessionStorage === 'undefined') return false;
+    const invoiceNo = sessionStorage.getItem('voxel_staging_2c2p_invoice');
+    if (!invoiceNo || !/^[A-Za-z0-9._:-]{1,20}$/.test(invoiceNo)) return false;
+    const user = auth.currentUser;
+    for (let attempt = 0; attempt < 10; attempt++) {
+        try {
+            const token = await stagingGetIdToken(user, attempt === 0);
+            if (auth.currentUser !== user) return false;
+            const response = await fetch(STAGING_PUBLIC_CONFIG.workerOrigin +
+                '/payments/2c2p/status?invoiceNo=' + encodeURIComponent(invoiceNo), {
+                    headers: { 'Authorization': 'Bearer ' + token }
+                });
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok || !result?.ok) throw new Error(result?.error || 'Sandbox status unavailable');
+            if (result.status === 'paid' || Number(result.vipExpiresAt || 0) > Date.now()) {
+                sessionStorage.removeItem('voxel_staging_2c2p_invoice');
+                await secureLoadEntitlements(true);
+                stagingSetStatus('STAGING · VIP SANDBOX PAYMENT VERIFIED · TEST ONLY');
+                try { history.replaceState(null, '', '/'); } catch (_) {}
+                alert('VIP Sandbox สำเร็จ: สิทธิ์ถูกยืนยันจาก Server แล้ว (ไม่มีเงินจริง)');
+                return true;
+            }
+            if (['failed', 'cancelled', 'expired'].includes(result.status)) {
+                sessionStorage.removeItem('voxel_staging_2c2p_invoice');
+                stagingSetStatus('STAGING · VIP SANDBOX PAYMENT NOT COMPLETED');
+                try { history.replaceState(null, '', '/'); } catch (_) {}
+                return false;
+            }
+        } catch (_) {}
+        await new Promise(resolve => setTimeout(resolve, 1500));
+    }
+    stagingSetStatus('STAGING · VIP SANDBOX CALLBACK PENDING');
+    return false;
+}
+if (typeof auth?.onAuthStateChanged === 'function') {
+    auth.onAuthStateChanged(user => {
+        if (user && stagingSandboxPaymentReturnRequested()) void stagingReconcileSandboxPaymentReturn();
+    });
+}
