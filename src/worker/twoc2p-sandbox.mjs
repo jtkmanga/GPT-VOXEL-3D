@@ -201,8 +201,10 @@ export async function handle2c2pSandbox(request, env) {
     if (url.origin !== TWOC2P_SANDBOX.origin) fail('Staging payment origin unavailable',503);
     if (path === '/payments/2c2p/return') {
       if (request.method !== 'GET') return reply({ ok:false, error:'Method not allowed' },405);
-      // Browser redirects/status parameters are never payment evidence.
-      return reply({ ok:true, paymentVerified:false, message:'Return to staging to check your VIP access.' });
+      // Browser redirects/status parameters are never payment evidence. Return
+      // only to the staging application; it will query server-owned status using
+      // the authenticated identity and the invoice kept in sessionStorage.
+      return Response.redirect(TWOC2P_SANDBOX.origin + '/?payment=sandbox-return', 303);
     }
     if (path === '/payments/2c2p/lifecycle') {
       return reply({ ok:false, error:'Recurring renewal, cancellation and refund integration requires provider verification' },503);
