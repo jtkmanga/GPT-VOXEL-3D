@@ -1,5 +1,13 @@
 # Development plan
 
+D061 (2026-10-22): physical Android split-screen LOS evidence closes the
+last Gate 4 item: remote name visibility disappears behind a tree trunk and
+returns after line of sight is restored. With D057-D060, Gate 4
+Multiplayer/Mobile is PASS for current staging. Do not repeat multiplayer/mobile
+evidence unless relevant code/config changes. Continue Gate 3 account-level
+Firebase revocation if feasible, Gate 5 payment sandbox lifecycle, Gate 6
+authorized capacity, then Final Review.
+
 D060 (2026-10-22): owner accepts fail-closed/manual re-entry after mobile
 network loss; automatic reconnect is not required. Post-Deploy-#14 physical
 evidence shows transport loss returns the affected session safely to server

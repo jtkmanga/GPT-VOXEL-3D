@@ -1,5 +1,31 @@
 # Current development state
 
+## D061 — Gate 4 live multiplayer/mobile PASS (2026-10-22)
+
+Owner supplied a ~25-second physical Android split-screen recording specifically
+for the remaining line-of-sight requirement. Both live staging sessions remain
+active near the same tree. In the observing view, the remote player name is
+visible while the player is exposed, disappears while the tree trunk blocks the
+camera-to-player line of sight, and becomes visible again after movement clears
+the obstruction. This closes the explicit LOS name-visibility sub-gate.
+
+Combined current live evidence now covers the defined Gate 4 scope:
+- two distinct concurrent Free Server sessions on physical Android;
+- remote player rendering and explicit observed movement;
+- mobile controls and continued gameplay through zone ownership handoff;
+- proximity-scoped name visibility plus explicit tree LOS occlusion;
+- server-authoritative coin/score and real-time leaderboard propagation;
+- Lucky Box claim/countdown consistency across sessions;
+- clean server exit/re-entry while the peer remains live;
+- owner-approved network-loss behavior: fail closed and require manual server
+  re-entry rather than preserving stale authority.
+
+Release Gate 4 Multiplayer/Mobile is PASS for the current staging build.
+Automatic reconnect is explicitly not a release requirement per owner decision
+D060. Production/main remain untouched. Gate 3 account-level Firebase token
+revocation, payment sandbox, authorized capacity and final review remain open.
+Overall NOT READY_FOR_FINAL_REVIEW.
+
 ## D060 — owner-approved network-loss recovery policy PASS (2026-10-22)
 
 A post-Deploy-Staging-#14 physical Android split-screen recording again exercised

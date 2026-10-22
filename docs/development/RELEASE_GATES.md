@@ -1,5 +1,30 @@
 # Release gate ledger
 
+## D061 Gate 4 Multiplayer/Mobile PASS — 2026-10-22
+
+A ~25-second physical Android split-screen staging recording closes the final
+line-of-sight requirement. Both sessions are simultaneously live near the same
+tree. The remote player name is visible when unobstructed, disappears when the
+tree trunk blocks the viewing line, and returns when the player clears the
+obstruction.
+
+Together with D057-D060, current live evidence covers:
+- two distinct concurrent live Free Server sessions;
+- bidirectional/remote player movement observation;
+- physical mobile controls;
+- live zone ownership handoff without gameplay loss;
+- nearby-only name behavior and explicit tree LOS occlusion;
+- coin-derived score plus real-time leaderboard propagation across sessions;
+- Lucky Box claim/countdown consistency across sessions;
+- clean exit/re-entry with peer session preserved;
+- owner-approved network-loss policy of fail-closed plus manual server re-entry.
+
+**Release Gate 4 Multiplayer/Mobile: PASS.**
+
+Automatic reconnect is not required by the owner-approved product behavior.
+Do not reopen this gate unless multiplayer/mobile source or relevant staging
+configuration changes.
+
 ## D060 owner-approved network-loss/manual-reentry PASS — 2026-10-22
 
 Post-Deploy-Staging-#14 physical Android split-screen evidence reproduces a real
