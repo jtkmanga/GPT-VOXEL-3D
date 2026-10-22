@@ -13,7 +13,17 @@
     "FIREBASE_PUBLIC_CONFIG": "",
     "FIREBASE_APP_CHECK_SITE_KEY": "",
     "STAGING_AUTH_MODE": "popup",
-    "PAYMENT_MODE": "provider-neutral-test"
+    "PAYMENT_MODE": "provider-neutral-test",
+    "TWOC2P_SANDBOX_ENABLED": "false",
+    "TWOC2P_SANDBOX_CHECKOUT_ENABLED": "false",
+    "TWOC2P_SANDBOX_BACKEND_ENABLED": "false",
+    "TWOC2P_SANDBOX_MERCHANT_CAPABILITIES_VERIFIED": "false",
+    "TWOC2P_SANDBOX_E2E_VERIFIED": "false",
+    "TWOC2P_SANDBOX_E2E_TEST_MODE": "false",
+    "TWOC2P_SANDBOX_MONTHLY_POLICY_VERIFIED": "false",
+    "TWOC2P_SANDBOX_BILLING_TIMEZONE": "",
+    "TWOC2P_SANDBOX_INITIAL_SEQUENCE_NO": "",
+    "TWOC2P_SANDBOX_MERCHANT_ID": ""
   },
   "assets": {
     "directory": "work/staging/assets",
