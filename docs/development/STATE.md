@@ -1,5 +1,29 @@
 # Current development state
 
+## D054 — Firebase staging restrictions reconciled (2026-10-22)
+
+Owner console evidence from 2026-10-21 is reconciled with D050-D053. The staging
+Firebase Web API key is application-restricted to Websites and its allowed
+referrers are limited to the three intended staging origins: the staging
+workers.dev origin plus the staging firebaseapp.com and web.app origins. The
+console also showed API restrictions enabled rather than unrestricted API access.
+After those restrictions were saved, physical Android Chrome evidence showed
+Google sign-in and authenticated staging gameplay still succeeding.
+
+Firebase Authentication Authorized Domains separately showed only the expected
+staging Firebase hosting domains, the staging workers.dev hostname, and Firebase's
+localhost default. D050 already records App Check registration plus Authentication
+Enforcement and post-enforcement live login. D053 records current Cloudflare
+deployment and ROOM/ZONE isolation after Deploy Staging #11.
+
+Taken together, the defined Gate 2 Cloudflare/Firebase staging security/isolation
+requirements now have current evidence: deployed staging revision, namespace
+isolation, Firebase authorized-domain/application-key restrictions, and App Check
+Authentication enforcement. Gate 2 is PASS for the current staging deployment.
+This does not assert Worker-side custom-backend App Check verification and does
+not close Google account/token revocation, multiplayer/mobile, sandbox payment,
+capacity, or final review. Overall NOT READY_FOR_FINAL_REVIEW.
+
 ## D053 — post-refresh-deploy Cloudflare revalidation (2026-10-22)
 
 Starting source b392580bbae6d5683ccabb3a818dd203acf786ca; public repository and

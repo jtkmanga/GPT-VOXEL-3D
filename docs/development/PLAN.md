@@ -1,5 +1,14 @@
 # Development plan
 
+D054 (2026-10-22): reconcile owner Firebase/Google Cloud console evidence:
+the staging browser API key is Website-restricted to the intended staging origins,
+API restrictions are enabled, Authorized Domains are staging-scoped, and live
+Google login still works after the restriction. Combined with D050 App Check
+Enforcement and D053 Cloudflare revision/namespace isolation, Release Gate 2 is
+PASS for the current staging deployment. Continue Gate 3 account/session
+revocation, then Gate 4 live multiplayer/mobile. Worker-side custom-backend
+App Check remains a hardening item and is not implied by this pass.
+
 D053 (2026-10-22): read-only Cloudflare revalidation after Deploy Staging #11
 shows the new live revision receiving 100% of staging traffic while staging
 identity, App Check, provider-neutral-test payment mode and ROOM/ZONE ownership

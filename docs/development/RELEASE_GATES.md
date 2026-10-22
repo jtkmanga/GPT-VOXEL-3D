@@ -1,5 +1,25 @@
 # Release gate ledger
 
+## D054 Gate 2 Cloudflare/Firebase staging security/isolation PASS — 2026-10-22
+
+Owner Google Cloud/Firebase console evidence shows the staging Firebase Web API
+key configured with Website application restrictions limited to the intended
+staging workers.dev, firebaseapp.com and web.app origins, with API restrictions
+enabled. Physical Android Chrome testing after the restriction continued to pass
+Google sign-in and authenticated gameplay. Firebase Authorized Domains were also
+limited to the expected staging domains plus Firebase's localhost default.
+
+D050 separately proves App Check registration and Authentication Enforcement with
+post-enforcement live login. D053 revalidated the current Deploy Staging #11
+revision and isolated ROOM/ZONE Durable Object bindings through read-only
+Cloudflare account inspection. Therefore the defined Gate 2 staging
+security/isolation evidence is complete on the current deployment: PASS.
+
+Scope note: this pass covers the release-gate requirements recorded for Firebase
+account configuration and Cloudflare isolation. It does not claim that the custom
+Cloudflare game backend itself verifies App Check tokens, and it does not close
+Firebase account/token revocation. Those are separate hardening/session work.
+
 ## D053 post-deploy Cloudflare revalidation — 2026-10-22
 
 Deploy Staging Worker #11 changed the live staging revision after D051, so the
