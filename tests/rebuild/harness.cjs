@@ -200,6 +200,16 @@ function createHarness(options = {}) {
     if (request.url === CERTS_URL) return NativeResponse.json({ [fixture.kid]: fixture.certificate }, {
       headers: { 'cache-control': 'public, max-age=3600' }
     });
+    if (request.url.startsWith('https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=')) {
+      const body = await request.json();
+      const parts = typeof body?.idToken === 'string' ? body.idToken.split('.') : [];
+      if (parts.length !== 3) return NativeResponse.json({ error: { message: 'INVALID_ID_TOKEN' } }, { status: 400 });
+      const claims = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+      const mode = options.firebaseUserState || 'active';
+      if (mode === 'missing') return NativeResponse.json({ error: { message: 'USER_NOT_FOUND' } }, { status: 400 });
+      const validSince = mode === 'revoked' ? String(Number(claims.auth_time || 0) + 1) : '0';
+      return NativeResponse.json({ users: [{ localId: claims.sub, disabled: mode === 'disabled', validSince }] });
+    }
     if (request.url === SLIP_URL) {
       if (request.headers.get('Authorization') !== 'synthetic-slip-secret') throw Error('Only synthetic payment credentials allowed');
       return NativeResponse.json(slipResult, { status: slipStatus });
@@ -237,7 +247,7 @@ function createHarness(options = {}) {
       banner: { js: '"use strict";' } }).outputFiles[0].text);
   }
   const source = workerBundles.get(workerPath);
-  vm.runInContext(`${source}\n;globalThis.__runtime = {worker: __workerModule.default, GameRoom: __workerModule.GameRoom, ZoneRoom: __workerModule.ZoneRoom, verifyFirebaseIdToken: __workerModule.verifyFirebaseIdToken};`, context, { filename: workerPath });
+  vm.runInContext(`${source}\n;globalThis.__runtime = {worker: __workerModule.default, GameRoom: __workerModule.GameRoom, ZoneRoom: __workerModule.ZoneRoom, verifyFirebaseIdToken: __workerModule.verifyFirebaseIdToken, verifyFirebaseActiveIdToken: __workerModule.verifyFirebaseActiveIdToken};`, context, { filename: workerPath });
   const runtime = context.__runtime;
   const rooms = new Map();
   const zones = new Map();
