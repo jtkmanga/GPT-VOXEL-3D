@@ -1,5 +1,31 @@
 # Current development state
 
+## D058 — split-screen concurrent-session consistency evidence (2026-10-22)
+
+Owner supplied a ~70-second physical Android split-screen recording with two live
+staging browser sessions visible simultaneously. The two sessions use distinct
+player identities ("หนึ่ง" and "JTK") and remain active together in the Free
+Server. Both sides show the same real-time leaderboard ordering and values.
+
+During the capture, JTK advances from 12 to 13 and that value appears on both
+leaderboards. Later หนึ่ง advances from 11 to 13 and that value also appears on
+both sides. The Lucky Box countdown is identical on both sessions at matching
+moments (for example 03:44:12 at the start and about 03:43:22 later) and continues
+decrementing consistently. This strengthens Gate 4 evidence for concurrent live
+sessions and cross-session authoritative score/leaderboard/Lucky Box state.
+
+One session intentionally returns to the server-selection menu while the other
+continues playing, then re-enters Free Server successfully. This proves clean
+exit/re-entry while the peer session remains live; it is not classified as a
+network reconnect because the recording does not show an involuntary transport
+drop or network interruption. Explicit bidirectional remote-motion observation
+and wall/tree LOS occlusion also remain open rather than inferred from the
+split-screen recording.
+
+P8 Browser Gate #8 later completed successfully on the D057 handoff-label fix;
+Deploy Staging #13 and P9 #9 were already PASS. Overall
+NOT READY_FOR_FINAL_REVIEW.
+
 ## D057 — physical mobile multiplayer/economy evidence + handoff-label fix (2026-10-22)
 
 Owner supplied a 79-second physical Android Chrome recording on live staging.

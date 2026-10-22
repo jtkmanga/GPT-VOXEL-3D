@@ -1,5 +1,13 @@
 # Development plan
 
+D058 (2026-10-22): split-screen physical Android evidence shows two distinct
+live Free Server identities at once with cross-session leaderboard/score and
+Lucky Box countdown consistency. It also proves one session can exit to server
+selection and re-enter while the peer session stays live. Do not count that as a
+network reconnect. Gate 4 still needs explicit remote movement observed from the
+other session, wall/tree LOS occlusion, and an involuntary reconnect/network
+recovery case. P8 #8 is also PASS on the D057 fix.
+
 D057 (2026-10-22): physical Android staging video adds Gate 4 evidence for
 mobile movement/controls, concurrent nearby-player rendering, distance-scoped
 name visibility, coin score + real-time leaderboard update, and Lucky Box

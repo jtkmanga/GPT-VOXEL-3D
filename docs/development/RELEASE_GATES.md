@@ -1,5 +1,31 @@
 # Release gate ledger
 
+## D058 concurrent split-screen state consistency — 2026-10-22
+
+A ~70-second physical Android split-screen recording keeps two live staging Free
+Server sessions visible at the same time with distinct player identities.
+
+Observed cross-session consistency:
+- both sessions show the same real-time leaderboard;
+- JTK changes 12 -> 13 and both leaderboards reflect 13;
+- หนึ่ง changes 11 -> 13 and both leaderboards reflect 13;
+- Lucky Box countdown matches across both views at the same moments and continues
+  decrementing consistently.
+
+The left session also intentionally exits to server selection and later re-enters
+Free Server while the right session remains live. This is a clean re-entry pass,
+not network-reconnect evidence.
+
+Gate 4 therefore has strong live evidence for concurrent sessions, mobile
+controls, proximity name behavior (D057), coin/score + leaderboard propagation,
+Lucky Box state and clean re-entry. Remaining live evidence: explicit remote
+movement observed from the other session, explicit LOS occlusion behind
+wall/tree, and transport/network reconnect recovery.
+
+[P8 Browser Gate #8](https://github.com/jtkmanga/GPT-VOXEL-3D/actions/runs/39780764343)
+also completed successfully for source 9ddd04a after D057; Deploy Staging #13
+and P9 #9 were already PASS.
+
 ## D057 Gate 4 partial live mobile/multiplayer evidence — 2026-10-22
 
 A 79-second physical Android Chrome recording on live staging shows:
