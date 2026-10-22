@@ -1,5 +1,18 @@
 # Current development state
 
+## D068 — Gate 7 reviewed-audit baseline reconciled (2026-10-22)
+
+Gate 7 on 8231d5e51830d038dbaa60e4a819a2785a051e61 passed the full development
+verification step, then failed only because its audit command still treated all
+known candidates since D064 as unreviewed. The bounded history audit for
+8231d5e..f596d4a contains 15 objects, no archive members or coverage gaps; all
+11 candidates are the unchanged public Firebase web configuration or synthetic
+test fixtures and are recorded in SECRET_AUDIT.md. The workflow baseline now
+advances to that reviewed commit without allowlisting patterns or weakening the
+fail-on-new-finding rule. Production configuration and application code are
+unchanged in this task. Overall NOT READY_FOR_FINAL_REVIEW while Gate 5 and Gate
+6 remain open.
+
 ## D067 — Gate 6 level 5 PASS; Gate 7 fixture drift repaired locally (2026-10-22)
 
 Starting commit f596d4acfa86e1004db2c57926a071b5b3330e32; public repository and clean

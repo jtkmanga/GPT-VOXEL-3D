@@ -1,5 +1,17 @@
 # S001: public repository credential audit
 
+## D068 increment — 2026-10-22
+
+Public source 8231d5e51830d038dbaa60e4a819a2785a051e61 minus audited
+f596d4acfa86e1004db2c57926a071b5b3330e32: 15 objects (1 commit, 5 trees,
+9 blobs), no archive members and no coverage gaps. Eleven candidates were
+reviewed privately by location: the regenerated client contains the unchanged
+public Firebase web configuration, while the remaining assignments are
+synthetic App Check, authentication and payment fixtures. No privileged or
+usable provider credential was found, printed or used. The Gate 7 incremental
+audit baseline advances to this reviewed commit; future runs still fail on any
+new candidate or coverage gap.
+
 ## D067 increment — 2026-10-22
 
 Public source f596d4acfa86e1004db2c57926a071b5b3330e32 minus audited

@@ -41,7 +41,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/rebuild/audit-git-secrets.py             --include "$(git rev-parse HEAD)"             --exclude 99d8c2ec9db4f3cfb16e9fe9f6fe2a4c54eed430             > /tmp/gate7-secret-audit.json
+          python scripts/rebuild/audit-git-secrets.py             --include "$(git rev-parse HEAD)"             --exclude 8231d5e51830d038dbaa60e4a819a2785a051e61             > /tmp/gate7-secret-audit.json
           node -e "const r=require('/tmp/gate7-secret-audit.json'); if(r.findings.length||r.gaps.length) process.exit(1); console.log('PASS incremental secret audit:',r.objects,'objects')"
       - name: Production config and branch diff guard
         shell: bash
