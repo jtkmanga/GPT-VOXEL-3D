@@ -40,15 +40,19 @@ export function twoc2pSandboxConfig(env, action) {
       (action === 'checkout' && env.TWOC2P_SANDBOX_CHECKOUT_ENABLED !== 'true') ||
       (action === 'backend' && env.TWOC2P_SANDBOX_BACKEND_ENABLED !== 'true'))
     fail('2C2P sandbox payment actions are disabled', 503);
+  const e2eTestMode = ownerApprovedE2eTest && !lifecycleAttested;
+  const sequence = env.TWOC2P_SANDBOX_INITIAL_SEQUENCE_NO;
   if (!safeIdentifier(env.TWOC2P_SANDBOX_MERCHANT_ID, 25) ||
       typeof env.TWOC2P_SANDBOX_SECRET_KEY !== 'string' ||
       new TextEncoder().encode(env.TWOC2P_SANDBOX_SECRET_KEY).byteLength < 32 ||
       new TextEncoder().encode(env.TWOC2P_SANDBOX_SECRET_KEY).byteLength > 4096 ||
-      typeof env.TWOC2P_SANDBOX_INITIAL_SEQUENCE_NO !== 'string' ||
-      !/^\d{1,10}$/.test(env.TWOC2P_SANDBOX_INITIAL_SEQUENCE_NO))
+      (!e2eTestMode && (typeof sequence !== 'string' || !/^\d{1,10}$/.test(sequence))) ||
+      (e2eTestMode && sequence !== undefined && sequence !== '' &&
+        (typeof sequence !== 'string' || !/^\d{1,10}$/.test(sequence))))
     fail('2C2P sandbox signing boundary is unavailable', 503);
   return { merchantID: env.TWOC2P_SANDBOX_MERCHANT_ID, secret: env.TWOC2P_SANDBOX_SECRET_KEY,
-    initialSequence: env.TWOC2P_SANDBOX_INITIAL_SEQUENCE_NO };
+    initialSequence: typeof sequence === 'string' && /^\d{1,10}$/.test(sequence) ? sequence : null,
+    e2eTestMode };
 }
 
 async function boundedJson(message, maximum = 24 * 1024) {
@@ -171,7 +175,8 @@ export function normalizeSandboxNotification(payload, merchantID) {
 }
 
 function initialPaymentOnly(notification, config) {
-  if (notification.respCode === '0000' && notification.recurringSequenceNo !== config.initialSequence)
+  if (notification.respCode !== '0000' || config.e2eTestMode) return;
+  if (notification.recurringSequenceNo !== config.initialSequence)
     fail('Recurring cycle mapping requires provider verification',400);
 }
 
