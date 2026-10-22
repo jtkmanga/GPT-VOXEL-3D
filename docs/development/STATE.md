@@ -1,5 +1,35 @@
 # Current development state
 
+## D069 — Gate 6 bounded live staging capacity canary PASS (2026-10-22)
+
+Owner-approved Gate 6 live staging canary run #6 completed successfully with the
+registered Firebase App Check CI debug provider and temporary anonymous staging
+identities. The exact approved ladder ran 2 -> 5 -> 10 WebSocket sessions for
+60 seconds per step; no wider or longer load was generated.
+
+Sanitized artifact evidence records:
+- level 2: 2/2 active, 2 welcomes, 125 movement acknowledgements, movement-ack
+  p95 260.1 ms, zero auth/server/client errors, unexpected closes or rejected
+  movements;
+- level 5: 5/5 active, 5 welcomes, 479 movement acknowledgements, movement-ack
+  p95 309.7 ms, zero auth/server/client errors, unexpected closes or rejected
+  movements;
+- level 10: 10/10 active, 10 welcomes, 1,309 movement acknowledgements,
+  movement-ack p95 383.4 ms, zero auth/server/client errors, unexpected closes
+  or rejected movements.
+
+All ten temporary Firebase users created for the run were deleted successfully;
+cleanup failures = 0. The canary stop threshold of aggregate movement-ack p95
+500 ms was not crossed. This is bounded staging evidence only and must not be
+represented as proof of 10,000 concurrent users or production capacity.
+
+**Release Gate 6 bounded capacity canary: PASS.**
+
+Anonymous Firebase sign-in was enabled only to support the approved temporary
+canary identities and should be disabled again after the run. Production/main
+remain untouched. Gate 5 and Final Review remain open, so overall status remains
+NOT READY_FOR_FINAL_REVIEW.
+
 ## D068 — Gate 7 reviewed-audit baseline reconciled (2026-10-22)
 
 Gate 7 on 8231d5e51830d038dbaa60e4a819a2785a051e61 passed the full development

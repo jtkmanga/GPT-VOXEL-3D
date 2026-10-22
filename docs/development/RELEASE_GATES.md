@@ -1,5 +1,25 @@
 # Release gate ledger
 
+## D069 Gate 6 bounded live staging canary PASS — 2026-10-22
+
+[Gate 6 Staging Canary #6](https://github.com/jtkmanga/GPT-VOXEL-3D/actions/runs/39827810589)
+completed the exact owner-approved staging ladder: 2 -> 5 -> 10 authorized
+WebSocket sessions, 60 seconds per step.
+
+Sanitized evidence:
+- 2 sessions: 2/2 active, p95 movement ack 260.1 ms, no errors/closes/rejections;
+- 5 sessions: 5/5 active, p95 movement ack 309.7 ms, no errors/closes/rejections;
+- 10 sessions: 10/10 active, p95 movement ack 383.4 ms, no
+  auth/server/client errors, no unexpected closes and no rejected movement;
+- all 10 temporary Firebase canary users were deleted successfully.
+
+The aggregate 500 ms stop threshold was not crossed.
+
+**Release Gate 6 bounded staging capacity canary: PASS.**
+
+Scope: this is evidence only for the approved 10-session canary. It is not
+10,000-CCU or production-capacity proof.
+
 ## D066 Gate 5 basic sandbox PASS; Gate 6 CI App Check setup required — 2026-10-22
 
 [Gate 5 2C2P Sandbox Probe #3](https://github.com/jtkmanga/GPT-VOXEL-3D/actions/runs/39804613963)

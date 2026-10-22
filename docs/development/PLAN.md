@@ -1,5 +1,12 @@
 # Development plan
 
+D069 (2026-10-22): Gate 6 approved live staging canary #6 is PASS.
+The exact 2->5->10, 60s/step ladder completed with 0 auth/server/client errors,
+0 unexpected closes, 0 movement rejections and aggregate movement-ack p95
+260.1/309.7/383.4 ms. All 10 temporary Firebase users were deleted. Mark Gate 6
+PASS, do not infer 10k CCU, and disable temporary Anonymous auth again. Continue
+Gate 5 real sandbox E2E and Gate 7 final review only.
+
 D066 (2026-10-22): Gate 5 basic 2C2P Thailand sandbox connectivity is now
 live-PASS: sandbox PaymentToken returned 0000, Hosted Payment Page was validated,
 and the 50 THB monthly recurring request was accepted without recording provider
