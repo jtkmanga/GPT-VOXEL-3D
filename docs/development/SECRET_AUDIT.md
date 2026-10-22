@@ -1,5 +1,13 @@
 # S001: public repository credential audit
 
+## D070 publication audit
+
+Reviewed 675d854..77772dbde9ca6144c536477e59553ea16b19b39e: 13 objects, no archives or gaps.
+Six candidates are unchanged public Firebase configuration and synthetic test
+configuration, including the new synthetic App Check fixture. No private
+credential identified. Gate 7 baseline advances to this reviewed commit;
+new findings still fail closed.
+
 ## D070 reviewed incremental history — 2026-10-23
 
 Reviewed 8231d5e..675d854: 72 objects (9 commits, 37 trees, 26 blobs),
