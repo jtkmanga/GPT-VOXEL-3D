@@ -89,7 +89,7 @@ test('P2 staging online Firebase user check rejects disabled revoked and missing
     t.after(() => h.close());
     const uid = 'synthetic-online-active';
     assert.equal((await h.runtime.verifyFirebaseActiveIdToken(
-      h.token(uid), h.env)).uid, uid);
+      h.token(uid), h.env, 'synthetic-app-check-token')).uid, uid);
     assert.ok(h.records.fetches.some(record =>
       record.url.startsWith('https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=')));
   }
@@ -97,7 +97,7 @@ test('P2 staging online Firebase user check rejects disabled revoked and missing
     const h = createHarness({ env: firebaseEnv, firebaseUserState: mode });
     t.after(() => h.close());
     await assert.rejects(
-      h.runtime.verifyFirebaseActiveIdToken(h.token('synthetic-online-' + mode), h.env),
+      h.runtime.verifyFirebaseActiveIdToken(h.token('synthetic-online-' + mode), h.env, 'synthetic-app-check-token'),
       /Firebase (?:user is no longer active|token is revoked)/
     );
   }

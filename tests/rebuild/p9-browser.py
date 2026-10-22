@@ -47,7 +47,10 @@ FIXTURE = r"""
   function authFactory() { return auth; }
   authFactory.GoogleAuthProvider = class SyntheticGoogleProvider {};
   function appCheckFactory() {
-    return { activate(provider, autoRefresh) { calls.appCheckActivations.push({ key: provider.key, autoRefresh }); } };
+    return {
+      activate(provider, autoRefresh) { calls.appCheckActivations.push({ key: provider.key, autoRefresh }); },
+      async getToken() { return { token: 'synthetic-p9-app-check-token', expireTimeMillis: Date.now() + 3600000 }; }
+    };
   }
   appCheckFactory.ReCaptchaEnterpriseProvider = class SyntheticEnterpriseProvider {
     constructor(key) { this.key = key; }

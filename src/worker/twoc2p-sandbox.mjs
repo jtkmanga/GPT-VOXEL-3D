@@ -88,7 +88,7 @@ async function authenticatedIdentity(request, env) {
   const authorization = request.headers.get('Authorization') || '';
   if (!/^Bearer [A-Za-z0-9._-]+$/.test(authorization)) fail('Staging sign-in required', 401);
   try {
-    const identity = await verifyFirebaseActiveIdToken(authorization.slice(7), env);
+    const identity = await verifyFirebaseActiveIdToken(authorization.slice(7), env, request.headers.get('X-Firebase-AppCheck'));
     if (!validVipUid(identity.uid)) fail('Staging sign-in required', 401);
     return identity;
   } catch (_) { fail('Staging sign-in required', 401); }

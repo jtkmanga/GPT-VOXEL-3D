@@ -54,15 +54,17 @@ def checkout(page):
       await firebase.auth().signInAnonymously();
       const user = firebase.auth().currentUser;
       if (!user) return {ok:false, stage:'anonymous-auth'};
-      if (firebase.appCheck) await firebase.appCheck().getToken(false);
+      const appCheckToken = firebase.appCheck ? (await firebase.appCheck().getToken(false)).token : '';
       const token = await user.getIdToken(true);
-      const activeResponse = await fetch('/entitlements', {headers:{Authorization:'Bearer '+token}});
+      const authHeaders = {Authorization:'Bearer '+token, 'X-Firebase-AppCheck':appCheckToken};
+      const activeResponse = await fetch('/entitlements', {headers:authHeaders});
       if (!activeResponse.ok) {
         let lookupStatus=0, lookupMatched=false, lookupDisabled=null;
         try {
           const apiKey=firebase.app().options.apiKey;
           const lookup=await fetch('https://identitytoolkit.googleapis.com/v1/accounts:lookup?key='+encodeURIComponent(apiKey), {
-            method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({idToken:token})
+            method:'POST', headers:{'Content-Type':'application/json','X-Firebase-AppCheck':appCheckToken},
+            body:JSON.stringify({idToken:token})
           });
           lookupStatus=lookup.status;
           const data=await lookup.json().catch(() => ({}));
@@ -74,7 +76,7 @@ def checkout(page):
           lookupStatus, lookupMatched, lookupDisabled};
       }
       const response = await fetch('/payments/2c2p/checkout', {
-        method:'POST', headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
+        method:'POST', headers:{Authorization:'Bearer '+token,'X-Firebase-AppCheck':appCheckToken,'Content-Type':'application/json'},
         body:JSON.stringify({requestId})
       });
       const body = await response.json().catch(() => ({}));
@@ -154,11 +156,13 @@ def verify_backend(context, invoice_no):
       if (!user) return {ok:false, stage:'auth-session-missing'};
       for (let attempt=0; attempt<20; attempt++) {
         const token = await user.getIdToken(attempt===0);
+        const appCheckToken = firebase.appCheck ? (await firebase.appCheck().getToken(false)).token : '';
+        const authHeaders = {Authorization:'Bearer '+token,'X-Firebase-AppCheck':appCheckToken};
         const statusResponse = await fetch('/payments/2c2p/status?invoiceNo='+encodeURIComponent(invoiceNo),
-          {headers:{Authorization:'Bearer '+token}});
+          {headers:authHeaders});
         const status = await statusResponse.json().catch(() => ({}));
         if (statusResponse.ok && status?.ok && status.status === 'paid') {
-          const entitlementResponse = await fetch('/entitlements', {headers:{Authorization:'Bearer '+token}});
+          const entitlementResponse = await fetch('/entitlements', {headers:authHeaders});
           const entitlement = await entitlementResponse.json().catch(() => ({}));
           const active = entitlementResponse.ok && entitlement?.active?.vip1 === true &&
             Number(entitlement?.entitlements?.vip1Expires || 0) > Date.now();

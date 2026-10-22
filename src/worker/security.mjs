@@ -15,7 +15,7 @@ export const SECURITY = {
 };
 
 const incomingFields = new Map([
-  [WS_MESSAGE.AUTH, ['token', 'name', 'protocol', 'handoffToken', 'resumeToken', 'seq', 'continuousHandoff']],
+  [WS_MESSAGE.AUTH, ['token', 'appCheckToken', 'name', 'protocol', 'handoffToken', 'resumeToken', 'seq', 'continuousHandoff']],
   [WS_MESSAGE.MOVE, ['input', 'frames', 'protocol', 'seq']],
   [WS_MESSAGE.COLLECT, ['id', 'x', 'y', 'z', 'r', 'protocol', 'seq']],
   [WS_MESSAGE.COLLECT_BOX, ['protocol', 'seq']],
@@ -85,6 +85,9 @@ export function parseFrame(message, attachment, expectedProtocol) {
       return failure('Authentication rate limit exceeded', 'auth_rate');
     }
     if (typeof packet.token !== 'string' || !packet.token || packet.token.length > 8192) return failure('Invalid token field');
+    if (Object.hasOwn(packet, 'appCheckToken') &&
+        (typeof packet.appCheckToken !== 'string' || packet.appCheckToken.length < 20 || packet.appCheckToken.length > 8192 ||
+         /[\s\u0000-\u001f\u007f]/.test(packet.appCheckToken))) return failure('Invalid App Check token field');
     if (Object.hasOwn(packet, 'name') && (typeof packet.name !== 'string' || packet.name.length > 64)) return failure('Invalid name');
     if (Object.hasOwn(packet, 'handoffToken') &&
         (typeof packet.handoffToken !== 'string' || !packet.handoffToken || packet.handoffToken.length > 256)) return failure('Invalid handoff token');

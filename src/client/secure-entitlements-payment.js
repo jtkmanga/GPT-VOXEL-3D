@@ -123,9 +123,12 @@
             if (auth.currentUser !== user || auth.currentUser?.uid !== uid) {
                 throw new Error('บัญชีเปลี่ยนระหว่างตรวจสอบสิทธิ์');
             }
+            const headers = { 'Authorization': 'Bearer ' + token };
+            if (typeof stagingGetAppCheckToken === 'function') {
+                headers['X-Firebase-AppCheck'] = await stagingGetAppCheckToken(false);
+            }
             const response = await fetch(SECURE_WORKER_HTTP_BASE + '/entitlements', {
-                method: 'GET',
-                headers: { 'Authorization': 'Bearer ' + token }
+                method: 'GET', headers
             });
             const result = await response.json().catch(() => ({}));
             if (!response.ok || !result?.ok) {

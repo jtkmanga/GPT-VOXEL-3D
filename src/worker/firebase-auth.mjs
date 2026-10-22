@@ -105,17 +105,21 @@ function firebaseWebApiKey(env) {
   return config.apiKey;
 }
 
-export async function verifyFirebaseActiveIdToken(token, env) {
+export async function verifyFirebaseActiveIdToken(token, env, appCheckToken) {
   const identity = await verifyFirebaseIdToken(token, env?.FIREBASE_PROJECT_ID);
   if (env?.FIREBASE_ONLINE_USER_CHECK !== 'true') return identity;
   if (env.APP_ENV !== 'staging' || env.STAGING_WORKER_NAME !== 'gpt-voxel-3d-staging-01')
     throw Error('Firebase online user check unavailable');
+  if (typeof appCheckToken !== 'string' || appCheckToken.length < 20 || appCheckToken.length > 8192 ||
+      /[\s\u0000-\u001f\u007f]/.test(appCheckToken))
+    throw Error('Firebase App Check token unavailable');
   const apiKey = firebaseWebApiKey(env);
   const response = await fetch('https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=' +
     encodeURIComponent(apiKey), {
       method: 'POST', redirect: 'error',
       headers: { 'Content-Type': 'application/json',
-        'Referer': env.STAGING_WORKER_ORIGIN + '/' },
+        'Referer': env.STAGING_WORKER_ORIGIN + '/',
+        'X-Firebase-AppCheck': appCheckToken },
       body: JSON.stringify({ idToken: token }),
       signal: AbortSignal.timeout(5_000)
     });

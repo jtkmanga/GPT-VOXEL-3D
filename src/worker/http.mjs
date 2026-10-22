@@ -28,7 +28,7 @@ export function corsHeaders(request, env) {
   return {
     'Access-Control-Allow-Origin': allowed,
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+    'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-Firebase-AppCheck',
     'Vary': 'Origin'
   };
 }
@@ -75,7 +75,7 @@ export async function handleVerifySlip(request, env) {
   let verified;
 
   try {
-    verified = await verifyFirebaseActiveIdToken(match[1], env);
+    verified = await verifyFirebaseActiveIdToken(match[1], env, request.headers.get('X-Firebase-AppCheck'));
   } catch {
     return jsonResponse(request, env, {
       ok: false,
@@ -304,7 +304,7 @@ export async function handleGetEntitlements(request, env) {
   let verified;
 
   try {
-    verified = await verifyFirebaseActiveIdToken(match[1], env);
+    verified = await verifyFirebaseActiveIdToken(match[1], env, request.headers.get('X-Firebase-AppCheck'));
   } catch {
     return jsonResponse(request, env, {
       ok: false,

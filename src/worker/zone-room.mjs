@@ -3,7 +3,7 @@ import { MOVEMENT } from '../shared/movement.mjs';
 import { WS_MESSAGE, PROTOCOL_VERSION } from '../shared/protocol.mjs';
 import { normalizePlayerName, normalizeZoneId, adjacentZoneIds, zonesAreAdjacent, zoneCenter, zoneFromPosition } from './spatial.mjs';
 import { COINS } from './world.mjs';
-import { verifyFirebaseIdToken } from './firebase-auth.mjs';
+import { verifyFirebaseActiveIdToken } from './firebase-auth.mjs';
 import { SECURITY, scheduleAuthDeadline, clearAuthDeadline } from './security.mjs';
 import { enqueueFrame, enqueueSocketBarrier, sessionMetadata, checkpointPlayer } from './room-security.mjs';
 import { initializeMotion, applyMovementIntent, publicMovement } from './movement.mjs';
@@ -365,7 +365,7 @@ export class ZoneRoom {
 
   async handleAuth(ws,p,m) {
     let verified;
-    try { verified=await verifyFirebaseIdToken(m.token,this.projectId); }
+    try { verified=await verifyFirebaseActiveIdToken(m.token,this.env,m.appCheckToken); }
     catch (_) {
       this.send(ws,{type:WS_MESSAGE.AUTH_ERROR,message:'Firebase sign-in failed'});
       ws.close(1008,'Invalid ID token');

@@ -329,6 +329,17 @@ if (stagingPredictMovement) securePredictMovement = function(delta) {
 
 let stagingForegroundRefresh = null;
 let stagingAuthRefreshCount = 0;
+async function stagingGetAppCheckToken(forceRefresh = false) {
+    if (!STAGING_CLIENT_ENABLED || typeof firebase?.appCheck !== 'function') {
+        throw new Error('App Check unavailable');
+    }
+    const result = await firebase.appCheck().getToken(Boolean(forceRefresh));
+    const token = result?.token;
+    if (typeof token !== 'string' || token.length < 20 || token.length > 8192) {
+        throw new Error('App Check token unavailable');
+    }
+    return token;
+}
 function stagingSetStatus(text) {
     const element = document.getElementById('staging-status');
     if (element) element.innerText = text;
@@ -370,11 +381,13 @@ async function stagingResumeForeground() {
             return secureResumeDisconnectedSocket(secureCurrentZoneId, uid, serverId);
         }
         try {
-            const token = await user.getIdToken(true);
+            const [token, appCheckToken] = await Promise.all([
+                user.getIdToken(true), stagingGetAppCheckToken(false)
+            ]);
             if (auth.currentUser !== user || auth.currentUser?.uid !== uid ||
                 !secureConnectionIsCurrent(epoch) || secureGameSocket !== ws || ws.readyState !== WebSocket.OPEN ||
                 state.selectedServerId !== serverId) return false;
-            ws.send(JSON.stringify({ type: protocol.WS_MESSAGE.AUTH, token,
+            ws.send(JSON.stringify({ type: protocol.WS_MESSAGE.AUTH, token, appCheckToken,
                 protocol: serverId === 'vip1' ? protocol.PROTOCOL_VERSION.LEGACY_ROOM : protocol.PROTOCOL_VERSION.ZONE_ROOM }));
             return true;
         } catch (_) {
@@ -428,11 +441,14 @@ async function stagingStartVipSandboxCheckout() {
     const user = auth.currentUser;
     try {
         stagingSetStatus('STAGING · CREATING 2C2P SANDBOX CHECKOUT');
-        const token = await stagingGetIdToken(user, true);
+        const [token, appCheckToken] = await Promise.all([
+            stagingGetIdToken(user, true), stagingGetAppCheckToken(false)
+        ]);
         if (auth.currentUser !== user) return false;
         const response = await fetch(STAGING_PUBLIC_CONFIG.workerOrigin + '/payments/2c2p/checkout', {
             method: 'POST',
-            headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+            headers: { 'Authorization': 'Bearer ' + token, 'X-Firebase-AppCheck': appCheckToken,
+                'Content-Type': 'application/json' },
             body: JSON.stringify({ requestId: stagingSandboxRequestId() })
         });
         const result = await response.json().catch(() => ({}));
@@ -480,11 +496,13 @@ async function stagingReconcileSandboxPaymentReturn() {
     const user = auth.currentUser;
     for (let attempt = 0; attempt < 10; attempt++) {
         try {
-            const token = await stagingGetIdToken(user, attempt === 0);
+            const [token, appCheckToken] = await Promise.all([
+                stagingGetIdToken(user, attempt === 0), stagingGetAppCheckToken(false)
+            ]);
             if (auth.currentUser !== user) return false;
             const response = await fetch(STAGING_PUBLIC_CONFIG.workerOrigin +
                 '/payments/2c2p/status?invoiceNo=' + encodeURIComponent(invoiceNo), {
-                    headers: { 'Authorization': 'Bearer ' + token }
+                    headers: { 'Authorization': 'Bearer ' + token, 'X-Firebase-AppCheck': appCheckToken }
                 });
             const result = await response.json().catch(() => ({}));
             if (!response.ok || !result?.ok) throw new Error(result?.error || 'Sandbox status unavailable');

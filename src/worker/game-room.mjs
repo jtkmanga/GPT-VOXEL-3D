@@ -1060,7 +1060,7 @@ export class GameRoom {
       ws.serializeAttachment(p);
     }
     let verified;
-    try { verified=await verifyFirebaseActiveIdToken(m.token,this.env); }
+    try { verified=await verifyFirebaseActiveIdToken(m.token,this.env,m.appCheckToken); }
     catch (_) { this.send(ws,{type:WS_MESSAGE.AUTH_ERROR,message:'Firebase sign-in failed'}); ws.close(1008,'Invalid ID token'); return; }
     p=this.player(ws); // Another auth frame may have completed during certificate fetch.
     if (!p || p.revoked || p.sessionClosed || (typeof ws.readyState==='number' && ws.readyState!==1)) return;
