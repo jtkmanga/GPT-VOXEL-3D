@@ -90,5 +90,42 @@ export async function verifyFirebaseIdToken(token,projectId) {
   const valid=await crypto.subtle.verify('RSASSA-PKCS1-v1_5',publicKey,
     decodeBase64(parts[2]),new TextEncoder().encode(parts[0]+'.'+parts[1]));
   if (!valid) throw Error('Invalid token signature');
-  return {uid:claims.sub,exp:claims.exp};
+  return {uid:claims.sub,exp:claims.exp,authTime:claims.auth_time};
+}
+
+function firebaseWebApiKey(env) {
+  if (!env || typeof env.FIREBASE_PUBLIC_CONFIG !== 'string') throw Error('Firebase online user check unavailable');
+  let config;
+  try { config = JSON.parse(env.FIREBASE_PUBLIC_CONFIG); }
+  catch (_) { throw Error('Firebase online user check unavailable'); }
+  if (!config || typeof config !== 'object' || Array.isArray(config) ||
+      config.projectId !== env.FIREBASE_PROJECT_ID ||
+      typeof config.apiKey !== 'string' || !/^AIza[A-Za-z0-9_-]{35}$/.test(config.apiKey))
+    throw Error('Firebase online user check unavailable');
+  return config.apiKey;
+}
+
+export async function verifyFirebaseActiveIdToken(token, env) {
+  const identity = await verifyFirebaseIdToken(token, env?.FIREBASE_PROJECT_ID);
+  if (env?.FIREBASE_ONLINE_USER_CHECK !== 'true') return identity;
+  if (env.APP_ENV !== 'staging' || env.STAGING_WORKER_NAME !== 'gpt-voxel-3d-staging-01')
+    throw Error('Firebase online user check unavailable');
+  const apiKey = firebaseWebApiKey(env);
+  const response = await fetch('https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=' +
+    encodeURIComponent(apiKey), {
+      method: 'POST', redirect: 'error',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ idToken: token }),
+      signal: AbortSignal.timeout(5_000)
+    });
+  if (!response.ok) throw Error('Firebase user is no longer active');
+  const data = await response.json();
+  const users = Array.isArray(data?.users) ? data.users : [];
+  if (users.length !== 1 || users[0]?.localId !== identity.uid || users[0]?.disabled === true)
+    throw Error('Firebase user is no longer active');
+  const validSince = Number(users[0]?.validSince ?? 0);
+  if (!Number.isFinite(validSince) || validSince < 0 ||
+      (validSince > 0 && identity.authTime < validSince))
+    throw Error('Firebase token is revoked');
+  return identity;
 }
