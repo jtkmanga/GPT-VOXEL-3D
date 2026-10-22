@@ -1,5 +1,29 @@
 # Release gate ledger
 
+## D066 Gate 5 basic sandbox PASS; Gate 6 CI App Check setup required — 2026-10-22
+
+[Gate 5 2C2P Sandbox Probe #3](https://github.com/jtkmanga/GPT-VOXEL-3D/actions/runs/39804613963)
+completed successfully using the official Thailand public demo account fetched at
+runtime from 2C2P documentation. Sanitized evidence shows:
+- THB / Thailand sandbox;
+- 50 THB request;
+- verified 2C2P JWT response with respCode 0000;
+- payment token issued;
+- Hosted Payment Page restricted to the official sandbox payment origin/path;
+- recurring=true and the monthly charge-on-date request accepted;
+- no demo secret and no payment token recorded in the artifact.
+
+**Gate 5 basic connectivity / PaymentToken / HPP / recurring capability: PASS.**
+Still open: completed sandbox payment, native backend notification, entitlement
+activation, renewal ordering, cancel/refund maintenance and exchange-key
+JWE/JWS proof.
+
+Gate 6 canary #1 and #2 stopped before session creation with
+appCheck/throttled, so neither is capacity evidence and neither is a staging
+capacity failure. The next allowed path is Firebase's documented CI App Check
+debug provider with a staging-only registered debug token kept in GitHub's
+encrypted staging secret store. App Check Enforcement stays enabled.
+
 ## D065 Gate 6 cost blocker cleared; canary approval pending — 2026-10-22
 
 Owner mobile Cloudflare Billing evidence shows:

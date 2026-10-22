@@ -1,5 +1,17 @@
 # Development plan
 
+D066 (2026-10-22): Gate 5 basic 2C2P Thailand sandbox connectivity is now
+live-PASS: sandbox PaymentToken returned 0000, Hosted Payment Page was validated,
+and the 50 THB monthly recurring request was accepted without recording provider
+secrets/tokens. Continue actual sandbox approval/callback/entitlement and
+lifecycle maintenance evidence.
+
+Gate 6 canary #1/#2 generated zero authorized game sessions because App Check
+reCAPTCHA throttled the CI browser before authentication. Use Firebase's official
+CI debug-provider path: register a staging-only App Check debug token and store
+the same value in the GitHub staging environment secret. Keep App Check
+Enforcement enabled. Then rerun only the already-approved 2->5->10 canary.
+
 D065 (2026-10-22): owner Cloudflare Billing evidence proves Workers Free is
 active, Workers Paid is not subscribed, and no payment method is on file.
 Cloudflare Free-plan Durable Object limits fail rather than bill overage, so the

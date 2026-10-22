@@ -1,5 +1,33 @@
 # Current development state
 
+## D066 — 2C2P Thailand sandbox basic integration PASS; Gate 6 CI attestation blocker identified (2026-10-22)
+
+Owner-approved Gate 5 sandbox probe run #3 completed successfully against the
+official 2C2P sandbox using the public Thailand demo account obtained at runtime
+from official documentation. The probe signed and verified the documented HS256
+JWT envelope, received respCode 0000, received a payment token, validated the
+Hosted Payment Page origin/path for sandbox API 4.5, and confirmed that a 50 THB
+recurring request using the application's monthly charge-on-date policy was
+accepted. The evidence artifact records neither the demo secret nor the returned
+payment token.
+
+This closes Gate 5 basic sandbox connectivity + PaymentToken + Hosted Payment
+Page + recurring-request capability. It does not yet prove an approved payment,
+native backend callback, entitlement activation, renewal ordering,
+cancellation/refund maintenance or exchange-key JWE/JWS operations; those remain
+open before Gate 5 can PASS.
+
+Gate 6 canary runs #1 and #2 both stopped before Firebase user/session creation
+with appCheck/throttled. No capacity result and no game load was generated.
+Changing forced App Check refresh to cache-aware retrieval did not change the
+outcome, confirming the blocker is CI reCAPTCHA/App Check attestation rather than
+staging multiplayer capacity. Firebase's documented CI solution is a registered
+App Check debug token stored only in the CI secret store. Enforcement must remain
+enabled; no bypass or public token is acceptable. Gate 6 remains open pending
+that CI-only attestation setup.
+
+Overall NOT READY_FOR_FINAL_REVIEW.
+
 ## D065 — Workers Free/no-payment-method evidence clears Gate 6 cost blocker (2026-10-22)
 
 Owner mobile Cloudflare Billing screenshots show Workers Free as the active
