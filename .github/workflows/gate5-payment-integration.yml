@@ -1,0 +1,33 @@
+name: Gate 5 Payment Integration
+
+on:
+  push:
+    branches: [development/voxel-continuous]
+    paths:
+      - 'src/worker/twoc2p-*.mjs'
+      - 'src/worker/vip-store.mjs'
+      - 'tests/rebuild/twoc2p-*.test.cjs'
+      - 'wrangler.staging.jsonc'
+      - 'scripts/rebuild/staging-options.cjs'
+      - '.github/workflows/gate5-payment-integration.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  payment-integration:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci
+      - name: Run provider adapter security and lifecycle tests
+        run: node --test tests/rebuild/twoc2p-jwt.test.cjs tests/rebuild/twoc2p-store.test.cjs tests/rebuild/twoc2p-integration.test.cjs
+      - name: Check staging scaffold remains isolated
+        run: node scripts/rebuild/check-staging.cjs --config wrangler.staging.jsonc
