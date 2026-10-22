@@ -32,8 +32,11 @@ function assertSandboxStaging(env) {
 export function twoc2pSandboxConfig(env, action) {
   assertSandboxStaging(env);
   const gates = ['TWOC2P_SANDBOX_ENABLED', 'TWOC2P_SANDBOX_MERCHANT_CAPABILITIES_VERIFIED',
-    'TWOC2P_SANDBOX_E2E_VERIFIED', 'TWOC2P_SANDBOX_MONTHLY_POLICY_VERIFIED'];
-  if (gates.some(name => env[name] !== 'true') || env.TWOC2P_SANDBOX_BILLING_TIMEZONE !== 'UTC' ||
+    'TWOC2P_SANDBOX_MONTHLY_POLICY_VERIFIED'];
+  const lifecycleAttested = env.TWOC2P_SANDBOX_E2E_VERIFIED === 'true';
+  const ownerApprovedE2eTest = env.TWOC2P_SANDBOX_E2E_TEST_MODE === 'true';
+  if (gates.some(name => env[name] !== 'true') || (!lifecycleAttested && !ownerApprovedE2eTest) ||
+      env.TWOC2P_SANDBOX_BILLING_TIMEZONE !== 'UTC' ||
       (action === 'checkout' && env.TWOC2P_SANDBOX_CHECKOUT_ENABLED !== 'true') ||
       (action === 'backend' && env.TWOC2P_SANDBOX_BACKEND_ENABLED !== 'true'))
     fail('2C2P sandbox payment actions are disabled', 503);
