@@ -1,5 +1,37 @@
 # Current development state
 
+## D062 — current-head reconciliation and incremental credential audit (2026-10-22)
+
+Starting commit f9786c433d1804cb8198ee2a7c9258cca2ff4c16; public repository and
+clean detached checkout. Reconciled the nine commits after the previously
+audited c807b56c0e05e15d78916cad4e6f64e1a71fc168 baseline, including the
+multiplayer/mobile evidence, reconnect defense-in-depth source and staging-only
+workflow changes recorded by D057-D061.
+
+The five owner-supplied physical Android recordings used by D057-D061 were
+re-opened from their retained originals (79.19s, 69.55s, 126.81s, 47.39s and
+25.01s). Representative-frame review corroborates the documented split-screen
+concurrent sessions, mobile controls, shared score/leaderboard and Lucky Box
+state, network-loss fail-closed/manual re-entry behavior, and final tree
+line-of-sight name occlusion. No contradictory evidence was found. Gate 4
+therefore remains PASS and is not repeated unless relevant source/config changes.
+
+Incremental credential audit c807b56..f9786c4 covered 61 objects (9 commits,
+31 trees, 21 blobs), with no archive members or coverage gaps. Candidate matches
+were privately reviewed as synthetic test fixtures or the intended public
+Firebase Web client configuration; no private/admin credential was identified.
+The current secret/config scan passed 164 rebuild/source files, production config
+remains unchanged, and `git diff --check` passed for the audited range.
+
+Files changed by this bounded task: docs/development/STATE.md and
+docs/development/SECRET_AUDIT.md. No runtime, workflow, account, payment,
+production or deployment setting was changed. Gate 3 account-level Firebase
+refresh-token revocation/disabled-user behavior, Gate 5 payment sandbox, Gate 6
+authorized capacity and final review remain open. Overall
+NOT READY_FOR_FINAL_REVIEW. Next task: obtain authorized Firebase account-level
+revocation evidence; if that account action remains blocked, continue only with
+another staging gate whose prerequisites and no-cost authorization are present.
+
 ## D061 — Gate 4 live multiplayer/mobile PASS (2026-10-22)
 
 Owner supplied a ~25-second physical Android split-screen recording specifically
