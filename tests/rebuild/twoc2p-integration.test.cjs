@@ -75,7 +75,8 @@ function fixture(t, env = {}, options = {}) {
 
 function checkout(h, uid = 'sandbox-payer', body = { requestId: 'syntheticrequest00001' }) {
   return h.request('/payments/2c2p/checkout', { method: 'POST',
-    headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + h.token(uid) },
+    headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + h.token(uid),
+      'X-Firebase-AppCheck': h.appCheckToken() },
     body: JSON.stringify(body) });
 }
 function providerEvent(h, invoiceNo, changes = {}) {
@@ -103,7 +104,7 @@ function backend(h, claims, headers = {}) {
 }
 function status(h, invoice, uid = 'sandbox-payer') {
   return h.request('/payments/2c2p/status?invoiceNo=' + encodeURIComponent(invoice),
-    { headers: { Authorization: 'Bearer ' + h.token(uid) } });
+    { headers: { Authorization: 'Bearer ' + h.token(uid), 'X-Firebase-AppCheck': h.appCheckToken() } });
 }
 
 function holdCoordinatorResponse(h, action) {
@@ -130,7 +131,7 @@ function holdCoordinatorResponse(h, action) {
 function shortLivedCheckout(h) {
   return h.request('/payments/2c2p/checkout', { method: 'POST',
     headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + h.token('sandbox-payer',
-      { exp: Math.floor(h.now() / 1000) + 1 }) },
+      { exp: Math.floor(h.now() / 1000) + 1 }), 'X-Firebase-AppCheck': h.appCheckToken() },
     body: JSON.stringify({ requestId: 'syntheticrequest00001' }) });
 }
 
@@ -195,11 +196,13 @@ test('2C2P checkout requires current staging Firebase authentication and same or
   for (const token of [null, 'not-a-token', h.token('expired', { exp: Math.floor(h.now() / 1000) }),
     h.token('wrong-project', { aud: 'synthetic-other-project', iss: 'https://securetoken.google.com/synthetic-other-project' })]) {
     const response = await h.request('/payments/2c2p/checkout', { method: 'POST', body,
-      headers: { 'content-type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) } });
+      headers: { 'content-type': 'application/json',
+        ...(token ? { Authorization: 'Bearer ' + token, 'X-Firebase-AppCheck': h.appCheckToken() } : {}) } });
     assert.equal(response.status, 401);
   }
   const foreignOrigin = await h.request('/payments/2c2p/checkout', { method: 'POST', body,
-    headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + h.token(), Origin: 'https://attacker.invalid' } });
+    headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + h.token(),
+      'X-Firebase-AppCheck': h.appCheckToken(), Origin: 'https://attacker.invalid' } });
   assert.equal(foreignOrigin.status, 403);
   assert.equal(calls.length, 0);
 });
@@ -258,7 +261,7 @@ test('2C2P status authentication expiring during coordinator await prevents owne
   const pause = holdCoordinatorResponse(h, 'status');
   const pending = h.request('/payments/2c2p/status?invoiceNo=' + result.invoiceNo,
     { headers: { Authorization: 'Bearer ' + h.token('sandbox-payer',
-      { exp: Math.floor(h.now() / 1000) + 1 }) } });
+      { exp: Math.floor(h.now() / 1000) + 1 }), 'X-Firebase-AppCheck': h.appCheckToken() } });
   await pause.held;
   await h.advance(1500);
   pause.release();
@@ -442,7 +445,8 @@ test('2C2P browser completion cannot grant entitlement and lifecycle operations 
   assert.equal(h.room().vip.entitlement('sandbox-payer', h.now()).active, false);
   for (const operation of ['renewal', 'cancel', 'refund', 'resubscribe']) {
     const lifecycle = await h.request('/payments/2c2p/lifecycle', { method: 'POST',
-      headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + h.token() },
+      headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + h.token(),
+        'X-Firebase-AppCheck': h.appCheckToken() },
       body: JSON.stringify({ operation, invoiceNo: result.invoiceNo }) });
     assert.equal(lifecycle.status, 503);
   }
@@ -495,7 +499,7 @@ test('2C2P checkout and callback accept bounded JSON only and reject ambiguous e
     ['/payments/2c2p/checkout', '{"requestId":"syntheticrequest00001","requestId":"syntheticrequest00002"}', { 'content-type': 'application/json' }, 400]
   ]) {
     const response = await h.request(path, { method: 'POST', body,
-      headers: { Authorization: 'Bearer ' + h.token(uid), ...headers } });
+      headers: { Authorization: 'Bearer ' + h.token(uid), 'X-Firebase-AppCheck': h.appCheckToken(), ...headers } });
     assert.equal(response.status, expected, path);
     assert.equal(h.room().vip.entitlement(uid, h.now()).active, false);
   }
@@ -506,7 +510,8 @@ test('2C2P private mutation routes are unreachable from the public staging Worke
   for (const path of ['/_internal/2c2p/create', '/_internal/2c2p/notification',
     '/_internal/vip/apply-event']) {
     const response = await h.request(path, { method: 'POST',
-      headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + h.token(uid) },
+      headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + h.token(uid),
+        'X-Firebase-AppCheck': h.appCheckToken() },
       body: JSON.stringify({ uid, notification: event, event, fingerprint: 'a'.repeat(64) }) });
     assert.equal(response.status, 404);
   }
