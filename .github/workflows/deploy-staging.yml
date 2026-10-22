@@ -10,6 +10,8 @@ on:
       - 'scripts/rebuild/build-staging-client.cjs'
       - 'src/shared/staging.mjs'
       - 'src/worker/staging-boundary.mjs'
+      - 'src/worker/twoc2p-sandbox.mjs'
+      - 'scripts/rebuild/staging-options.cjs'
       - 'wrangler.staging.jsonc'
       - '.github/workflows/deploy-staging.yml'
   workflow_dispatch:
