@@ -1,5 +1,13 @@
 # Development plan
 
+D062 (2026-10-22): owner mobile evidence proves a disabled staging Firebase
+user cannot sign in again, but the video starts unauthenticated so it does not
+close active-session force-refresh revocation. Re-enable the test user, sign in
+and enter Free Server, disable it out-of-band from the other browser, then return
+to the active game to force foreground token refresh. PASS only if the active
+session fails closed and returns to menu. Re-enable the user after the test.
+Continue Gate 5/6 in parallel while this owner-only check is pending.
+
 D061 (2026-10-22): physical Android split-screen LOS evidence closes the
 last Gate 4 item: remote name visibility disappears behind a tree trunk and
 returns after line of sight is restored. With D057-D060, Gate 4

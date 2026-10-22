@@ -1,5 +1,26 @@
 # Release gate ledger
 
+## D062 disabled-user sign-in denial PASS; active-session revocation still open — 2026-10-22
+
+Physical mobile Firebase Console evidence shows a staging test user marked
+Disabled. A following Android Chrome staging capture attempts Google sign-in and
+does not establish an authenticated game session; the client remains on the
+unauthenticated staging menu.
+
+Disabled-user sign-in denial: **PASS**.
+
+This does not yet satisfy the active-session revocation criterion because the
+recording did not begin with that identity already authenticated in gameplay.
+Remaining Gate 3 live proof:
+1. re-enable the staging test user;
+2. sign in and enter Free Server;
+3. disable the same user out-of-band from Firebase Console;
+4. return to the still-active game so staging forces token refresh;
+5. verify fail-closed/return-to-menu behavior;
+6. re-enable the user after the test.
+
+Do not record or commit account identifiers, tokens, passwords or OTPs.
+
 ## D061 Gate 4 Multiplayer/Mobile PASS — 2026-10-22
 
 A ~25-second physical Android split-screen staging recording closes the final

@@ -1,5 +1,27 @@
 # Current development state
 
+## D062 — disabled-user live evidence (partial Gate 3) (2026-10-22)
+
+Owner mobile Firebase Console evidence shows a staging test user successfully
+disabled in Authentication > Users. A subsequent physical Android Chrome staging
+recording attempts Google sign-in with the disabled test identity and returns to
+the unauthenticated staging menu; the disabled identity does not establish a new
+authenticated game session.
+
+This is valid live evidence that the disabled staging user cannot sign in again.
+It does not yet prove the remaining Gate 3 requirement that an already-active
+session fails closed when Firebase is disabled out-of-band and the client forces
+an ID-token refresh. The submitted recording begins from an unauthenticated menu
+rather than an active gameplay session.
+
+Next minimal owner-mobile test: re-enable the same staging test user, sign it into
+staging and enter Free Server, disable that same test user from Firebase Console
+in the other browser, then return to the still-active game and trigger foreground
+refresh. The active client must fail closed/return to menu instead of continuing
+with stale authority. Re-enable the test user after capture. No account email,
+UID, token, password or OTP is recorded in this ledger. Gate 3 remains open.
+Overall NOT READY_FOR_FINAL_REVIEW.
+
 ## D062 — current-head reconciliation and incremental credential audit (2026-10-22)
 
 Starting commit f9786c433d1804cb8198ee2a7c9258cca2ff4c16; public repository and
