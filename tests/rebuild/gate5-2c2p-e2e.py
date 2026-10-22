@@ -56,6 +56,23 @@ def checkout(page):
       if (!user) return {ok:false, stage:'anonymous-auth'};
       if (firebase.appCheck) await firebase.appCheck().getToken(false);
       const token = await user.getIdToken(true);
+      const activeResponse = await fetch('/entitlements', {headers:{Authorization:'Bearer '+token}});
+      if (!activeResponse.ok) {
+        let lookupStatus=0, lookupMatched=false, lookupDisabled=null;
+        try {
+          const apiKey=firebase.app().options.apiKey;
+          const lookup=await fetch('https://identitytoolkit.googleapis.com/v1/accounts:lookup?key='+encodeURIComponent(apiKey), {
+            method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({idToken:token})
+          });
+          lookupStatus=lookup.status;
+          const data=await lookup.json().catch(() => ({}));
+          const users=Array.isArray(data?.users)?data.users:[];
+          lookupMatched=users.length===1 && users[0]?.localId===user.uid;
+          lookupDisabled=lookupMatched ? users[0]?.disabled===true : null;
+        } catch (_) {}
+        return {ok:false, stage:'worker-active-auth-rejected', status:activeResponse.status,
+          lookupStatus, lookupMatched, lookupDisabled};
+      }
       const response = await fetch('/payments/2c2p/checkout', {
         method:'POST', headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
         body:JSON.stringify({requestId})
@@ -186,6 +203,9 @@ def main():
             created = checkout(page)
             if not created.get("ok"):
                 report["checkoutHttpStatus"] = int(created.get("status") or 0)
+                report["firebaseLookupHttpStatus"] = int(created.get("lookupStatus") or 0)
+                report["firebaseLookupMatched"] = bool(created.get("lookupMatched"))
+                report["firebaseLookupDisabled"] = created.get("lookupDisabled")
                 report["errorStage"] = str(created.get("stage") or "checkout-failed")[:80]
                 raise RuntimeError(str(created.get("stage") or "checkout-failed"))
             invoice_no, hpp_url = created.get("invoiceNo"), created.get("webPaymentUrl")
@@ -215,7 +235,8 @@ def main():
     print(json.dumps({key: report.get(key) for key in (
         "complete", "environment", "checkoutCreated", "hppSubmitted", "otpSubmitted",
         "returnedToStaging", "backendStatus", "entitlementActive", "temporaryUserDeleted",
-        "checkoutHttpStatus", "errorStage")},
+        "checkoutHttpStatus", "firebaseLookupHttpStatus", "firebaseLookupMatched",
+        "firebaseLookupDisabled", "errorStage")},
         sort_keys=True))
     return 0 if report["complete"] else 1
 
