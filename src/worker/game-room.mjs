@@ -4,7 +4,7 @@ import { PAYMENT_CONFIG } from '../shared/catalog.mjs';
 import { WS_MESSAGE, PROTOCOL_VERSION } from '../shared/protocol.mjs';
 import { normalizePlayerName, normalizeZoneId, adjacentZoneIds, zonesAreAdjacent, zoneFromPosition, zoneIdsNearPosition } from './spatial.mjs';
 import { COINS, coinPosition, luckyBoxPosition, secureLuckyReward } from './world.mjs';
-import { verifyFirebaseIdToken } from './firebase-auth.mjs';
+import { verifyFirebaseActiveIdToken } from './firebase-auth.mjs';
 import { SessionStore, SESSION_TTL_MS } from './sessions.mjs';
 import { SECURITY, clearAuthDeadline, scheduleAuthDeadline } from './security.mjs';
 import { enqueueFrame, sessionMetadata, checkpointPlayer } from './room-security.mjs';
@@ -1060,7 +1060,7 @@ export class GameRoom {
       ws.serializeAttachment(p);
     }
     let verified;
-    try { verified=await verifyFirebaseIdToken(m.token,this.projectId); }
+    try { verified=await verifyFirebaseActiveIdToken(m.token,this.env); }
     catch (_) { this.send(ws,{type:WS_MESSAGE.AUTH_ERROR,message:'Firebase sign-in failed'}); ws.close(1008,'Invalid ID token'); return; }
     p=this.player(ws); // Another auth frame may have completed during certificate fetch.
     if (!p || p.revoked || p.sessionClosed || (typeof ws.readyState==='number' && ws.readyState!==1)) return;
