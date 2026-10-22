@@ -73,6 +73,52 @@ test('P2 real Firebase verifier rejects invalid signatures, expired tokens and i
   assert.ok(h.records.fetches.every(record => record.url === CERTS_URL));
 });
 
+test('P2 staging online Firebase user check rejects disabled revoked and missing users', async t => {
+  const firebaseEnv = {
+    APP_ENV: 'staging',
+    STAGING_WORKER_NAME: 'gpt-voxel-3d-staging-01',
+    STAGING_WORKER_ORIGIN: 'https://gpt-voxel-3d-staging-01.hjinffv5426.workers.dev',
+    FIREBASE_ONLINE_USER_CHECK: 'true',
+    FIREBASE_PUBLIC_CONFIG: JSON.stringify({
+      apiKey: 'AIza' + '0'.repeat(35),
+      projectId: 'rebuild-synthetic-project'
+    })
+  };
+  {
+    const h = createHarness({ env: firebaseEnv, firebaseUserState: 'active' });
+    t.after(() => h.close());
+    const uid = 'synthetic-online-active';
+    assert.equal((await h.runtime.verifyFirebaseActiveIdToken(
+      h.token(uid), h.env)).uid, uid);
+    assert.ok(h.records.fetches.some(record =>
+      record.url.startsWith('https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=')));
+  }
+  for (const mode of ['disabled', 'revoked', 'missing']) {
+    const h = createHarness({ env: firebaseEnv, firebaseUserState: mode });
+    t.after(() => h.close());
+    await assert.rejects(
+      h.runtime.verifyFirebaseActiveIdToken(h.token('synthetic-online-' + mode), h.env),
+      /Firebase (?:user is no longer active|token is revoked)/
+    );
+  }
+});
+
+test('P2 online Firebase user check stays off outside explicitly enabled staging', async t => {
+  const h = createHarness({ env: {
+    FIREBASE_ONLINE_USER_CHECK: 'false',
+    FIREBASE_PUBLIC_CONFIG: JSON.stringify({
+      apiKey: 'AIza' + '0'.repeat(35),
+      projectId: 'rebuild-synthetic-project'
+    })
+  }});
+  t.after(() => h.close());
+  const before = h.records.fetches.length;
+  const uid = 'synthetic-local-only';
+  assert.equal((await h.runtime.verifyFirebaseActiveIdToken(h.token(uid), h.env)).uid, uid);
+  const after = h.records.fetches.slice(before);
+  assert.ok(after.every(record => record.url === CERTS_URL));
+});
+
 test('P2 compatible protocols authenticate and incompatible protocols fail closed', async t => {
   const h = harness(t);
   for (const [zone, protocol] of [[undefined, 4], ['4,4', 6]]) {

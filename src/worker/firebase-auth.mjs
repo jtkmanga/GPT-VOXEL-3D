@@ -114,7 +114,8 @@ export async function verifyFirebaseActiveIdToken(token, env) {
   const response = await fetch('https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=' +
     encodeURIComponent(apiKey), {
       method: 'POST', redirect: 'error',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json',
+        'Referer': env.STAGING_WORKER_ORIGIN + '/' },
       body: JSON.stringify({ idToken: token }),
       signal: AbortSignal.timeout(5_000)
     });
