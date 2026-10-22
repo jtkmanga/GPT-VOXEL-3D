@@ -20,6 +20,7 @@ def page_metric(page):
         welcomed: !!s.welcomed,
         welcomeMs: Number.isFinite(s.welcomeMs) ? s.welcomeMs : null,
         ackLatencies: Array.isArray(s.ackLatencies) ? s.ackLatencies.slice() : [],
+        timerDrifts: Array.isArray(s.timerDrifts) ? s.timerDrifts.slice() : [],
         movementAcks: Number(s.movementAcks || 0),
         movementRejected: Number(s.movementRejected || 0),
         authErrors: Number(s.authErrors || 0),
@@ -28,9 +29,29 @@ def page_metric(page):
         unexpectedCloses: Number(s.unexpectedCloses || 0),
         closeCode: Number(s.closeCode || 0),
         playerId: typeof s.playerId === 'string' ? s.playerId : '',
+        pendingAcks: s.pending && typeof s.pending === 'object' ? Object.keys(s.pending).length : 0,
+        bufferedAmountMax: Number(s.bufferedAmountMax || 0),
         readyState: s.ws ? s.ws.readyState : -1
       };
     }""")
+
+def session_diagnostics(metrics):
+    diagnostics = []
+    for index, metric in enumerate(metrics):
+        acks = metric.get("ackLatencies", [])
+        drifts = metric.get("timerDrifts", [])
+        diagnostics.append({
+          "sessionIndex": index,
+          "ackCount": len(acks),
+          "ackP50Ms": percentile(acks, .50),
+          "ackP95Ms": percentile(acks, .95),
+          "ackMaxMs": round(max(acks), 3) if acks else None,
+          "timerDriftP95Ms": percentile(drifts, .95),
+          "timerDriftMaxMs": round(max(drifts), 3) if drifts else None,
+          "pendingAcks": int(metric.get("pendingAcks") or 0),
+          "bufferedAmountMax": int(metric.get("bufferedAmountMax") or 0)
+        })
+    return diagnostics
 
 def stop_snapshot(metrics, target):
     acks = [v for m in metrics for v in m["ackLatencies"]]
@@ -50,7 +71,8 @@ def stop_snapshot(metrics, target):
       "serverErrors": sum(m["serverErrors"] for m in metrics),
       "clientErrors": sum(m["clientErrors"] for m in metrics),
       "movementRejected": sum(m["movementRejected"] for m in metrics),
-      "closeCodes": closes
+      "closeCodes": closes,
+      "sessionDiagnostics": session_diagnostics(metrics)
     }
 
 def start_identity_and_socket(page, index, run_id):
@@ -96,6 +118,7 @@ def start_identity_and_socket(page, index, run_id):
         const state = window.__gate6Canary = {
           mode, ws:null, welcomed:false, welcomeMs:null, startedAt:performance.now(),
           seq:0, pending:{}, ackLatencies:[], movementAcks:0, movementRejected:0,
+          timerDrifts:[], lastTickAt:null, bufferedAmountMax:0,
           authErrors:0, serverErrors:0, clientErrors:0, unexpectedCloses:0,
           closeCode:0, playerId:'', stopRequested:false, timer:null
         };
@@ -126,13 +149,17 @@ def start_identity_and_socket(page, index, run_id):
               const input = {x:0.12,z:0,jump:false};
               state.timer = setInterval(() => {
                 if (!state.ws || state.ws.readyState !== WebSocket.OPEN) return;
+                const tickAt = performance.now();
+                if (state.lastTickAt !== null) state.timerDrifts.push(Math.max(0, tickAt - state.lastTickAt - 1000));
+                state.lastTickAt = tickAt;
                 const seq = state.seq++;
-                state.pending[String(seq)] = performance.now();
+                state.pending[String(seq)] = tickAt;
                 try {
                   state.ws.send(JSON.stringify({
                     type:'move', input, seq,
                     frames:[{input:{...input},delta:0.05}]
                   }));
+                  state.bufferedAmountMax = Math.max(state.bufferedAmountMax, Number(state.ws.bufferedAmount || 0));
                 } catch (_) { state.clientErrors++; }
               }, 1000);
               clearTimeout(timeout);
@@ -197,7 +224,7 @@ def main():
     out.parent.mkdir(parents=True, exist_ok=True)
     debug_token = os.environ.get("FIREBASE_APPCHECK_DEBUG_TOKEN", "").strip()
     report = {
-      "formatVersion": 1,
+      "formatVersion": 2,
       "mode": "live-staging-authorized-browser-canary",
       "origin": ORIGIN,
       "levels": [],
@@ -293,6 +320,7 @@ def main():
               "clientErrors": sum(m["clientErrors"] for m in metrics),
               "movementRejected": rejected,
               "uniquePlayerIds": len(set(player_ids)),
+              "sessionDiagnostics": session_diagnostics(metrics),
               "passed": False
             }
             level["passed"] = (
