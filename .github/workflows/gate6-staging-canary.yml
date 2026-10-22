@@ -1,0 +1,48 @@
+name: Gate 6 Staging Canary
+
+on:
+  push:
+    branches: [development/voxel-continuous]
+    paths:
+      - '.github/workflows/gate6-staging-canary.yml'
+      - 'tests/rebuild/gate6-staging-canary.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gate6-staging-canary
+  cancel-in-progress: false
+
+jobs:
+  canary:
+    if: github.ref == 'refs/heads/development/voxel-continuous'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Playwright
+        run: |
+          python -m pip install playwright==1.62.0
+          python -m playwright install --with-deps chromium
+      - name: Run owner-approved bounded live staging canary
+        run: |
+          python tests/rebuild/gate6-staging-canary.py \
+            --levels=2,5,10 \
+            --seconds=60 \
+            --out=work/gate6/canary.json
+      - name: Upload sanitized canary evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gate6-staging-canary-evidence
+          path: work/gate6/canary.json
+          if-no-files-found: error
+          retention-days: 7
