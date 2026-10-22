@@ -436,7 +436,8 @@ test('2C2P identical concurrent callbacks and restart retries cannot duplicate o
 test('2C2P browser completion cannot grant entitlement and lifecycle operations stay blocked', async t => {
   const { h, calls, result } = await prepared(t);
   const response = await h.request('/payments/2c2p/return?invoiceNo=' + result.invoiceNo + '&respCode=0000&paid=true');
-  assert.equal(response.status, 200);
+  assert.equal(response.status, 303);
+  assert.equal(response.headers.get('location'), ORIGIN + '/?payment=sandbox-return');
   assert.equal(h.room().vip.entitlement('sandbox-payer', h.now()).active, false);
   for (const operation of ['renewal', 'cancel', 'refund', 'resubscribe']) {
     const lifecycle = await h.request('/payments/2c2p/lifecycle', { method: 'POST',
