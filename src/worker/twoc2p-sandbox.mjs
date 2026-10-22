@@ -1,4 +1,4 @@
-import { verifyFirebaseIdToken } from './firebase-auth.mjs';
+import { verifyFirebaseActiveIdToken } from './firebase-auth.mjs';
 import { sign2c2pJwt, verify2c2pJwt, parse2c2pJson, Twoc2pJwtError } from './twoc2p-jwt.mjs';
 import { Twoc2pSandboxStore } from './twoc2p-store.mjs';
 import { paymentEventFingerprint, validVipUid } from './payment-events.mjs';
@@ -88,7 +88,7 @@ async function authenticatedIdentity(request, env) {
   const authorization = request.headers.get('Authorization') || '';
   if (!/^Bearer [A-Za-z0-9._-]+$/.test(authorization)) fail('Staging sign-in required', 401);
   try {
-    const identity = await verifyFirebaseIdToken(authorization.slice(7), env.FIREBASE_PROJECT_ID);
+    const identity = await verifyFirebaseActiveIdToken(authorization.slice(7), env);
     if (!validVipUid(identity.uid)) fail('Staging sign-in required', 401);
     return identity;
   } catch (_) { fail('Staging sign-in required', 401); }
