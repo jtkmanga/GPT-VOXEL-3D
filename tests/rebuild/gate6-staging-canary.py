@@ -85,7 +85,7 @@ def start_identity_and_socket(page, index, run_id):
         if (firebase.appCheck) {
           try {
             const ac = firebase.appCheck();
-            if (ac && typeof ac.getToken === 'function') window.__gate6AppCheckToken = (await ac.getToken(false)).token;
+            if (ac && typeof ac.getToken === 'function') await ac.getToken(false);
           } catch (e) {
             return {ok:false, stage:'app-check', code:safeCode(e)};
           }
@@ -131,7 +131,7 @@ def start_identity_and_socket(page, index, run_id):
 
           ws.onopen = () => {
             try {
-              ws.send(JSON.stringify({type:'auth', token, appCheckToken:window.__gate6AppCheckToken, protocol:6, name:'Canary' + index}));
+              ws.send(JSON.stringify({type:'auth', token, protocol:6, name:'Canary' + index}));
             } catch (_) {
               state.clientErrors++;
             }

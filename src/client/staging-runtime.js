@@ -381,13 +381,11 @@ async function stagingResumeForeground() {
             return secureResumeDisconnectedSocket(secureCurrentZoneId, uid, serverId);
         }
         try {
-            const [token, appCheckToken] = await Promise.all([
-                user.getIdToken(true), stagingGetAppCheckToken(false)
-            ]);
+            const token = await user.getIdToken(true);
             if (auth.currentUser !== user || auth.currentUser?.uid !== uid ||
                 !secureConnectionIsCurrent(epoch) || secureGameSocket !== ws || ws.readyState !== WebSocket.OPEN ||
                 state.selectedServerId !== serverId) return false;
-            ws.send(JSON.stringify({ type: protocol.WS_MESSAGE.AUTH, token, appCheckToken,
+            ws.send(JSON.stringify({ type: protocol.WS_MESSAGE.AUTH, token,
                 protocol: serverId === 'vip1' ? protocol.PROTOCOL_VERSION.LEGACY_ROOM : protocol.PROTOCOL_VERSION.ZONE_ROOM }));
             return true;
         } catch (_) {

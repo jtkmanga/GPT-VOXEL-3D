@@ -311,8 +311,6 @@
                 }
                 try {
                     const token = await auth.currentUser.getIdToken(true);
-                    const appCheckToken = typeof stagingGetAppCheckToken === 'function'
-                        ? await stagingGetAppCheckToken(false) : null;
                     if (ws !== secureGameSocket || ws.readyState !== WebSocket.OPEN) return;
                     if (auth.currentUser?.uid !== uid) {
                         secureCloseSocket(ws, 1008, 'Account changed');
@@ -322,7 +320,6 @@
                     ws.send(JSON.stringify({
                         type: protocol.WS_MESSAGE.AUTH,
                         token,
-                        ...(appCheckToken ? { appCheckToken } : {}),
                         protocol: serverId === 'vip1' ? protocol.PROTOCOL_VERSION.LEGACY_ROOM : protocol.PROTOCOL_VERSION.ZONE_ROOM
                     }));
                     // The server's auth_refreshed response supplies the next expiry.
@@ -683,19 +680,15 @@
                     reject(new Error(message));
                 };
 
-                ws.onopen = async () => {
+                ws.onopen = () => {
                     if (settled || ws.readyState !== WebSocket.OPEN) return;
                     if (!connectionCurrent()) {
                         failBeforeWelcome('บัญชีเปลี่ยนระหว่างเชื่อมต่อ Game Server');
                         return;
                     }
-                    const appCheckToken = typeof stagingGetAppCheckToken === 'function'
-                        ? await stagingGetAppCheckToken(false).catch(() => null) : null;
-                    if (!connectionCurrent() || settled || ws.readyState !== WebSocket.OPEN) return;
                     const authMessage = {
                         type: protocol.WS_MESSAGE.AUTH,
                         token,
-                        ...(appCheckToken ? { appCheckToken } : {}),
                         protocol: serverId === 'vip1' ? protocol.PROTOCOL_VERSION.LEGACY_ROOM : protocol.PROTOCOL_VERSION.ZONE_ROOM,
                         name: String(state.playerName || 'Player').trim().slice(0, 12)
                     };
