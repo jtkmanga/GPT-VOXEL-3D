@@ -42,7 +42,7 @@ def start_identity_and_socket(page, index, run_id):
         if (firebase.appCheck) {
           try {
             const ac = firebase.appCheck();
-            if (ac && typeof ac.getToken === 'function') await ac.getToken(true);
+            if (ac && typeof ac.getToken === 'function') await ac.getToken(false);
           } catch (e) {
             return {ok:false, stage:'app-check', code:safeCode(e)};
           }
