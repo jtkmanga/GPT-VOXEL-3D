@@ -459,6 +459,17 @@ test('2C2P backend activation gate rejects signed callbacks without mutating pay
   assert.equal(h.room().vip.entitlement(uid, h.now()).active, true);
 });
 
+test('2C2P staging E2E test mode can discover only a provider-signed initial recurring sequence', async t => {
+  const { h, event, uid } = await prepared(t, 'sandbox-payer', {
+    TWOC2P_SANDBOX_E2E_VERIFIED: 'false',
+    TWOC2P_SANDBOX_E2E_TEST_MODE: 'true',
+    TWOC2P_SANDBOX_INITIAL_SEQUENCE_NO: undefined
+  });
+  const signedProviderSequence = { ...event, recurringSequenceNo: '7' };
+  assert.equal((await backend(h, signedProviderSequence)).status, 200);
+  assert.equal(h.room().vip.entitlement(uid, h.now()).active, true);
+});
+
 test('2C2P confirmed initial recurring sequence cannot be inferred from arbitrary provider events', async t => {
   const { h, event, uid } = await prepared(t);
   for (const sequence of ['0', '2', '001', '9999999999']) {
