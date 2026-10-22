@@ -341,8 +341,13 @@
             secureReconnectInProgress = true;
             const generation = ++secureReconnectGeneration;
             try {
-                for (let attempt = 0; attempt < 3; attempt++) {
-                    await secureClientDelay(250 * (2 ** attempt));
+                // Mobile radios commonly need several seconds to reattach after a
+                // brief network toggle. Keep retrying only while the original
+                // short-lived resume capability remains valid; never fall back to
+                // a fresh session or bypass a policy rejection.
+                const reconnectDelays = [250, 500, 1000, 2000, 4000, 4000];
+                for (let attempt = 0; attempt < reconnectDelays.length; attempt++) {
+                    await secureClientDelay(reconnectDelays[attempt]);
                     if (generation !== secureReconnectGeneration || !state.isPlaying ||
                         secureHandoffInProgress || secureGameSocket || auth.currentUser?.uid !== uid ||
                         (state.selectedServerId || 'free1') !== serverId ||

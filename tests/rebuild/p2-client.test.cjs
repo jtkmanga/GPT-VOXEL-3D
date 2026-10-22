@@ -504,6 +504,34 @@ test('P2 client reconnect uses a retained resume ticket and policy rejection nev
   assert.equal(f.timers.size, 0);
 });
 
+test('D059 temporary mobile network loss can recover after the original three-attempt window', async () => {
+  const f = await fixture();
+  const original = await f.connect();
+  const ticket = f.c.secureGetResumeTicket('4,4').resumeToken;
+  original.close(1006, 'Synthetic mobile radio loss');
+  for (const delay of [250, 500, 1000, 2000]) {
+    const created = f.nextSocket();
+    await f.advance(delay);
+    const socket = await created;
+    socket.open();
+    assert.equal(socket.sent[0].resumeToken, ticket);
+    socket.close(1006, 'Synthetic radio still offline');
+    await flush();
+  }
+  const created = f.nextSocket();
+  await f.advance(4000);
+  const resumed = await created;
+  resumed.open();
+  assert.equal(resumed.sent[0].resumeToken, ticket);
+  resumed.receive(f.welcome('4,4', f.session({ resumeToken: 'synthetic-recovered-ticket' })));
+  await flush();
+  assert.equal(f.evaluate('secureGameSocket'), resumed);
+  assert.equal(f.evaluate('secureGameReady'), true);
+  assert.equal(f.evaluate('state.isPlaying'), true);
+  assert.equal(f.c.secureGetResumeTicket('4,4').resumeToken, 'synthetic-recovered-ticket');
+  assert.equal(f.events.filter(event => event.kind === 'alert').length, 0);
+});
+
 test('D029 menu exit during reconnect backoff cannot reopen a socket or revive gameplay', async () => {
   const f = await fixture();
   const original = await f.connect();
@@ -554,7 +582,7 @@ test('D031 exhausted reconnect attempts return to menu without fresh-session fal
   const ticket = f.c.secureGetResumeTicket('4,4').resumeToken;
   original.close(1006, 'Synthetic network loss');
   const failed = [];
-  for (const delay of [250, 500, 1000]) {
+  for (const delay of [250, 500, 1000, 2000, 4000, 4000]) {
     const created = f.nextSocket();
     await f.advance(delay);
     const socket = await created;
@@ -581,7 +609,7 @@ test('D031 exhausted reconnect attempts return to menu without fresh-session fal
   await f.advance(120_000);
   assert.equal(f.evaluate('state.isPlaying'), false);
   assert.equal(f.evaluate('secureGameSocket'), null);
-  assert.equal(f.sockets.length, 4, 'three failed retries must not start a fresh session');
+  assert.equal(f.sockets.length, 7, 'six failed retries must not start a fresh session');
   assert.equal(f.timers.size, 0);
 });
 
