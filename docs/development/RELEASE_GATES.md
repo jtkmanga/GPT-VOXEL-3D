@@ -1,5 +1,26 @@
 # Release gate ledger
 
+## D065 Gate 6 cost blocker cleared; canary approval pending — 2026-10-22
+
+Owner mobile Cloudflare Billing evidence shows:
+- Workers Free: Active;
+- Workers Paid: available upgrade, not subscribed;
+- no payment method on file;
+- current Billable Usage has no Workers/Durable Objects paid usage line.
+
+Cloudflare's current Durable Objects pricing documentation states that Durable
+Objects are available on Workers Free (SQLite backend) and that when a Free-plan
+limit is exceeded, further operations of that type fail rather than creating
+paid overage.
+
+Therefore the previous Gate 6 zero-cost uncertainty is resolved. The remaining
+prerequisite is explicit owner approval for the already-defined staging canary:
+2 -> 5 -> 10 authorized WebSocket sessions, 60 seconds per step, with stop
+conditions for production routing, authority/state violations, >1% errors or
+unexpected closes, or movement-ack p95 > 500 ms.
+
+**Gate 6: READY FOR CANARY; owner approval pending.**
+
 ## D064 Gate 5/6 live prerequisite check — 2026-10-22
 
 Current authorized read-only Cloudflare settings for

@@ -1,5 +1,12 @@
 # Development plan
 
+D065 (2026-10-22): owner Cloudflare Billing evidence proves Workers Free is
+active, Workers Paid is not subscribed, and no payment method is on file.
+Cloudflare Free-plan Durable Object limits fail rather than bill overage, so the
+Gate 6 unexpected-cost blocker is cleared. Await only explicit owner approval
+for the recorded 2->5->10 staging canary; do not expand beyond that canary
+without new approval/evidence.
+
 D064 (2026-10-22): read-only Cloudflare settings confirm current staging still
 uses provider-neutral payment mode and has no `TWOC2P_SANDBOX_*` activation or
 merchant bindings, so Gate 5 remains blocked on a dedicated sandbox merchant,

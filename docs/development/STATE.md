@@ -1,5 +1,24 @@
 # Current development state
 
+## D065 — Workers Free/no-payment-method evidence clears Gate 6 cost blocker (2026-10-22)
+
+Owner mobile Cloudflare Billing screenshots show Workers Free as the active
+subscription, Workers Paid only as an available upgrade, and no payment method
+on file. The Billable Usage page for the current month shows no Workers/Durable
+Objects billable line item and displays only unrelated Argo/Spectrum usage at
+zero.
+
+Current Cloudflare documentation confirms Durable Objects are available on
+Workers Free with SQLite storage, and that exceeding a Free-plan limit causes
+further operations of that type to fail rather than creating paid overage. This
+is sufficient to clear the release-gate blocker that a bounded staging canary
+might create an unexpected paid charge.
+
+Gate 6 is now blocked only on explicit owner approval to run the predeclared
+staging-only canary (2 -> 5 -> 10 authorized WebSocket sessions, 60 seconds per
+step, with existing stop conditions). Passing the canary remains bounded
+evidence only and is not a 10,000-CCU claim. Production/main remain untouched.
+
 ## D064 — Gate 5/6 live prerequisites assessed; no-cost load remains blocked (2026-10-22)
 
 Starting commit 99d8c2ec9db4f3cfb16e9fe9f6fe2a4c54eed430; public repository and
