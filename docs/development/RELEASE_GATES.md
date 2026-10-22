@@ -1,5 +1,25 @@
 # Release gate ledger
 
+## D060 owner-approved network-loss/manual-reentry PASS — 2026-10-22
+
+Post-Deploy-Staging-#14 physical Android split-screen evidence reproduces a real
+network interruption. The affected game session fails closed, displays the Game
+Server disconnected message, and returns to server selection instead of
+continuing with stale game authority.
+
+The owner explicitly accepts manual server re-entry after network loss; automatic
+reconnect is not a release requirement. D058 separately proves clean exit and
+re-entry to Free Server while the other live session remains active and shared
+state remains coherent.
+
+For Gate 4, network recovery is therefore PASS with the owner-approved policy:
+**transport loss -> fail closed -> manual server re-entry**. Do not reopen this
+sub-gate merely because automatic reconnect is absent.
+
+[P8 Browser Gate #9](https://github.com/jtkmanga/GPT-VOXEL-3D/actions/runs/39784840161)
+also completed successfully on reconnect source e29e724. Explicit LOS occlusion
+behind a wall/tree remains the final open Gate 4 live-evidence item.
+
 ## D059 remote movement PASS; live reconnect retest pending — 2026-10-22
 
 A ~127-second physical Android split-screen recording provides explicit

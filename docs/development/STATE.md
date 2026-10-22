@@ -1,5 +1,30 @@
 # Current development state
 
+## D060 — owner-approved network-loss recovery policy PASS (2026-10-22)
+
+A post-Deploy-Staging-#14 physical Android split-screen recording again exercised
+a real mobile-network interruption while staging gameplay was active. The game
+failed closed with the explicit Game Server disconnected alert and returned the
+affected client to server selection rather than continuing with stale authority.
+
+The owner explicitly accepts this product behavior: automatic reconnect is not a
+release requirement; after network loss the player may be required to enter the
+server again manually. D058 already provides physical evidence that a session can
+cleanly exit to server selection and re-enter Free Server while the peer session
+remains live and authoritative state remains coherent.
+
+Therefore the Gate 4 network-recovery criterion is defined and satisfied as:
+fail closed on transport loss, do not preserve stale authority, and allow clean
+manual re-entry. Network-loss recovery: PASS under the owner-approved UX. Do not
+spend further release-gate work attempting automatic reconnect unless this product
+requirement changes.
+
+The longer bounded resume retry introduced in e29e724 remains defense-in-depth and
+does not change the accepted fail-closed/manual-reentry requirement. P8 Browser
+Gate #9 also completed successfully on that reconnect source. Gate 4 remaining
+live evidence is explicit LOS occlusion behind a wall/tree. Overall
+NOT READY_FOR_FINAL_REVIEW.
+
 ## D059 — remote-motion evidence + brief-network-loss reconnect fix (2026-10-22)
 
 Owner supplied a ~127-second physical Android split-screen recording with both

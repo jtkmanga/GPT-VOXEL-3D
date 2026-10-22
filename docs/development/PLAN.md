@@ -1,5 +1,13 @@
 # Development plan
 
+D060 (2026-10-22): owner accepts fail-closed/manual re-entry after mobile
+network loss; automatic reconnect is not required. Post-Deploy-#14 physical
+evidence shows transport loss returns the affected session safely to server
+selection, and D058 already proves clean Free Server re-entry with peer state
+remaining coherent. Mark Gate 4 network recovery PASS under this UX and stop
+chasing auto-reconnect. P8 #9 also passed. Gate 4 remaining item: explicit
+wall/tree LOS occlusion.
+
 D059 (2026-10-22): physical split-screen video closes explicit remote-motion
 observation but reproduces a real mobile reconnect defect: three retries ended
 after ~1.75s, before the radio recovered, forcing manual re-entry. Fix e29e724
