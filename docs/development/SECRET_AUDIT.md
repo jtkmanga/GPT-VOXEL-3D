@@ -1,5 +1,16 @@
 # S001: public repository credential audit
 
+## D072 reviewed incremental history — 2026-10-23
+
+Reviewed 8a333eb..1ace8fd: 18 development commits covering staging-only
+Firebase/App Check diagnostics, 2C2P sandbox harness updates, provider redirect
+handling, and hosted-payment diagnostics. The only scanner candidates were
+synthetic test fixtures or identifier-suffix false positives; no private/admin
+credential, debug-token value, payment secret, or account token was introduced.
+Gate 7 baseline advances to this reviewed source. Credential-key matching was
+also tightened to whole identifiers so names such as paymentToken are not
+misclassified while exact credential assignments remain fail-closed.
+
 ## D071 reviewed incremental history — 2026-10-23
 
 Reviewed 77772db..8a333eb: 10 commits covering staging-only
