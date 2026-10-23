@@ -32,7 +32,7 @@ jobs:
       - name: Install Playwright Chromium
         run: |
           python -m pip install playwright==1.62.0
-          python -m playwright install --with-deps chromium
+          python -m playwright install chromium
       - name: Run exactly one owner-approved simulated sandbox transaction
         env:
           FIREBASE_APPCHECK_DEBUG_TOKEN: ${{ secrets.FIREBASE_APPCHECK_DEBUG_TOKEN }}
