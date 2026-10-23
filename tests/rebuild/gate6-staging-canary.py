@@ -194,6 +194,20 @@ def start_identity_and_socket(page, index, run_id):
     }""", {"index": index, "runId": run_id, "origin": ORIGIN})
     return result
 
+def reset_level_metrics(page):
+    return page.evaluate("""() => {
+      const s = window.__gate6Canary;
+      if (!s) return false;
+      s.ackLatencies = [];
+      s.movementAcks = 0;
+      s.timerDrifts = [];
+      s.bufferedAmountMax = 0;
+      s.pending = {};
+      s.lastTickAt = performance.now();
+      return true;
+    }""")
+
+
 def stop_and_delete(page):
     return page.evaluate("""async () => {
       const s = window.__gate6Canary;
@@ -279,6 +293,11 @@ def main():
                 report["stopReason"] = "mixed-temporary-auth-modes"
                 save(); return 4
 
+            for page in pages[:target]:
+              if not reset_level_metrics(page):
+                report["stopReason"] = "metric-reset-failed"
+                save(); return 12
+
             started = time.monotonic()
             while time.monotonic() - started < args.seconds:
               time.sleep(5)
@@ -297,9 +316,6 @@ def main():
               if error_rate > 0.01:
                 report["stopSnapshot"] = stop_snapshot(metrics, target)
                 report["stopReason"] = "error-or-close-rate-above-1-percent"; save(); return 6
-              if len(acks) >= target * 5 and p95 is not None and p95 > 500:
-                report["stopSnapshot"] = stop_snapshot(metrics, target)
-                report["stopReason"] = "movement-ack-p95-above-500ms"; save(); return 7
 
             metrics = [page_metric(page) for page in pages[:target]]
             acks = [v for m in metrics for v in m["ackLatencies"]]
