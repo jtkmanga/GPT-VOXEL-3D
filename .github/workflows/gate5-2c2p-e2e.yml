@@ -1,4 +1,5 @@
 name: Gate 5 2C2P Sandbox E2E
+# Owner-approved staging-only one-shot sandbox transaction trigger.
 
 on:
   workflow_dispatch:
