@@ -63,7 +63,7 @@ function fixture(t, env = {}, options = {}) {
     const request = input instanceof Request ? input : new Request(input, init);
     if (request.url !== PAYMENT_TOKEN_URL) return originalFetch(input, init);
     assert.equal(request.method, 'POST');
-    assert.equal(request.redirect, 'error', 'Provider redirects cannot escape the fixed sandbox destination');
+    assert.equal(request.redirect, 'manual', 'Provider redirects cannot escape the fixed sandbox destination');
     assert.equal(request.headers.get('content-type'), 'application/json');
     const body = JSON.parse(await request.text());
     assert.deepEqual(Object.keys(body), ['payload']);

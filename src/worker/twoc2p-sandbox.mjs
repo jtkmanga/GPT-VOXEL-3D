@@ -242,7 +242,7 @@ export async function handle2c2pSandbox(request, env) {
       requireCurrentIdentity(identity);
       const signed = await sign2c2pJwt(buildSandboxPaymentTokenRequest(checkout,config.merchantID),config.secret);
       requireCurrentIdentity(identity);
-      const response = await fetch(TWOC2P_SANDBOX.api,{method:'POST',redirect:'error',
+      const response = await fetch(TWOC2P_SANDBOX.api,{method:'POST',redirect:'manual',
         headers:{'Content-Type':'application/json'},body:JSON.stringify({payload:signed}),
         signal:AbortSignal.timeout(10_000)});
       if (!response.ok) fail('Sandbox payment token request failed',502);
