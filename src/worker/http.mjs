@@ -311,10 +311,13 @@ export async function handleGetEntitlements(request, env) {
       env.TWOC2P_SANDBOX_E2E_TEST_MODE === 'true' &&
       request.headers.get('X-Voxel-Staging-Diagnostic') === 'gate5-auth-stage-v1' &&
       ['app-check', 'active-user'].includes(error?.authStage) ? error.authStage : undefined;
+    const diagnosticReason = diagnostic === 'active-user' &&
+      /^lookup-http-(?:4\d\d|5\d\d)$/.test(error?.authReason) ? error.authReason : undefined;
     return jsonResponse(request, env, {
       ok: false,
       error: 'Invalid Firebase token',
-      ...(diagnostic ? { diagnosticStage: diagnostic } : {})
+      ...(diagnostic ? { diagnosticStage: diagnostic } : {}),
+      ...(diagnosticReason ? { diagnosticReason } : {})
     }, 401);
   }
 

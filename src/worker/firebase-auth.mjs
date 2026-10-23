@@ -125,7 +125,11 @@ export async function verifyFirebaseActiveIdToken(token, env, appCheckToken) {
       body: JSON.stringify({ idToken: token }),
       signal: AbortSignal.timeout(5_000)
     });
-  if (!response.ok) throw Error('Firebase user is no longer active');
+  if (!response.ok) {
+    const error = Error('Firebase user is no longer active');
+    error.firebaseLookupStatus = response.status;
+    throw error;
+  }
   const data = await response.json();
   const users = Array.isArray(data?.users) ? data.users : [];
   if (users.length !== 1 || users[0]?.localId !== identity.uid || users[0]?.disabled === true)
@@ -218,9 +222,12 @@ export async function verifyFirebaseRequestTokens(idToken, appCheckToken, env) {
     throw error;
   }
   try { return await verifyFirebaseActiveIdToken(idToken, env, appCheckToken); }
-  catch (_) {
+  catch (cause) {
     const error = Error('Staging Firebase request rejected');
     error.authStage = 'active-user';
+    if (Number.isInteger(cause?.firebaseLookupStatus) &&
+        cause.firebaseLookupStatus >= 400 && cause.firebaseLookupStatus <= 599)
+      error.authReason = `lookup-http-${cause.firebaseLookupStatus}`;
     throw error;
   }
 }

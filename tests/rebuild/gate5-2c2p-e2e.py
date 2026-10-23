@@ -116,7 +116,9 @@ def checkout(page):
         return {ok:false, stage:'worker-active-auth-rejected', status:activeResponse.status,
           lookupStatus, lookupMatched, lookupDisabled, appCheckDiagnostic,
           workerAuthStage:['app-check','active-user'].includes(activeBody?.diagnosticStage)
-            ? activeBody.diagnosticStage : null};
+            ? activeBody.diagnosticStage : null,
+          workerAuthReason:/^lookup-http-(?:4\d\d|5\d\d)$/.test(activeBody?.diagnosticReason||'')
+            ? activeBody.diagnosticReason : null};
       }
       const response = await fetch('/payments/2c2p/checkout', {
         method:'POST', headers:{Authorization:'Bearer '+token,'X-Firebase-AppCheck':appCheckToken,'Content-Type':'application/json'},
@@ -254,6 +256,7 @@ def main():
                 report["firebaseLookupMatched"] = bool(created.get("lookupMatched"))
                 report["firebaseLookupDisabled"] = created.get("lookupDisabled")
                 report["workerAuthStage"] = created.get("workerAuthStage")
+                report["workerAuthReason"] = created.get("workerAuthReason")
                 diagnostic = created.get("appCheckDiagnostic") or {}
                 report["appCheckDiagnostic"] = {
                     key: (int(value) if key == "jwksStatus" else bool(value))
