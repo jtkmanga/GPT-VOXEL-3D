@@ -144,29 +144,47 @@ def checkout(page):
 
 
 def submit_hpp(page, card, cvv, otp):
-    page.wait_for_timeout(1500)
     fields = None
-    for frame in page.frames:
-        card_input = first_visible(frame, [
-            "input[autocomplete='cc-number']", "input[name*='card' i]", "input[id*='card' i]",
-            "input[placeholder*='Credit Card Number' i]", "input[placeholder*='card number' i]",
-            "input[placeholder*='0000-0000' i]"])
-        expiry_input = first_visible(frame, [
-            "input[autocomplete='cc-exp']", "input[name*='expir' i]", "input[id*='expir' i]",
-            "input[placeholder*='MM/YY' i]", "input[placeholder*='MM / YY' i]"])
-        month_input = first_visible(frame, [
-            "select[autocomplete='cc-exp-month']", "input[autocomplete='cc-exp-month']",
-            "select[name*='month' i]", "input[placeholder='MM']", "input[placeholder*='month' i]"])
-        year_input = first_visible(frame, [
-            "select[autocomplete='cc-exp-year']", "input[autocomplete='cc-exp-year']",
-            "select[name*='year' i]", "input[placeholder='YYYY']", "input[placeholder*='year' i]"])
-        cvv_input = first_visible(frame, [
-            "input[autocomplete='cc-csc']", "input[name*='cvv' i]", "input[name*='cvc' i]",
-            "input[id*='cvv' i]", "input[placeholder*='CVV' i]", "input[placeholder*='CVC' i]",
-            "input[type=password]"])
-        if card_input and cvv_input and (expiry_input or (month_input and year_input)):
-            fields = (frame, card_input, expiry_input, month_input, year_input, cvv_input)
+    channel_selected = False
+    deadline = time.monotonic() + 30
+    while fields is None and time.monotonic() < deadline:
+        for frame in page.frames:
+            card_input = first_visible(frame, [
+                "input[autocomplete='cc-number']", "input[name*='card' i]", "input[id*='card' i]",
+                "input[placeholder*='Credit Card Number' i]", "input[placeholder*='card number' i]",
+                "input[placeholder*='0000-0000' i]"])
+            expiry_input = first_visible(frame, [
+                "input[autocomplete='cc-exp']", "input[name*='expir' i]", "input[id*='expir' i]",
+                "input[placeholder*='MM/YY' i]", "input[placeholder*='MM / YY' i]"])
+            month_input = first_visible(frame, [
+                "select[autocomplete='cc-exp-month']", "input[autocomplete='cc-exp-month']",
+                "select[name*='month' i]", "input[placeholder='MM']", "input[placeholder*='month' i]"])
+            year_input = first_visible(frame, [
+                "select[autocomplete='cc-exp-year']", "input[autocomplete='cc-exp-year']",
+                "select[name*='year' i]", "input[placeholder='YYYY']", "input[placeholder*='year' i]"])
+            cvv_input = first_visible(frame, [
+                "input[autocomplete='cc-csc']", "input[name*='cvv' i]", "input[name*='cvc' i]",
+                "input[id*='cvv' i]", "input[placeholder*='CVV' i]", "input[placeholder*='CVC' i]",
+                "input[type=password]"])
+            if card_input and cvv_input and (expiry_input or (month_input and year_input)):
+                fields = (frame, card_input, expiry_input, month_input, year_input, cvv_input)
+                break
+        if fields is not None:
             break
+        if not channel_selected:
+            for frame in page.frames:
+                options = frame.get_by_text(re.compile(
+                    r"credit\s*(?:/|and)?\s*debit\s*card|credit\s*card|บัตรเครดิต|visa|mastercard",
+                    re.IGNORECASE))
+                for index in range(min(options.count(), 12)):
+                    option = options.nth(index)
+                    if option.is_visible() and option.is_enabled():
+                        option.click()
+                        channel_selected = True
+                        break
+                if channel_selected:
+                    break
+        page.wait_for_timeout(1000)
     if fields is None:
         raise RuntimeError("hpp-card-form-unavailable")
     frame, card_input, expiry_input, month_input, year_input, cvv_input = fields
