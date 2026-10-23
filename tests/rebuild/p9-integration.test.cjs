@@ -10,7 +10,7 @@ const { createHarness, CERTS_URL, SLIP_URL } = require('./harness.cjs');
 // Origins, Firebase public identifiers and payment signatures here are explicit
 // local fixtures. No external service, deployed resource or payment is used.
 const PROJECT_ID = 'rebuild-staging-fixture';
-const ORIGIN = 'https://gpt-voxel-3d-staging-fixture.invalid';
+const ORIGIN = 'https://gpt-voxel-3d-staging-01.invalid';
 const WORKER_NAME = 'gpt-voxel-3d-staging-01';
 const FIREBASE = Object.freeze({ apiKey: 'synthetic-public-staging-key',
   authDomain: `${PROJECT_ID}.firebaseapp.com`, projectId: PROJECT_ID,
