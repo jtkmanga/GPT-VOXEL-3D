@@ -1,5 +1,5 @@
 name: Gate 5 2C2P Sandbox E2E
-# Owner-approved staging-only one-shot sandbox transaction trigger; retry after verifier alignment.
+# Owner-approved staging-only one-shot sandbox transaction trigger; retry after required-claims alignment.
 
 on:
   workflow_dispatch:
