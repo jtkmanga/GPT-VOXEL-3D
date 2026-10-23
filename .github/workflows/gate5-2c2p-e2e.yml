@@ -7,6 +7,8 @@ on:
     branches: [development/voxel-continuous]
     paths:
       - '.github/workflows/gate5-2c2p-e2e.yml'
+      - 'src/worker/firebase-auth.mjs'
+      - 'src/worker/http.mjs'
       - 'tests/rebuild/gate5-2c2p-e2e.py'
 
 permissions:
