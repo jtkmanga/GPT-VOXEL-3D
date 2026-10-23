@@ -11,7 +11,7 @@ const { createHarness } = require('./harness.cjs');
 
 const ORIGIN = 'https://gpt-voxel-3d-staging-01.hjinffv5426.workers.dev';
 const PROJECT = 'gpt-voxel-3d-staging';
-const SECRET = 'synthetic-only-2c2p-signing-fixture';
+const SIGNING_FIXTURE = 'synthetic-only-2c2p-signing-fixture';
 const MERCHANT = 'SyntheticSandboxMerchant';
 const PAYMENT_TOKEN_URL = 'https://sandbox-pgw.2c2p.com/payment/4.5/paymentToken';
 const HPP_URL = 'https://sandbox-pgw-ui.2c2p.com/payment/4.5/#/token/synthetic-local-token';
@@ -23,7 +23,7 @@ const ACTIVE_ENV = {
   TWOC2P_SANDBOX_MONTHLY_POLICY_VERIFIED: 'true',
   TWOC2P_SANDBOX_BILLING_TIMEZONE: 'UTC',
   TWOC2P_SANDBOX_INITIAL_SEQUENCE_NO: '1',
-  TWOC2P_SANDBOX_MERCHANT_ID: MERCHANT, TWOC2P_SANDBOX_SECRET_KEY: SECRET
+  TWOC2P_SANDBOX_MERCHANT_ID: MERCHANT, TWOC2P_SANDBOX_SIGNING_FIXTURE_KEY: SIGNING_FIXTURE
 };
 const BASE_ENV = {
   APP_ENV: 'staging', STAGING_WORKER_NAME: 'gpt-voxel-3d-staging-01',
@@ -36,7 +36,7 @@ const BASE_ENV = {
     appId: '1:123456789:web:12345678' })
 };
 
-function signed(payload, secret = SECRET, header = { alg: 'HS256', typ: 'JWT' }) {
+function signed(payload, secret = SIGNING_FIXTURE, header = { alg: 'HS256', typ: 'JWT' }) {
   const content = [header, payload].map(value =>
     Buffer.from(JSON.stringify(value)).toString('base64url')).join('.');
   return content + '.' + createHmac('sha256', secret).update(content).digest('base64url');
@@ -44,7 +44,7 @@ function signed(payload, secret = SECRET, header = { alg: 'HS256', typ: 'JWT' })
 function decodeSigned(token) {
   const [header, payload, signature] = token.split('.');
   assert.deepEqual(JSON.parse(Buffer.from(header, 'base64url')), { alg: 'HS256', typ: 'JWT' });
-  assert.equal(signature, createHmac('sha256', SECRET).update(header + '.' + payload).digest('base64url'));
+  assert.equal(signature, createHmac('sha256', SIGNING_FIXTURE).update(header + '.' + payload).digest('base64url'));
   return JSON.parse(Buffer.from(payload, 'base64url'));
 }
 
@@ -180,7 +180,7 @@ test('2C2P HTTP incomplete or wrong staging identities never reach the provider'
     { ALLOWED_ORIGIN: 'https://voxel-run-v2-demo.hjinffv5426.workers.dev' },
     { FIREBASE_PROJECT_ID: 'synthetic-production-project' },
     { PAYMENT_MODE: 'live' }, { TWOC2P_SANDBOX_MERCHANT_ID: undefined },
-    { TWOC2P_SANDBOX_SECRET_KEY: undefined }, { TWOC2P_SANDBOX_SECRET_KEY: 'weak' },
+    { TWOC2P_SANDBOX_SIGNING_FIXTURE_KEY: undefined }, { TWOC2P_SANDBOX_SIGNING_FIXTURE_KEY: 'weak' },
     { TWOC2P_SANDBOX_BILLING_TIMEZONE: 'Asia/Bangkok' },
     { TWOC2P_SANDBOX_INITIAL_SEQUENCE_NO: undefined },
     { TWOC2P_SANDBOX_INITIAL_SEQUENCE_NO: 'unknown' }
@@ -375,7 +375,7 @@ test('2C2P backend rejects unsigned forged tampered and algorithm-confused succe
   const { h, result, event } = await prepared(t);
   for (const body of [JSON.stringify(event), JSON.stringify({ payload: 'not-a-jwt' }),
     JSON.stringify({ payload: signed(event, 'wrong-synthetic-secret') }),
-    JSON.stringify({ payload: signed(event, SECRET, { alg: 'none', typ: 'JWT' }) }),
+    JSON.stringify({ payload: signed(event, SIGNING_FIXTURE, { alg: 'none', typ: 'JWT' }) }),
     JSON.stringify({ payload: signed({ ...event, uid: 'forged' }) }).replace('"payload"', '"token"')]) {
     const response = await h.request('/payments/2c2p/backend', { method: 'POST', body,
       headers: { 'content-type': 'application/json' } });
