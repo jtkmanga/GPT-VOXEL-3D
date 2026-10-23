@@ -58,6 +58,44 @@ def checkout(page):
       const appCheckToken = firebase.appCheck ? (await firebase.appCheck().getToken(false)).token : '';
       const token = await user.getIdToken(true);
       const authHeaders = {Authorization:'Bearer '+token, 'X-Firebase-AppCheck':appCheckToken};
+      const appCheckDiagnostic = {
+        compactJwt:false, algRs256:false, typJwt:false, kidPresent:false,
+        issuerMatches:false, audienceMatches:false, subjectMatches:false,
+        expiryValid:false, jwksStatus:0, matchingJwk:false, signatureValid:false
+      };
+      try {
+        const parts=appCheckToken.split('.');
+        appCheckDiagnostic.compactJwt=parts.length===3 && parts.every(part => /^[A-Za-z0-9_-]+$/.test(part));
+        const decode=part => {
+          const value=part.replace(/-/g,'+').replace(/_/g,'/');
+          const binary=atob(value.padEnd(Math.ceil(value.length/4)*4,'='));
+          return Uint8Array.from(binary, character => character.charCodeAt(0));
+        };
+        const header=JSON.parse(new TextDecoder().decode(decode(parts[0])));
+        const claims=JSON.parse(new TextDecoder().decode(decode(parts[1])));
+        const appId=String(firebase.app().options.appId||'');
+        const projectNumber=appId.split(':')[1]||'';
+        appCheckDiagnostic.algRs256=header?.alg==='RS256';
+        appCheckDiagnostic.typJwt=header?.typ==='JWT';
+        appCheckDiagnostic.kidPresent=typeof header?.kid==='string' && header.kid.length>0;
+        appCheckDiagnostic.issuerMatches=claims?.iss===`https://firebaseappcheck.googleapis.com/${projectNumber}`;
+        const audiences=Array.isArray(claims?.aud)?claims.aud:[claims?.aud];
+        appCheckDiagnostic.audienceMatches=audiences.includes(`projects/${projectNumber}`);
+        appCheckDiagnostic.subjectMatches=claims?.sub===appId;
+        appCheckDiagnostic.expiryValid=Number.isInteger(claims?.exp) && claims.exp>Math.floor(Date.now()/1000);
+        const jwks=await fetch('https://firebaseappcheck.googleapis.com/v1/jwks');
+        appCheckDiagnostic.jwksStatus=jwks.status;
+        const keys=(await jwks.json().catch(() => ({})))?.keys;
+        const key=Array.isArray(keys)?keys.find(candidate => candidate?.kid===header?.kid):null;
+        appCheckDiagnostic.matchingJwk=Boolean(key);
+        if (key) {
+          const publicKey=await crypto.subtle.importKey('jwk',key,
+            {name:'RSASSA-PKCS1-v1_5',hash:'SHA-256'},false,['verify']);
+          appCheckDiagnostic.signatureValid=await crypto.subtle.verify(
+            {name:'RSASSA-PKCS1-v1_5'},publicKey,decode(parts[2]),
+            new TextEncoder().encode(parts[0]+'.'+parts[1]));
+        }
+      } catch (_) {}
       const activeResponse = await fetch('/entitlements', {headers:authHeaders});
       if (!activeResponse.ok) {
         let lookupStatus=0, lookupMatched=false, lookupDisabled=null;
@@ -74,7 +112,7 @@ def checkout(page):
           lookupDisabled=lookupMatched ? users[0]?.disabled===true : null;
         } catch (_) {}
         return {ok:false, stage:'worker-active-auth-rejected', status:activeResponse.status,
-          lookupStatus, lookupMatched, lookupDisabled};
+          lookupStatus, lookupMatched, lookupDisabled, appCheckDiagnostic};
       }
       const response = await fetch('/payments/2c2p/checkout', {
         method:'POST', headers:{Authorization:'Bearer '+token,'X-Firebase-AppCheck':appCheckToken,'Content-Type':'application/json'},
@@ -211,6 +249,14 @@ def main():
                 report["firebaseLookupHttpStatus"] = int(created.get("lookupStatus") or 0)
                 report["firebaseLookupMatched"] = bool(created.get("lookupMatched"))
                 report["firebaseLookupDisabled"] = created.get("lookupDisabled")
+                diagnostic = created.get("appCheckDiagnostic") or {}
+                report["appCheckDiagnostic"] = {
+                    key: (int(value) if key == "jwksStatus" else bool(value))
+                    for key, value in diagnostic.items()
+                    if key in {"compactJwt", "algRs256", "typJwt", "kidPresent",
+                               "issuerMatches", "audienceMatches", "subjectMatches",
+                               "expiryValid", "jwksStatus", "matchingJwk", "signatureValid"}
+                }
                 report["errorStage"] = str(created.get("stage") or "checkout-failed")[:80]
                 raise RuntimeError(str(created.get("stage") or "checkout-failed"))
             invoice_no, hpp_url = created.get("invoiceNo"), created.get("webPaymentUrl")
