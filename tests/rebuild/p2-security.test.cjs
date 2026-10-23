@@ -121,7 +121,7 @@ test('P2 staging online Firebase user check rejects disabled revoked and missing
     t.after(() => h.close());
     await assert.rejects(
       h.runtime.verifyFirebaseActiveIdToken(h.token('synthetic-online-' + mode), h.env, 'synthetic-app-check-token'),
-      /Firebase (?:user is no longer active|token is revoked)/
+      error => mode === 'missing' ? error.firebaseLookupStatus === 400 : error.firebaseLookupReason === mode
     );
   }
 });

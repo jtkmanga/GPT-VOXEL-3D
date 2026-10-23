@@ -116,28 +116,56 @@ export async function verifyFirebaseActiveIdToken(token, env, appCheckToken) {
       /[\s\u0000-\u001f\u007f]/.test(appCheckToken))
     throw Error('Firebase App Check token unavailable');
   const apiKey = firebaseWebApiKey(env);
-  const response = await fetch('https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=' +
-    encodeURIComponent(apiKey), {
-      method: 'POST', redirect: 'error',
-      headers: { 'Content-Type': 'application/json',
-        'Referer': env.STAGING_WORKER_ORIGIN + '/',
-        'X-Firebase-AppCheck': appCheckToken },
-      body: JSON.stringify({ idToken: token }),
-      signal: AbortSignal.timeout(5_000)
-    });
+  let response;
+  try {
+    response = await fetch('https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=' +
+      encodeURIComponent(apiKey), {
+        method: 'POST', redirect: 'error',
+        headers: { 'Content-Type': 'application/json',
+          'Referer': env.STAGING_WORKER_ORIGIN + '/',
+          'X-Firebase-AppCheck': appCheckToken },
+        body: JSON.stringify({ idToken: token }),
+        signal: AbortSignal.timeout(5_000)
+      });
+  } catch (_) {
+    const error = Error('Firebase user is no longer active');
+    error.firebaseLookupReason = 'transport';
+    throw error;
+  }
   if (!response.ok) {
     const error = Error('Firebase user is no longer active');
     error.firebaseLookupStatus = response.status;
     throw error;
   }
-  const data = await response.json();
+  let data;
+  try { data = await response.json(); }
+  catch (_) {
+    const error = Error('Firebase user is no longer active');
+    error.firebaseLookupReason = 'invalid-response';
+    throw error;
+  }
   const users = Array.isArray(data?.users) ? data.users : [];
-  if (users.length !== 1 || users[0]?.localId !== identity.uid || users[0]?.disabled === true)
-    throw Error('Firebase user is no longer active');
+  if (users.length !== 1 || users[0]?.localId !== identity.uid) {
+    const error = Error('Firebase user is no longer active');
+    error.firebaseLookupReason = 'identity-mismatch';
+    throw error;
+  }
+  if (users[0]?.disabled === true) {
+    const error = Error('Firebase user is no longer active');
+    error.firebaseLookupReason = 'disabled';
+    throw error;
+  }
   const validSince = Number(users[0]?.validSince ?? 0);
-  if (!Number.isFinite(validSince) || validSince < 0 ||
-      (validSince > 0 && identity.authTime < validSince))
-    throw Error('Firebase token is revoked');
+  if (!Number.isFinite(validSince) || validSince < 0) {
+    const error = Error('Firebase token is revoked');
+    error.firebaseLookupReason = 'invalid-valid-since';
+    throw error;
+  }
+  if (validSince > 0 && identity.authTime < validSince) {
+    const error = Error('Firebase token is revoked');
+    error.firebaseLookupReason = 'revoked';
+    throw error;
+  }
   return identity;
 }
 
@@ -228,6 +256,9 @@ export async function verifyFirebaseRequestTokens(idToken, appCheckToken, env) {
     if (Number.isInteger(cause?.firebaseLookupStatus) &&
         cause.firebaseLookupStatus >= 400 && cause.firebaseLookupStatus <= 599)
       error.authReason = `lookup-http-${cause.firebaseLookupStatus}`;
+    else if (['transport', 'invalid-response', 'identity-mismatch', 'disabled',
+      'invalid-valid-since', 'revoked'].includes(cause?.firebaseLookupReason))
+      error.authReason = `lookup-${cause.firebaseLookupReason}`;
     throw error;
   }
 }

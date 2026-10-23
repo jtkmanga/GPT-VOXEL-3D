@@ -117,7 +117,7 @@ def checkout(page):
           lookupStatus, lookupMatched, lookupDisabled, appCheckDiagnostic,
           workerAuthStage:['app-check','active-user'].includes(activeBody?.diagnosticStage)
             ? activeBody.diagnosticStage : null,
-          workerAuthReason:/^lookup-http-(?:4\d\d|5\d\d)$/.test(activeBody?.diagnosticReason||'')
+          workerAuthReason:/^lookup-(?:http-(?:4\d\d|5\d\d)|transport|invalid-response|identity-mismatch|disabled|invalid-valid-since|revoked)$/.test(activeBody?.diagnosticReason||'')
             ? activeBody.diagnosticReason : null};
       }
       const response = await fetch('/payments/2c2p/checkout', {
