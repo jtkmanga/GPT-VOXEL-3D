@@ -57,7 +57,8 @@ def checkout(page):
       if (!user) return {ok:false, stage:'anonymous-auth'};
       const appCheckToken = firebase.appCheck ? (await firebase.appCheck().getToken(false)).token : '';
       const token = await user.getIdToken(true);
-      const authHeaders = {Authorization:'Bearer '+token, 'X-Firebase-AppCheck':appCheckToken};
+      const authHeaders = {Authorization:'Bearer '+token, 'X-Firebase-AppCheck':appCheckToken,
+        'X-Voxel-Staging-Diagnostic':'gate5-auth-stage-v1'};
       const appCheckDiagnostic = {
         compactJwt:false, algRs256:false, typJwt:false, kidPresent:false,
         issuerMatches:false, audienceMatches:false, subjectMatches:false,
@@ -98,6 +99,7 @@ def checkout(page):
       } catch (_) {}
       const activeResponse = await fetch('/entitlements', {headers:authHeaders});
       if (!activeResponse.ok) {
+        const activeBody=await activeResponse.json().catch(() => ({}));
         let lookupStatus=0, lookupMatched=false, lookupDisabled=null;
         try {
           const apiKey=firebase.app().options.apiKey;
@@ -112,7 +114,9 @@ def checkout(page):
           lookupDisabled=lookupMatched ? users[0]?.disabled===true : null;
         } catch (_) {}
         return {ok:false, stage:'worker-active-auth-rejected', status:activeResponse.status,
-          lookupStatus, lookupMatched, lookupDisabled, appCheckDiagnostic};
+          lookupStatus, lookupMatched, lookupDisabled, appCheckDiagnostic,
+          workerAuthStage:['app-check','active-user'].includes(activeBody?.diagnosticStage)
+            ? activeBody.diagnosticStage : null};
       }
       const response = await fetch('/payments/2c2p/checkout', {
         method:'POST', headers:{Authorization:'Bearer '+token,'X-Firebase-AppCheck':appCheckToken,'Content-Type':'application/json'},
@@ -249,6 +253,7 @@ def main():
                 report["firebaseLookupHttpStatus"] = int(created.get("lookupStatus") or 0)
                 report["firebaseLookupMatched"] = bool(created.get("lookupMatched"))
                 report["firebaseLookupDisabled"] = created.get("lookupDisabled")
+                report["workerAuthStage"] = created.get("workerAuthStage")
                 diagnostic = created.get("appCheckDiagnostic") or {}
                 report["appCheckDiagnostic"] = {
                     key: (int(value) if key == "jwksStatus" else bool(value))

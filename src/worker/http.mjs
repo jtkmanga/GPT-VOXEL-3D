@@ -305,10 +305,16 @@ export async function handleGetEntitlements(request, env) {
 
   try {
     verified = await verifyFirebaseRequestTokens(match[1], request.headers.get('X-Firebase-AppCheck'), env);
-  } catch {
+  } catch (error) {
+    const diagnostic = env.APP_ENV === 'staging' &&
+      env.STAGING_WORKER_NAME === 'gpt-voxel-3d-staging-01' &&
+      env.TWOC2P_SANDBOX_E2E_TEST_MODE === 'true' &&
+      request.headers.get('X-Voxel-Staging-Diagnostic') === 'gate5-auth-stage-v1' &&
+      ['app-check', 'active-user'].includes(error?.authStage) ? error.authStage : undefined;
     return jsonResponse(request, env, {
       ok: false,
-      error: 'Invalid Firebase token'
+      error: 'Invalid Firebase token',
+      ...(diagnostic ? { diagnosticStage: diagnostic } : {})
     }, 401);
   }
 

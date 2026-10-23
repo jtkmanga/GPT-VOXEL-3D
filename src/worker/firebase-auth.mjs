@@ -211,9 +211,16 @@ export async function verifyFirebaseRequestTokens(idToken, appCheckToken, env) {
   if (env?.APP_ENV !== 'staging') {
     return verifyFirebaseIdToken(idToken, env?.FIREBASE_PROJECT_ID);
   }
-  const [identity] = await Promise.all([
-    verifyFirebaseActiveIdToken(idToken, env, appCheckToken),
-    verifyFirebaseAppCheckToken(appCheckToken, env)
-  ]);
-  return identity;
+  try { await verifyFirebaseAppCheckToken(appCheckToken, env); }
+  catch (_) {
+    const error = Error('Staging Firebase request rejected');
+    error.authStage = 'app-check';
+    throw error;
+  }
+  try { return await verifyFirebaseActiveIdToken(idToken, env, appCheckToken); }
+  catch (_) {
+    const error = Error('Staging Firebase request rejected');
+    error.authStage = 'active-user';
+    throw error;
+  }
 }

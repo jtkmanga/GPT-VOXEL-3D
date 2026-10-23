@@ -89,9 +89,9 @@ test('P2 custom backend request verifier requires valid Firebase ID and App Chec
   assert.equal((await h.runtime.verifyFirebaseRequestTokens(
     h.token(uid), h.appCheckToken(), h.env)).uid, uid);
   await assert.rejects(h.runtime.verifyFirebaseRequestTokens(
-    h.token(uid), 'invalid-app-check-token', h.env));
+    h.token(uid), 'invalid-app-check-token', h.env), error => error.authStage === 'app-check');
   await assert.rejects(h.runtime.verifyFirebaseRequestTokens(
-    'invalid-id-token', h.appCheckToken(), h.env));
+    'invalid-id-token', h.appCheckToken(), h.env), error => error.authStage === 'active-user');
   assert.ok(h.records.fetches.some(record => record.url ===
     'https://firebaseappcheck.googleapis.com/v1/jwks'));
 });
