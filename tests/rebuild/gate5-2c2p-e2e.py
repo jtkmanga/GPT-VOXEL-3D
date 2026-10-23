@@ -12,6 +12,12 @@ OUT = Path("work/gate5/2c2p-e2e.json")
 # E2E run verifies App Check propagation before any sandbox payment authority.
 
 
+class HppFormUnavailable(RuntimeError):
+    def __init__(self, diagnostic):
+        super().__init__("hpp-card-form-unavailable")
+        self.diagnostic = diagnostic
+
+
 def official_sandbox_card():
     request = urllib.request.Request(CARD_DOC, headers={"User-Agent": "VOXEL-Gate5-E2E/1.0"})
     with urllib.request.urlopen(request, timeout=20) as response:
@@ -186,7 +192,40 @@ def submit_hpp(page, card, cvv, otp):
                     break
         page.wait_for_timeout(1000)
     if fields is None:
-        raise RuntimeError("hpp-card-form-unavailable")
+        diagnostic = {"frameCount": len(page.frames), "frameOrigins": [], "visibleInputTypes": {},
+                      "visibleSelectCount": 0, "visibleButtonCount": 0, "cardTermsSeen": False,
+                      "errorTermsSeen": False, "captchaTermsSeen": False,
+                      "channelOptionClicked": channel_selected}
+        origins = set()
+        for frame in page.frames:
+            parsed = urlparse(frame.url)
+            if parsed.scheme in ("https", "http") and parsed.netloc:
+                origins.add(parsed.scheme + "://" + parsed.netloc)
+            for index in range(min(frame.locator("input").count(), 40)):
+                item = frame.locator("input").nth(index)
+                if item.is_visible():
+                    field_type = (item.get_attribute("type") or "text").lower()
+                    if field_type not in {"text", "tel", "number", "password", "email", "radio", "checkbox"}:
+                        field_type = "other"
+                    diagnostic["visibleInputTypes"][field_type] = diagnostic["visibleInputTypes"].get(field_type, 0) + 1
+            diagnostic["visibleSelectCount"] += sum(
+                1 for index in range(min(frame.locator("select").count(), 20))
+                if frame.locator("select").nth(index).is_visible())
+            diagnostic["visibleButtonCount"] += sum(
+                1 for index in range(min(frame.locator("button, input[type=submit], input[type=button]").count(), 40))
+                if frame.locator("button, input[type=submit], input[type=button]").nth(index).is_visible())
+            try:
+                text = frame.locator("body").inner_text(timeout=1000)[:20_000]
+                diagnostic["cardTermsSeen"] = diagnostic["cardTermsSeen"] or bool(re.search(
+                    r"credit|debit|card|visa|mastercard|บัตร", text, re.IGNORECASE))
+                diagnostic["errorTermsSeen"] = diagnostic["errorTermsSeen"] or bool(re.search(
+                    r"error|failed|invalid|unavailable|ผิดพลาด|ไม่สำเร็จ", text, re.IGNORECASE))
+                diagnostic["captchaTermsSeen"] = diagnostic["captchaTermsSeen"] or bool(re.search(
+                    r"captcha|robot|มนุษย์", text, re.IGNORECASE))
+            except Exception:
+                pass
+        diagnostic["frameOrigins"] = sorted(origins)[:8]
+        raise HppFormUnavailable(diagnostic)
     frame, card_input, expiry_input, month_input, year_input, cvv_input = fields
     card_input.fill(card)
     expiry_year = str(time.gmtime().tm_year + 2)
@@ -339,6 +378,8 @@ def main():
     except Exception as error:
         if "errorStage" not in report:
             report["errorStage"] = stage
+        if isinstance(error, HppFormUnavailable):
+            report["hppDiagnostic"] = error.diagnostic
         report["errorClass"] = type(error).__name__
     OUT.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
     print(json.dumps({key: report.get(key) for key in (
