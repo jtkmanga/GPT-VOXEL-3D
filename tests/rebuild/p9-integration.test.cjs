@@ -238,7 +238,7 @@ test('P9 same-origin fetch without Origin verifies token UID rather than a query
   const h = fixture(t), owner = 'p9-http-owner', victim = 'p9-http-victim';
   await activated(h, victim);
   const response = await h.worker.fetch(new Request(`${ORIGIN}/entitlements?uid=${victim}`, {
-    headers: { Authorization: `Bearer ${h.token(owner)}` }
+    headers: { Authorization: `Bearer ${h.token(owner)}`, 'X-Firebase-AppCheck': h.appCheckToken() }
   }), h.env);
   assert.equal(response.status, 200);
   const body = await response.json();
@@ -247,7 +247,7 @@ test('P9 same-origin fetch without Origin verifies token UID rather than a query
   assert.equal(h.room().vip.entitlement(victim).active, true,
     'victim has entitlement, but query UID cannot select it for another verified account');
   const invalid = await h.worker.fetch(new Request(`${ORIGIN}/entitlements?uid=${victim}`, {
-    headers: { Authorization: 'Bearer malformed-synthetic-token' }
+    headers: { Authorization: 'Bearer malformed-synthetic-token', 'X-Firebase-AppCheck': h.appCheckToken() }
   }), h.env);
   assert.equal(invalid.status, 401);
 });

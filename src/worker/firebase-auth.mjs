@@ -210,8 +210,11 @@ export async function verifyFirebaseAppCheckToken(token, env) {
   return { appId, exp: claims.exp };
 }
 export async function verifyFirebaseRequestTokens(idToken, appCheckToken, env) {
+  if (env?.APP_ENV !== 'staging') {
+    return verifyFirebaseIdToken(idToken, env?.FIREBASE_PROJECT_ID);
+  }
   const [identity] = await Promise.all([
-    verifyFirebaseIdToken(idToken, env?.FIREBASE_PROJECT_ID),
+    verifyFirebaseActiveIdToken(idToken, env, appCheckToken),
     verifyFirebaseAppCheckToken(appCheckToken, env)
   ]);
   return identity;
