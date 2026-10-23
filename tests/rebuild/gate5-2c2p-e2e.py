@@ -193,6 +193,7 @@ def submit_hpp(page, card, cvv, otp):
         page.wait_for_timeout(1000)
     if fields is None:
         diagnostic = {"frameCount": len(page.frames), "frameOrigins": [], "visibleInputTypes": {},
+                      "visibleInputHints": [], "visibleButtonLabels": [],
                       "visibleSelectCount": 0, "visibleButtonCount": 0, "cardTermsSeen": False,
                       "errorTermsSeen": False, "captchaTermsSeen": False,
                       "channelOptionClicked": channel_selected}
@@ -208,6 +209,20 @@ def submit_hpp(page, card, cvv, otp):
                     if field_type not in {"text", "tel", "number", "password", "email", "radio", "checkbox"}:
                         field_type = "other"
                     diagnostic["visibleInputTypes"][field_type] = diagnostic["visibleInputTypes"].get(field_type, 0) + 1
+                    if len(diagnostic["visibleInputHints"]) < 12:
+                        diagnostic["visibleInputHints"].append({
+                            "type": field_type,
+                            "name": (item.get_attribute("name") or "")[:80],
+                            "id": (item.get_attribute("id") or "")[:80],
+                            "placeholder": (item.get_attribute("placeholder") or "")[:120]
+                        })
+            buttons = frame.locator("button, input[type=submit], input[type=button]")
+            for index in range(min(buttons.count(), 20)):
+                button = buttons.nth(index)
+                if button.is_visible() and len(diagnostic["visibleButtonLabels"]) < 12:
+                    label = ((button.inner_text() if button.evaluate("e => e.tagName === 'BUTTON'") else
+                              button.get_attribute("value")) or "").strip()
+                    diagnostic["visibleButtonLabels"].append(label[:120])
             diagnostic["visibleSelectCount"] += sum(
                 1 for index in range(min(frame.locator("select").count(), 20))
                 if frame.locator("select").nth(index).is_visible())
