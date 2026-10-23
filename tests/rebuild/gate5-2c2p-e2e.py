@@ -117,7 +117,7 @@ def checkout(page):
           lookupStatus, lookupMatched, lookupDisabled, appCheckDiagnostic,
           workerAuthStage:['app-check','active-user'].includes(activeBody?.diagnosticStage)
             ? activeBody.diagnosticStage : null,
-          workerAuthReason:/^lookup-(?:http-(?:4\d\d|5\d\d)|transport|invalid-response|identity-mismatch|disabled|invalid-valid-since|revoked)$/.test(activeBody?.diagnosticReason||'')
+          workerAuthReason:/^lookup-(?:http-(?:4[0-9]{2}|5[0-9]{2})|transport|invalid-response|identity-mismatch|disabled|invalid-valid-since|revoked)$/.test(activeBody?.diagnosticReason||'')
             ? activeBody.diagnosticReason : null};
       }
       const response = await fetch('/payments/2c2p/checkout', {
@@ -144,21 +144,53 @@ def checkout(page):
 
 
 def submit_hpp(page, card, cvv, otp):
-    card_input = first_visible(page, [
-        "input[placeholder*='Credit Card Number' i]", "input[name='cardNumber']",
-        "input[placeholder*='0000-0000' i]"])
-    month_input = first_visible(page, ["input[placeholder='MM']", "input[placeholder*='month' i]"])
-    year_input = first_visible(page, ["input[placeholder='YYYY']", "input[placeholder*='year' i]"])
-    cvv_input = first_visible(page, ["input[placeholder*='CVV' i]", "input[placeholder*='CVC' i]", "input[type=password]"])
-    email_input = first_visible(page, ["input[type=email]", "input[name=email]"])
-    if not all([card_input, month_input, year_input, cvv_input, email_input]):
+    page.wait_for_timeout(1500)
+    fields = None
+    for frame in page.frames:
+        card_input = first_visible(frame, [
+            "input[autocomplete='cc-number']", "input[name*='card' i]", "input[id*='card' i]",
+            "input[placeholder*='Credit Card Number' i]", "input[placeholder*='card number' i]",
+            "input[placeholder*='0000-0000' i]"])
+        expiry_input = first_visible(frame, [
+            "input[autocomplete='cc-exp']", "input[name*='expir' i]", "input[id*='expir' i]",
+            "input[placeholder*='MM/YY' i]", "input[placeholder*='MM / YY' i]"])
+        month_input = first_visible(frame, [
+            "select[autocomplete='cc-exp-month']", "input[autocomplete='cc-exp-month']",
+            "select[name*='month' i]", "input[placeholder='MM']", "input[placeholder*='month' i]"])
+        year_input = first_visible(frame, [
+            "select[autocomplete='cc-exp-year']", "input[autocomplete='cc-exp-year']",
+            "select[name*='year' i]", "input[placeholder='YYYY']", "input[placeholder*='year' i]"])
+        cvv_input = first_visible(frame, [
+            "input[autocomplete='cc-csc']", "input[name*='cvv' i]", "input[name*='cvc' i]",
+            "input[id*='cvv' i]", "input[placeholder*='CVV' i]", "input[placeholder*='CVC' i]",
+            "input[type=password]"])
+        if card_input and cvv_input and (expiry_input or (month_input and year_input)):
+            fields = (frame, card_input, expiry_input, month_input, year_input, cvv_input)
+            break
+    if fields is None:
         raise RuntimeError("hpp-card-form-unavailable")
+    frame, card_input, expiry_input, month_input, year_input, cvv_input = fields
     card_input.fill(card)
-    month_input.fill("12")
-    year_input.fill(str(time.gmtime().tm_year + 2))
+    expiry_year = str(time.gmtime().tm_year + 2)
+    if expiry_input:
+        expiry_input.fill("12/" + expiry_year[-2:])
+    else:
+        if month_input.evaluate("element => element.tagName") == "SELECT":
+            month_input.select_option(value="12")
+        else:
+            month_input.fill("12")
+        if year_input.evaluate("element => element.tagName") == "SELECT":
+            try:
+                year_input.select_option(value=expiry_year)
+            except Exception:
+                year_input.select_option(label=expiry_year)
+        else:
+            year_input.fill(expiry_year)
     cvv_input.fill(cvv)
-    email_input.fill("voxel-gate5@example.com")
-    if not click_positive(page):
+    email_input = first_visible(frame, ["input[type=email]", "input[name=email]"])
+    if email_input:
+        email_input.fill("voxel-gate5@example.com")
+    if not click_positive(frame):
         raise RuntimeError("hpp-submit-unavailable")
 
     deadline = time.monotonic() + 90
