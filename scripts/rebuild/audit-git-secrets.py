@@ -20,7 +20,7 @@ patterns={
 'Stripe secret':r'\b(?:sk|rk)_live_[A-Za-z0-9]{16,}',
 'Slack token':r'\bxox[baprs]-[A-Za-z0-9-]{20,}',
 'JWT literal':r'eyJ[A-Za-z0-9_-]{15,}\.[A-Za-z0-9_-]{15,}\.[A-Za-z0-9_-]{15,}',
-'Credential assignment candidate':r'''(?i)(?:["']?(?:CLOUDFLARE_API_TOKEN|CF_API_TOKEN|CLOUDFLARE_API_KEY|FIREBASE_SECRET|FIREBASE_DATABASE_SECRET|FIREBASE_TOKEN|ABLY_API_KEY|SLIP2GO_API_SECRET|PAYMENT_WEBHOOK_SECRET|client_secret|private_key|api_secret|apiKey|api_key|access_token|auth_token|password|secret|token)["']?\s*[:=]\s*["'])([^"'\r\n]{12,})["']'''
+'Credential assignment candidate':r'''(?i)(?<![A-Za-z0-9_])(?:["']?(?:CLOUDFLARE_API_TOKEN|CF_API_TOKEN|CLOUDFLARE_API_KEY|FIREBASE_SECRET|FIREBASE_DATABASE_SECRET|FIREBASE_TOKEN|ABLY_API_KEY|SLIP2GO_API_SECRET|PAYMENT_WEBHOOK_SECRET|client_secret|private_key|api_secret|apiKey|api_key|access_token|auth_token|password|secret|token)["']?)(?![A-Za-z0-9_])\s*[:=]\s*["']([^"'\r\n]{12,})["']'''
 }
 
 PATTERNS = {name: re.compile(pattern) for name, pattern in patterns.items()}
