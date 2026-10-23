@@ -11,7 +11,7 @@ const { createHarness, CERTS_URL, SLIP_URL } = require('./harness.cjs');
 // local fixtures. No external service, deployed resource or payment is used.
 const PROJECT_ID = 'rebuild-staging-fixture';
 const ORIGIN = 'https://gpt-voxel-3d-staging-fixture.invalid';
-const WORKER_NAME = 'gpt-voxel-3d-staging-fixture';
+const WORKER_NAME = 'gpt-voxel-3d-staging-01';
 const FIREBASE = Object.freeze({ apiKey: 'synthetic-public-staging-key',
   authDomain: `${PROJECT_ID}.firebaseapp.com`, projectId: PROJECT_ID,
   appId: '1:123456:web:abcdef123456' });
