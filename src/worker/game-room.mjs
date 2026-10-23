@@ -470,7 +470,7 @@ export class GameRoom {
 
     const now = Date.now();
 
-    return this.ctx.storage.transactionSync(() => {
+    const result = this.ctx.storage.transactionSync(() => {
       const oldPayment = this.sql.exec(
         'SELECT transaction_id FROM voxel_payments WHERE transaction_id=?',
         transactionId
@@ -547,6 +547,16 @@ export class GameRoom {
         entitlements
       };
     });
+    if (result?.ok) {
+      const snapshot = this.entitlementSnapshot(uid);
+      for (const socket of this.sockets()) {
+        const player = this.player(socket);
+        if (player?.uid !== uid) continue;
+        player.entitlements = snapshot;
+        socket.serializeAttachment(player);
+      }
+    }
+    return result;
   }
 
   async fetch(request) {
@@ -1185,13 +1195,7 @@ export class GameRoom {
         grounded:p.motion.grounded,serverNow:now});
       return;
     }
-    const speedEntitlement = this.sql.exec(
-      'SELECT speed_expires FROM voxel_entitlements WHERE uid=?',
-      p.uid
-    ).toArray()[0];
-
-    const speedActive =
-      Number(speedEntitlement?.speed_expires || 0) > now;
+    const speedActive = Number(p.entitlements?.speedExpires || 0) > now;
 
     if (!applyMovementIntent(p,m,speedActive ? MOVEMENT.entitledSpeed : MOVEMENT.speed,now)) return;
     ws.serializeAttachment(p);
