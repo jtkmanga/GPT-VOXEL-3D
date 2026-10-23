@@ -14,7 +14,7 @@ permissions:
 
 concurrency:
   group: gate5-2c2p-sandbox-e2e
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   approved-first-transaction:
