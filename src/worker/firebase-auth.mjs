@@ -120,7 +120,7 @@ export async function verifyFirebaseActiveIdToken(token, env, appCheckToken) {
   try {
     response = await fetch('https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=' +
       encodeURIComponent(apiKey), {
-        method: 'POST', redirect: 'error',
+        method: 'POST', redirect: 'manual',
         headers: { 'Content-Type': 'application/json',
           'Referer': env.STAGING_WORKER_ORIGIN + '/',
           'X-Firebase-AppCheck': appCheckToken },
