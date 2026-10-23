@@ -197,7 +197,7 @@ export async function verifyFirebaseAppCheckToken(token, env) {
       !claims || typeof claims !== 'object' || Array.isArray(claims) ||
       claims.iss !== `https://firebaseappcheck.googleapis.com/${projectNumber}` ||
       !Array.isArray(claims.aud) || !claims.aud.includes(`projects/${projectNumber}`) ||
-      claims.sub !== appId || !Number.isInteger(claims.exp) || claims.exp <= now ||
+      !Number.isInteger(claims.exp) || claims.exp <= now ||
       !Number.isInteger(claims.iat) || claims.iat < 0 || claims.iat > now ||
       (claims.nbf !== undefined && (!Number.isInteger(claims.nbf) || claims.nbf > now)))
     throw Error('Invalid App Check token claims');
