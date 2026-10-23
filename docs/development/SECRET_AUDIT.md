@@ -1,5 +1,15 @@
 # S001: public repository credential audit
 
+## D071 reviewed incremental history — 2026-10-23
+
+Reviewed 77772db..8a333eb: 10 commits covering staging-only
+App Check request verification, synthetic App Check/Firebase test fixtures,
+Gate 5 workflow dispatch wiring, and the owner-approved one-shot sandbox trigger.
+No private/admin credential, payment secret, debug-token value, or account token
+was introduced. Public/synthetic Firebase values remain test/client fixtures.
+Gate 7 audit baseline advances to this reviewed source; scanner patterns,
+coverage checks, and fail-on-new-finding behavior remain unchanged.
+
 ## D070 publication audit
 
 Reviewed 675d854..77772dbde9ca6144c536477e59553ea16b19b39e: 13 objects, no archives or gaps.
