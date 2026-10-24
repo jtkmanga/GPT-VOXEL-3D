@@ -268,7 +268,14 @@ def main():
 
     try:
       with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        browser = p.chromium.launch(
+          headless=True,
+          args=[
+            "--disable-background-timer-throttling",
+            "--disable-renderer-backgrounding",
+            "--disable-backgrounding-occluded-windows",
+          ],
+        )
         try:
           for target in levels:
             while len(pages) < target:
