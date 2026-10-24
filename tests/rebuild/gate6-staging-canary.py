@@ -4,7 +4,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
 ORIGIN = "https://gpt-voxel-3d-staging-01.hjinffv5426.workers.dev"
-# Canary rerun marker: ZoneRoom ACK-path optimization deployed.
+# Canary rerun marker: deferred nearby movement fan-out deployed.
 EXPECTED_HOST = "gpt-voxel-3d-staging-01.hjinffv5426.workers.dev"
 
 def percentile(values, p):
