@@ -477,6 +477,24 @@ test('2C2P staging E2E test mode can discover only a provider-signed initial rec
   assert.equal(h.room().vip.entitlement(uid, h.now()).active, true);
 });
 
+test('2C2P staging E2E test mode accepts provider-signed initial RPP callback without sequence', async t => {
+  const { h, event, uid } = await prepared(t, 'sandbox-payer', {
+    TWOC2P_SANDBOX_E2E_VERIFIED: 'false',
+    TWOC2P_SANDBOX_E2E_TEST_MODE: 'true',
+    TWOC2P_SANDBOX_INITIAL_SEQUENCE_NO: undefined
+  });
+  const { recurringSequenceNo, ...withoutSequence } = event;
+  assert.equal((await backend(h, withoutSequence)).status, 200);
+  assert.equal(h.room().vip.entitlement(uid, h.now()).active, true);
+});
+
+test('2C2P verified mode still rejects a successful RPP callback without initial sequence', async t => {
+  const { h, event, uid } = await prepared(t);
+  const { recurringSequenceNo, ...withoutSequence } = event;
+  assert.ok((await backend(h, withoutSequence)).status >= 400);
+  assert.equal(h.room().vip.entitlement(uid, h.now()).active, false);
+});
+
 test('2C2P confirmed initial recurring sequence cannot be inferred from arbitrary provider events', async t => {
   const { h, event, uid } = await prepared(t);
   for (const sequence of ['0', '2', '001', '9999999999']) {
