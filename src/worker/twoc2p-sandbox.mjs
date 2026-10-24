@@ -4,6 +4,7 @@ import { Twoc2pSandboxStore } from './twoc2p-store.mjs';
 import { paymentEventFingerprint, validVipUid } from './payment-events.mjs';
 
 // These are fixed sandbox destinations, never operator-supplied payment URLs.
+// Reconciled with main; release-readiness verification marker.
 export const TWOC2P_SANDBOX = Object.freeze({
   api: 'https://sandbox-pgw.2c2p.com/payment/4.5/paymentToken',
   hppOrigin: 'https://sandbox-pgw-ui.2c2p.com',
