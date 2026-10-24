@@ -42,7 +42,16 @@ jobs:
         run: |
           set -euo pipefail
           test "${{ inputs.confirm }}" = "CHECK-PRODUCTION-ONLY"
-          ! grep -qiE 'wrangler deploy|pages deploy' .github/workflows/production-readiness.yml
+          python - <<'PY'
+          from pathlib import Path
+          text = Path('.github/workflows/production-readiness.yml').read_text(encoding='utf-8')
+          forbidden = ('cloudflare/wrangler-action', 'wrangler-action@', 'pages deploy')
+          lowered = text.lower()
+          hits = [item for item in forbidden if item in lowered]
+          if hits:
+              raise SystemExit('forbidden deploy primitive present: ' + ', '.join(hits))
+          print('PASS no production deploy primitive present')
+          PY
       - name: Production configuration preflight
         run: node scripts/rebuild/check-production-readiness.cjs
       - name: Development verification suite
