@@ -268,19 +268,24 @@ def main():
 
     try:
       with sync_playwright() as p:
-        browser = p.chromium.launch(
-          headless=True,
-          args=[
-            "--disable-background-timer-throttling",
-            "--disable-renderer-backgrounding",
-            "--disable-backgrounding-occluded-windows",
-          ],
-        )
+        browsers = []
+        def browser_for(index):
+          slot = index // 5
+          while len(browsers) <= slot:
+            browsers.append(p.chromium.launch(
+              headless=True,
+              args=[
+                "--disable-background-timer-throttling",
+                "--disable-renderer-backgrounding",
+                "--disable-backgrounding-occluded-windows",
+              ],
+            ))
+          return browsers[slot]
         try:
           for target in levels:
             while len(pages) < target:
               i = len(pages)
-              context = browser.new_context()
+              context = browser_for(i).new_context()
               context.add_init_script("self.FIREBASE_APPCHECK_DEBUG_TOKEN = " + json.dumps(debug_token) + ";")
               page = context.new_page()
               contexts.append(context)
@@ -376,7 +381,9 @@ def main():
           for context in contexts:
             try: context.close()
             except Exception: pass
-          browser.close()
+          for browser in browsers:
+            try: browser.close()
+            except Exception: pass
     except PlaywrightTimeoutError:
       report["stopReason"] = "browser-timeout"; save(); return 9
     except Exception as e:
