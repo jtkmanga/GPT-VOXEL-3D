@@ -420,6 +420,19 @@ test('P2 expired resume token cannot resurrect ownership or mutate retained stat
   assert.equal(session(h, uid).lease_expires, 0);
 });
 
+test('P2 production slip verification fails closed unless payment mode is explicitly enabled', async t => {
+  const h = createHarness({ env: { PAYMENT_MODE: 'disabled' } });
+  t.after(() => h.close());
+  const token = h.token('synthetic-p2-disabled-payment');
+  const form = new FormData();
+  form.append('item', 'speed');
+  form.append('file', new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], 'synthetic.png', { type: 'image/png' }));
+  const response = await h.request('/verify-slip', { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: form });
+  assert.equal(response.status, 503);
+  assert.equal((await response.json()).error, 'Production payment is disabled');
+  assert.equal(h.records.fetches.some(record => record.url === SLIP_URL), false);
+});
+
 test('P2 entitlement refresh reads verified backend payment state and logs omit tokens and secrets', async t => {
   const h = harness(t);
   const uid = 'synthetic-p2-entitlement-refresh';
