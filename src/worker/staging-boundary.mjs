@@ -32,7 +32,7 @@ export function stagingContext(request, env) {
     // payment handler can redirect back to the app, where authenticated status
     // reconciliation verifies server-owned state. Backend notifications remain
     // signature-verified and all other payment routes keep the normal fence.
-    const paymentReturnNavigation = request.method === 'GET' &&
+    const paymentReturnNavigation = ['GET', 'POST'].includes(request.method) &&
       url.pathname === '/payments/2c2p/return';
     if (!publicProbe && !paymentReturnNavigation && origin !== null && origin !== config.workerOrigin)
       return { enabled: true, status: 403, error: 'Origin not allowed' };
