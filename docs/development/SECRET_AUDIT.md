@@ -679,3 +679,22 @@ Scanner exit 1 reviewed: two matches at index.html:632, blob
 web configuration (privately compared), not private/admin/database credentials.
 Current-file scan passed; no values printed or used. Existing archive coverage
 and previous scope/pattern/account limits remain unchanged.
+
+## D073 reviewed production-prep increment — 2026-10-24
+
+Reviewed commits 0e03ae3..91c2ae1 after the last passing Gate 7 baseline.
+The increment contains production-readiness scaffolding, a fail-closed legacy
+payment-mode guard, staging-selector separation, and synthetic payment-test
+fixtures. Pattern review of every commit diff found no Firebase key, GitHub
+token, private key, provider credential, merchant credential, or account secret.
+
+The only credential-pattern candidates came from historical intermediate blobs
+where the synthetic harness assigned deliberately fabricated values to
+`SLIP2GO_API_SECRET` and `PAYMENT_WEBHOOK_SECRET`. Those values were test-only,
+were never provider credentials, and the current harness constructs the same
+synthetic fixtures without credential-shaped literal assignments. No secret
+value is recorded in this review.
+
+This reviewed increment may be used as the next exclusion baseline for the
+bounded committed-history scanner. Future commits remain fail-closed and are
+scanned normally.
