@@ -48,8 +48,7 @@ function normalizedNotification(raw) {
       raw.currencyCode !== 'THB' || !recordId(raw.paymentID, 255) || !recordId(raw.referenceNo, 50) ||
       typeof raw.respCode !== 'string' || !/^\d{4}$/.test(raw.respCode) ||
       !providerCivilDate(raw.transactionDateTime) ||
-      (raw.respCode === '0000' &&
-        (!Object.hasOwn(raw, 'recurringUniqueID') || !Object.hasOwn(raw, 'recurringSequenceNo'))) ||
+      (raw.respCode === '0000' && !Object.hasOwn(raw, 'recurringUniqueID')) ||
       (Object.hasOwn(raw, 'recurringUniqueID') &&
         !(typeof raw.recurringUniqueID === 'string' && /^\d{1,20}$/.test(raw.recurringUniqueID))) ||
       (Object.hasOwn(raw, 'recurringSequenceNo') &&
