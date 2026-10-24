@@ -200,10 +200,12 @@ export async function handle2c2pSandbox(request, env) {
     assertSandboxStaging(env);
     if (url.origin !== TWOC2P_SANDBOX.origin) fail('Staging payment origin unavailable',503);
     if (path === '/payments/2c2p/return') {
-      if (request.method !== 'GET') return reply({ ok:false, error:'Method not allowed' },405);
-      // Browser redirects/status parameters are never payment evidence. Return
-      // only to the staging application; it will query server-owned status using
-      // the authenticated identity and the invoice kept in sessionStorage.
+      if (!['GET', 'POST'].includes(request.method))
+        return reply({ ok:false, error:'Method not allowed' },405);
+      // 2C2P may return via browser GET or form POST. Neither route, parameters,
+      // nor body are payment evidence. Always discard them and redirect only to
+      // the staging application; authenticated status reconciliation then checks
+      // server-owned state populated by the signed backend notification.
       return Response.redirect(TWOC2P_SANDBOX.origin + '/?payment=sandbox-return', 303);
     }
     if (path === '/payments/2c2p/lifecycle') {
