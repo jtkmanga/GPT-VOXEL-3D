@@ -1,0 +1,57 @@
+name: Production Readiness
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type CHECK-PRODUCTION-ONLY'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-readiness
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    if: inputs.confirm == 'CHECK-PRODUCTION-ONLY'
+    runs-on: ubuntu-24.04
+    environment: production
+    timeout-minutes: 8
+    env:
+      PRODUCTION_PAYMENT_MODE: ${{ vars.PRODUCTION_PAYMENT_MODE }}
+      PRODUCTION_TWOC2P_MERCHANT_ID: ${{ secrets.PRODUCTION_TWOC2P_MERCHANT_ID }}
+      PRODUCTION_TWOC2P_SECRET_KEY: ${{ secrets.PRODUCTION_TWOC2P_SECRET_KEY }}
+      PRODUCTION_FIREBASE_PUBLIC_CONFIG: ${{ vars.PRODUCTION_FIREBASE_PUBLIC_CONFIG }}
+      PRODUCTION_APP_CHECK_SITE_KEY: ${{ vars.PRODUCTION_APP_CHECK_SITE_KEY }}
+      PRODUCTION_ALLOWED_ORIGIN: ${{ vars.PRODUCTION_ALLOWED_ORIGIN }}
+      PRODUCTION_WORKER_ORIGIN: ${{ vars.PRODUCTION_WORKER_ORIGIN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Confirm no deploy command exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ inputs.confirm }}" = "CHECK-PRODUCTION-ONLY"
+          ! grep -qiE 'wrangler deploy|pages deploy' .github/workflows/production-readiness.yml
+      - name: Production configuration preflight
+        run: node scripts/rebuild/check-production-readiness.cjs
+      - name: Development verification suite
+        run: |
+          npm ci
+          node scripts/rebuild/verify-development.cjs
+      - name: Production config remains baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          test "$(git show ea9da135ce408663f8905f649034281882295c05:wrangler.jsonc | sha256sum | cut -d' ' -f1)" = "$(sha256sum wrangler.jsonc | cut -d' ' -f1)"
