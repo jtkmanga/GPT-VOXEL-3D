@@ -1198,11 +1198,14 @@ export class GameRoom {
     const speedActive = Number(p.entitlements?.speedExpires || 0) > now;
 
     if (!applyMovementIntent(p,m,speedActive ? MOVEMENT.entitledSpeed : MOVEMENT.speed,now)) return;
-    ws.serializeAttachment(p);
     this.send(ws,{type:WS_MESSAGE.MOVE,player:this.publicPlayer(p),ack:m.seq,applied:true,
       movement:publicMovement(p),velocity:{x:p.motion.vx,y:p.motion.vy,z:p.motion.vz},
       grounded:p.motion.grounded,serverNow:now});
     this.broadcastNearby({type:WS_MESSAGE.MOVE,player:this.publicPlayer(p)},p,ws);
+    // Persist the authoritative socket attachment after the latency-sensitive
+    // acknowledgement/broadcast. State is still serialized on every accepted
+    // movement frame; only the ordering is changed.
+    ws.serializeAttachment(p);
   }
 
   async handleCollect(ws,p,m) {
