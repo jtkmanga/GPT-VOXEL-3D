@@ -265,7 +265,6 @@ function createHarness(options = {}) {
   const env = {
     FIREBASE_PROJECT_ID: PROJECT_ID,
     ALLOWED_ORIGIN: options.allowedOrigin ?? 'https://rebuild.invalid',
-    PAYMENT_MODE: 'slip2go-production',
     SLIP2GO_API_SECRET: 'synthetic-slip-secret',
     PAYMENT_RECEIVER_ACCOUNT: 'synthetic-test-receiver',
     PAYMENT_WEBHOOK_SECRET: 'synthetic-p7-only-provider-signing-fixture',
