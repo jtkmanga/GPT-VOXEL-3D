@@ -1,0 +1,39 @@
+name: Gate 5 2C2P HPP Discovery
+
+on:
+  push:
+    branches: [development/voxel-continuous]
+    paths:
+      - '.github/workflows/gate5-2c2p-hpp-discovery.yml'
+      - 'tests/rebuild/gate5-2c2p-hpp-discovery.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  hpp:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Playwright Chromium
+        run: |
+          python -m pip install playwright==1.62.0
+          python -m playwright install --with-deps chromium
+      - name: Inspect owner-approved sandbox Hosted Payment Page
+        run: python tests/rebuild/gate5-2c2p-hpp-discovery.py
+      - name: Upload sanitized HPP discovery
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gate5-2c2p-hpp-discovery
+          path: work/gate5/hpp-discovery.json
+          if-no-files-found: error
+          retention-days: 7

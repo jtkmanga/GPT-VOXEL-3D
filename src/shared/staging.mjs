@@ -1,0 +1,66 @@
+// Public staging configuration only. Server credentials never belong in this schema.
+export const STAGING_UNCONFIGURED = Object.freeze({ environment: 'staging', configured: false, authMode: 'popup' });
+
+function record(value, keys, label) {
+  if (!value || typeof value !== 'object' || Array.isArray(value) ||
+      Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null ||
+      Object.keys(value).some(key => !keys.includes(key))) throw new Error(`Invalid ${label} fields`);
+}
+function text(value, expression, label) {
+  if (typeof value !== 'string' || !expression.test(value)) throw new Error(`Invalid ${label}`);
+  return value;
+}
+
+// This independent check permits public Firebase preparation before a real
+// Cloudflare origin is known. It never marks a full staging manifest configured.
+export function validateStagingFirebasePublicConfig(value, { allowTest = false } = {}) {
+  record(value, ['apiKey', 'authDomain', 'projectId', 'appId', 'messagingSenderId'], 'public Firebase');
+  const projectId = text(value.projectId, /^[a-z][a-z0-9-]{4,28}[a-z0-9]$/, 'Firebase project ID');
+  if (!projectId.includes('staging')) throw new Error('Firebase project ID must explicitly identify staging');
+  if (value.authDomain !== `${projectId}.firebaseapp.com`) throw new Error('Firebase auth domain must match the staging project');
+  const apiKey = text(value.apiKey, allowTest ? /^(?:AIza[A-Za-z0-9_-]{35}|synthetic-public-staging-key)$/ : /^AIza[A-Za-z0-9_-]{35}$/, 'public Firebase API key');
+  const appId = text(value.appId, /^1:[0-9]+:web:[a-f0-9]{8,64}$/, 'public Firebase app ID');
+  if (apiKey === 'AIzaSyCwn4rJ48I_bsVI2Ez59szQJubShvhO1SE' ||
+      appId.startsWith('1:541211602508:') || value.messagingSenderId === '541211602508') {
+    throw new Error('Known production Firebase public configuration cannot be reused for staging');
+  }
+  const firebase = { apiKey, authDomain: value.authDomain, projectId, appId };
+  if (value.messagingSenderId !== undefined) {
+    firebase.messagingSenderId = text(value.messagingSenderId, /^[0-9]{1,24}$/, 'Firebase messaging sender ID');
+    if (firebase.messagingSenderId !== appId.split(':')[1]) throw new Error('Firebase public app and sender must identify the same staging project');
+  }
+  return Object.freeze(firebase);
+}
+
+export function validateStagingAppCheckPublicConfig(value) {
+  record(value, ['provider', 'siteKey'], 'public App Check');
+  if (value.provider !== 'recaptcha-enterprise') throw new Error('App Check provider must be reCAPTCHA Enterprise');
+  const siteKey = text(value.siteKey, /^6L[A-Za-z0-9_-]{30,80}$/, 'reCAPTCHA Enterprise site key');
+  return Object.freeze({ provider: value.provider, siteKey });
+}
+
+export function validateStagingPublicConfig(value, { allowUnconfigured = false, allowTest = false } = {}) {
+  if (allowUnconfigured && value?.configured === false) {
+    record(value, ['environment', 'configured', 'authMode'], 'unconfigured staging');
+    if (value.environment !== 'staging' || value.authMode !== 'popup') throw new Error('Invalid unconfigured staging');
+    return STAGING_UNCONFIGURED;
+  }
+  record(value, ['environment', 'workerName', 'workerOrigin', 'firebase', 'appCheck', 'authMode'], 'public staging');
+  if (value.environment !== 'staging') throw new Error('Staging environment is required');
+  const workerName = text(value.workerName, /^gpt-voxel-3d-staging-[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/, 'staging Worker name');
+  const parsed = typeof value.workerOrigin === 'string' ? new URL(value.workerOrigin) : null;
+  if (!parsed || parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.port ||
+      parsed.origin !== value.workerOrigin || parsed.pathname !== '/' || parsed.search || parsed.hash) {
+    throw new Error('Staging Worker must use an explicit HTTPS origin');
+  }
+  const host = parsed.hostname;
+  const safeWorkersHost = host.startsWith(`${workerName}.`) &&
+    /^[a-z0-9-]+\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.workers\.dev$/.test(host);
+  const testHost = allowTest && host === `${workerName}.invalid`;
+  if (!safeWorkersHost && !testHost) throw new Error('Staging Worker origin must match its isolated Worker name');
+  const firebase = validateStagingFirebasePublicConfig(value.firebase, { allowTest });
+  const appCheck = validateStagingAppCheckPublicConfig(value.appCheck);
+  if (value.authMode !== 'popup' && value.authMode !== 'redirect') throw new Error('Google auth mode must be popup or redirect');
+  return Object.freeze({ environment: 'staging', workerName, workerOrigin: parsed.origin,
+    firebase, appCheck, authMode: value.authMode });
+}

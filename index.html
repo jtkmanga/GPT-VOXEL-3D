@@ -80,16 +80,15 @@
         .name-tag {
             position: absolute;
             transform: translate(-50%, -100%);
-            background: rgba(15, 23, 42, 0.85);
-            border: 1.5px solid #f59e0b;
+            background: transparent;
+            border: none;
             color: #ffffff;
-            padding: 4px 12px;
-            border-radius: 20px;
+            padding: 0;
             font-size: 13px;
             font-weight: 700;
             white-space: nowrap;
             pointer-events: none;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+            text-shadow: 0 1px 2px rgba(0,0,0,0.7);
             display: flex;
             align-items: center;
             gap: 6px;
@@ -249,10 +248,9 @@
                         <div id="card-free1" class="bg-slate-800/80 border border-slate-700 rounded-xl p-2.5 flex items-center justify-between transition">
                             <div class="text-left">
                                 <div class="text-xs font-bold text-white flex items-center gap-1.5">
-                                    <span>🌐 Free Server</span>
-                                    <span class="text-[9px] bg-blue-500/20 text-blue-400 border border-blue-500/40 px-1.5 py-0.2 rounded">ฟรีไม่จำกัด</span>
+                                    <span>🌐 Free Server ฟรีไม่จำกัด</span>
                                 </div>
-                                <div class="text-[10px] text-slate-400 mt-0.5">ผู้เล่น: <span class="text-blue-400 font-bold">ไม่จำกัดผู้เล่น</span></div>
+                                <div class="text-[10px] text-slate-400 mt-0.5">ไม่จำกัดผู้เล่น</div>
                             </div>
                             <div id="action-free1">
                                 <button onclick="selectFreeServer('free1')" class="bg-blue-600 hover:bg-blue-500 text-white font-bold text-[11px] px-3 py-1 rounded-lg transition active:scale-95">เลือกเล่น</button>
@@ -267,6 +265,7 @@
                                     <span id="badge-owned-vip1" class="hidden text-[9px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 px-1.5 py-0.2 rounded">มีสิทธิ์แล้ว</span>
                                 </div>
                                 <div class="text-[10px] text-slate-400 mt-0.5">สมาชิก: <span id="count-vip1" class="text-amber-400 font-bold">0/100</span></div>
+                                <div class="text-[10px] text-slate-400 mt-0.5">50 บาท/เดือน</div>
                             </div>
                             <div id="action-vip1" class="flex gap-1"></div>
                         </div>
@@ -503,7 +502,131 @@
         </div>
     </div>
 
-    <script>
+    <script>const movement = (() => {
+// Shared deterministic prediction kernel. The Worker selects elapsed time,
+// speed entitlement and world geometry; packets contain intent only.
+const MOVEMENT = {
+  speed: 22,
+  entitledSpeed: 44,
+  groundAcceleration: 18,
+  airAcceleration: 10,
+  gravity: 42,
+  jumpVelocity: 16,
+  bounds: 748,
+  maxElapsedSeconds: .5,
+  stepSeconds: 1 / 60
+};
+
+function validMovementInput(input) {
+  return Boolean(input && typeof input === 'object' && !Array.isArray(input) &&
+    Object.keys(input).length === 3 && Object.hasOwn(input, 'x') &&
+    Object.hasOwn(input, 'z') && Object.hasOwn(input, 'jump') &&
+    Number.isFinite(input.x) && Number.isFinite(input.z) &&
+    Math.abs(input.x) <= 1 && Math.abs(input.z) <= 1 &&
+    Math.hypot(input.x, input.z) <= 1 + 1e-9 && typeof input.jump === 'boolean');
+}
+
+// A staging batch preserves the ordered intervals the client actually
+// predicted. Durations describe intent history; only the server clock grants
+// simulation time. No position, velocity, entitlement or timestamp is accepted.
+function validMovementFrames(frames) {
+  if (!Array.isArray(frames) || frames.length < 1 || frames.length > 64) return false;
+  let elapsed = 0;
+  for (const frame of frames) {
+    if (!frame || typeof frame !== 'object' || Array.isArray(frame) ||
+        Object.keys(frame).length !== 2 || !Object.hasOwn(frame, 'input') ||
+        !Object.hasOwn(frame, 'delta') || !validMovementInput(frame.input) ||
+        !Number.isFinite(frame.delta) || frame.delta < 0 || frame.delta > .1) return false;
+    elapsed += frame.delta;
+    if (elapsed > MOVEMENT.maxElapsedSeconds + 1e-9) return false;
+  }
+  return true;
+}
+
+function sweepAxis(start, end, other, axis, obstacles) {
+  const min = axis === 'x' ? 'minX' : 'minZ';
+  const max = axis === 'x' ? 'maxX' : 'maxZ';
+  const otherMin = axis === 'x' ? 'minZ' : 'minX';
+  const otherMax = axis === 'x' ? 'maxZ' : 'maxX';
+  let result = end;
+  for (const box of obstacles) {
+    if (other <= box[otherMin] || other >= box[otherMax]) continue;
+    // Continuous segment intersection also catches thin obstacles. Contacts
+    // stop just outside the inflated geometry, permitting sliding on walls.
+    if (end > start && start <= box[min] && result >= box[min]) {
+      result = Math.min(result, box[min] - 1e-7);
+    } else if (end < start && start >= box[max] && result <= box[max]) {
+      result = Math.max(result, box[max] + 1e-7);
+    } else if (start > box[min] && start < box[max] && end > box[min] && end < box[max]) {
+      // An upgraded/spawned state inside geometry may leave, never move deeper.
+      const midpoint = (box[min] + box[max]) / 2;
+      if ((start <= midpoint && end > start) || (start > midpoint && end < start)) result = start;
+    }
+  }
+  return result;
+}
+
+function integrateMovement(state, input, elapsedSeconds, options = {}) {
+  if (!validMovementInput(input)) throw new TypeError('Invalid movement intent');
+  const result = {
+    x: Number.isFinite(state?.x) ? state.x : 0,
+    y: Number.isFinite(state?.y) ? Math.max(0, state.y) : 0,
+    z: Number.isFinite(state?.z) ? state.z : 0,
+    r: Number.isFinite(state?.r) ? state.r : 0,
+    vx: Number.isFinite(state?.vx) ? state.vx : 0,
+    vz: Number.isFinite(state?.vz) ? state.vz : 0,
+    vy: Number.isFinite(state?.vy) ? state.vy : 0,
+    jumpHeld: state?.jumpHeld === true,
+    grounded: typeof state?.grounded === 'boolean' ? state.grounded : !(state?.y > 0)
+  };
+  const elapsed = Math.min(MOVEMENT.maxElapsedSeconds,
+    Math.max(0, Number.isFinite(elapsedSeconds) ? elapsedSeconds : 0));
+  const speed = Number.isFinite(options.speed) && options.speed >= 0 ? options.speed : MOVEMENT.speed;
+  const bounds = Number.isFinite(options.bounds) && options.bounds > 0 ? options.bounds : MOVEMENT.bounds;
+  const obstacles = Array.isArray(options.obstacles) ? options.obstacles : [];
+  if (input.jump && !result.jumpHeld && result.grounded) {
+    result.vy = MOVEMENT.jumpVelocity;
+    result.grounded = false;
+  }
+  result.jumpHeld = input.jump;
+  if (!elapsed) return result;
+  const steps = Math.max(1, Math.ceil(elapsed / MOVEMENT.stepSeconds));
+  const delta = elapsed / steps;
+  for (let step = 0; step < steps; step++) {
+    const acceleration = result.grounded ? MOVEMENT.groundAcceleration : MOVEMENT.airAcceleration;
+    const damping = Math.min(1, acceleration * delta);
+    result.vx += (input.x * speed - result.vx) * damping;
+    result.vz += (input.z * speed - result.vz) * damping;
+    const candidateX = Math.min(bounds, Math.max(-bounds, result.x + result.vx * delta));
+    const x = sweepAxis(result.x, candidateX, result.z, 'x', obstacles);
+    if (Math.abs(x - (result.x + result.vx * delta)) > 1e-9) result.vx = 0;
+    result.x = x;
+    const candidateZ = Math.min(bounds, Math.max(-bounds, result.z + result.vz * delta));
+    const z = sweepAxis(result.z, candidateZ, result.x, 'z', obstacles);
+    if (Math.abs(z - (result.z + result.vz * delta)) > 1e-9) result.vz = 0;
+    result.z = z;
+    if (Math.hypot(result.vx, result.vz) > .5) {
+      let difference = Math.atan2(result.vx, result.vz) - result.r;
+      while (difference < -Math.PI) difference += Math.PI * 2;
+      while (difference > Math.PI) difference -= Math.PI * 2;
+      result.r += difference * Math.min(1, MOVEMENT.groundAcceleration * delta);
+    }
+    if (!result.grounded) {
+      result.y += result.vy * delta;
+      result.vy -= MOVEMENT.gravity * delta;
+      if (result.y <= 0) {
+        result.y = 0;
+        result.vy = 0;
+        result.grounded = true;
+      }
+    }
+  }
+  return result;
+}
+
+return { MOVEMENT, validMovementInput, validMovementFrames, integrateMovement };
+})();
+
         // --- FIREBASE REAL GOOGLE AUTHENTICATION & DATABASE CONFIGURATION ---
         const firebaseConfig = {
             apiKey: "AIzaSyCwn4rJ48I_bsVI2Ez59szQJubShvhO1SE",
@@ -545,6 +668,7 @@
 
         // Listen to Auth State Changes
         auth.onAuthStateChanged((user) => {
+            if (typeof secureOnIdentityChanged === 'function') secureOnIdentityChanged(user);
             if (user) {
                 state.isLoggedIn = true;
                 state.userId = user.uid;
@@ -607,9 +731,9 @@
 
         // ฟังก์ชันบวกคะแนนและบันทึกลงหน่วยความจำ (localStorage) แยกตาม userId ของบัญชีนั้น ๆ
         function addScore(points) {
-            state.score += points; 
+            state.score += points;
             const key = getScoreStorageKey();
-            localStorage.setItem(key, state.score); 
+            localStorage.setItem(key, state.score);
             updateScoreDisplay();
             syncMyPlayerData(true);
         }
@@ -618,7 +742,7 @@
         function resetHighScore() {
             state.score = 0;
             const key = getScoreStorageKey();
-            localStorage.setItem(key, 0); 
+            localStorage.setItem(key, 0);
             updateScoreDisplay();
             syncMyPlayerData(true);
         }
@@ -687,7 +811,7 @@
             document.getElementById('pay-item-title').innerText = title;
             document.getElementById('pay-item-price').innerText = price + " บาท";
 
-            const promptpayTarget = "0999999999"; 
+            const promptpayTarget = "0999999999";
             document.getElementById('promptpay-qr-img').src = `https://promptpay.io/${promptpayTarget}/${price}.png`;
 
             document.getElementById('slip-file-input').value = "";
@@ -738,7 +862,7 @@
             const actionFree1 = document.getElementById('action-free1');
 
             if (cardFree1) {
-                cardFree1.className = isSelectedFree1 
+                cardFree1.className = isSelectedFree1
                     ? "bg-blue-500/20 border-2 border-blue-400 rounded-xl p-2.5 flex items-center justify-between transition shadow-md shadow-blue-500/10"
                     : "bg-slate-800/80 border border-slate-700 rounded-xl p-2.5 flex items-center justify-between transition";
             }
@@ -796,7 +920,7 @@
                 }
 
                 if (cardEl) {
-                    cardEl.className = isSelected 
+                    cardEl.className = isSelected
                         ? "bg-amber-500/20 border-2 border-amber-400 rounded-xl p-2.5 flex items-center justify-between transition shadow-md shadow-amber-500/10"
                         : "bg-slate-800/80 border border-slate-700 rounded-xl p-2.5 flex items-center justify-between transition";
                 }
@@ -806,7 +930,7 @@
 
                     if (isVipActive) {
                         const btnSelect = document.createElement('button');
-                        btnSelect.className = isSelected 
+                        btnSelect.className = isSelected
                             ? "bg-amber-500 text-slate-950 font-extrabold text-[11px] px-3 py-1 rounded-lg"
                             : "bg-slate-700 hover:bg-slate-600 text-amber-400 font-bold text-[11px] px-2.5 py-1 rounded-lg border border-amber-500/30 transition active:scale-95";
                         btnSelect.innerText = isSelected ? "กำลังเลือก" : "เลือกเซิร์ฟ";
@@ -845,7 +969,6 @@
                 }
             }
         }
-
         // Web Audio Synthesizer
         const audio = {
             ctx: null,
@@ -922,7 +1045,6 @@
                 });
             }
         };
-
         // FIREBASE REALTIME DATABASE LEADERBOARD & MULTIPLAYER SYSTEM
         let currentLeaderboardRef = null;
 
@@ -1031,13 +1153,13 @@
 
         function listenToRealtimeLeaderboard(serverId) {
             if (!serverId) return;
-            
+
             if (currentLeaderboardRef) {
                 currentLeaderboardRef.off();
             }
 
             currentLeaderboardRef = database.ref(`servers/${serverId}/leaderboard`).orderByChild('score').limitToLast(20);
-            
+
             currentLeaderboardRef.on('value', (snapshot) => {
                 const board = [];
                 snapshot.forEach((child) => {
@@ -1117,7 +1239,7 @@
 
             const pGroup = new THREE.Group();
             const skinMat = new THREE.MeshLambertMaterial({ color: 0xffdbac });
-            const shirtMat = new THREE.MeshLambertMaterial({ color: 0xe53e3e }); 
+            const shirtMat = new THREE.MeshLambertMaterial({ color: 0xe53e3e });
             const pantsMat = new THREE.MeshLambertMaterial({ color: 0x742a2a });
 
             const head = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.9, 0.9), skinMat);
@@ -1221,7 +1343,7 @@
         function updateLeaderboardUI(board = []) {
             const miniList = document.getElementById('mini-leaderboard-list');
             miniList.innerHTML = '';
-            
+
             if (board.length === 0) {
                 miniList.innerHTML = '<div class="text-center text-slate-400 py-1">ยังไม่มีข้อมูล</div>';
             }
@@ -1264,7 +1386,6 @@
                 fullList.appendChild(div);
             });
         }
-
         // SHOP LOGIC FUNCTIONS
         function loadSavedBuffs() {
             const savedSpeed = localStorage.getItem('voxel_shop_speed_expire');
@@ -1280,6 +1401,7 @@
         }
 
         function openShopModal() {
+            if (typeof window !== 'undefined' && typeof window.resetGameplayInput === 'function') window.resetGameplayInput();
             state.isPaused = true;
             const localNameTag = document.getElementById('player-nametag');
             if (localNameTag) localNameTag.style.display = 'none';
@@ -1353,7 +1475,7 @@
             // AOI starts from the player's current position; Zone is invisible to players.
             listenToRemotePlayers(state.selectedServerId, true);
             state.isPaused = false;
-            
+
             // โหลดคะแนนเฉพาะไอดีปัจจุบันทันทีเมื่อเริ่มเล่น
             loadScoreForCurrentId();
             syncMyPlayerData(true);
@@ -1375,6 +1497,7 @@
         }
 
         function openHomeConfirmModal() {
+            if (typeof window !== 'undefined' && typeof window.resetGameplayInput === 'function') window.resetGameplayInput();
             state.isPaused = true;
             const localNameTag = document.getElementById('player-nametag');
             if (localNameTag) localNameTag.style.display = 'none';
@@ -1419,14 +1542,13 @@
         function closeFullLeaderboard() {
             document.getElementById('leaderboard-modal').classList.add('hidden');
         }
-
         // Three.js Scene Setup
         let scene, camera, renderer;
         let playerGroup, playerBody, leftArm, rightArm, leftLeg, rightLeg;
         const MAP_SIZE = 1500;
         const MAX_COINS_PER_MAP = 200;
-        const COIN_RESPAWN_MS = 60 * 1000;
-        const LUCKY_BOX_RESPAWN_MS = 4 * 60 * 60 * 1000;
+        const COIN_RESPAWN_MS = 60000;
+        const LUCKY_BOX_RESPAWN_MS = 14400000;
 
         const buildings = [];
         const trees = [];
@@ -1437,6 +1559,7 @@
         let serverMapSeed = 'default-map';
         let mapRandom = Math.random;
         const staticMapObjects = [];
+        const nameplateOccluders = [];
 
         function createSeededRandom(seedText) {
             let seed = 2166136261;
@@ -1457,10 +1580,28 @@
         }
 
         function clearStaticMapObjects() {
+            const geometries = new Set();
+            const materials = new Set();
             staticMapObjects.forEach(obj => {
-                if (obj && scene) scene.remove(obj);
+                if (!obj) return;
+                if (scene) scene.remove(obj);
+                if (obj.geometry) geometries.add(obj.geometry);
+                const list = Array.isArray(obj.material) ? obj.material : [obj.material];
+                list.forEach(material => { if (material) materials.add(material); });
             });
+            // Only release resources no longer used by the retained scene.
+            // Building windows share materials; dispose each unique resource once.
+            if (scene && typeof scene.traverse === 'function') {
+                scene.traverse(obj => {
+                    geometries.delete(obj.geometry);
+                    const list = Array.isArray(obj.material) ? obj.material : [obj.material];
+                    list.forEach(material => materials.delete(material));
+                });
+            }
+            geometries.forEach(geometry => geometry.dispose());
+            materials.forEach(material => material.dispose());
             staticMapObjects.length = 0;
+            nameplateOccluders.length = 0;
             buildings.length = 0;
             trees.length = 0;
         }
@@ -1475,10 +1616,7 @@
             buildVoxelStructures();
 
             // สร้างเหรียญใหม่ด้วย seed เดียวกัน
-            coins.forEach(c => {
-                if (c && c.mesh && scene) scene.remove(c.mesh);
-            });
-            coins.length = 0;
+            clearCoinMeshes();
             spawnCoins(MAX_COINS_PER_MAP);
         }
 
@@ -1688,13 +1826,35 @@
             // สำคัญ: map ทั้งหมดถูกสร้างจาก seed ของ serverId เดียวกัน
             rebuildServerStaticMap(serverId);
 
-            if (luckyBox && luckyBox.mesh) {
-                scene.remove(luckyBox.mesh);
-                luckyBox = null;
-            }
+            clearLuckyBoxMesh();
 
             listenToCoinsRealtime(serverId);
             spawnLuckyBoxes(serverId);
+        }
+
+        function clearCoinMeshes() {
+            // A spawned batch shares geometry/material; release once, only after
+            // detaching the entire batch and checking retained scene owners.
+            const geometries = new Set();
+            const materials = new Set();
+            coins.forEach(coin => {
+                const mesh = coin && coin.mesh;
+                if (!mesh) return;
+                if (scene) scene.remove(mesh);
+                if (mesh.geometry) geometries.add(mesh.geometry);
+                const list = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+                list.forEach(material => { if (material) materials.add(material); });
+            });
+            if (scene && typeof scene.traverse === 'function') {
+                scene.traverse(obj => {
+                    geometries.delete(obj.geometry);
+                    const list = Array.isArray(obj.material) ? obj.material : [obj.material];
+                    list.forEach(material => materials.delete(material));
+                });
+            }
+            geometries.forEach(geometry => geometry.dispose());
+            materials.forEach(material => material.dispose());
+            coins.length = 0;
         }
 
         function spawnCoins(count) {
@@ -1958,9 +2118,9 @@
                 }
             });
         }
-
         function setupControls() {
             window.addEventListener('keydown', (e) => {
+                if (!state.isPlaying || state.isPaused || document.hidden || e.repeat) return;
                 const code = e.code;
                 const k = e.key ? e.key.toLowerCase() : '';
                 if (code === 'KeyW' || code === 'ArrowUp' || k === 'w') keys.w = true;
@@ -1989,7 +2149,10 @@
                 triggerJump();
             };
             jumpBtn.addEventListener('touchstart', handleJump, { passive: false });
-            jumpBtn.addEventListener('mousedown', handleJump);
+            jumpBtn.addEventListener('mousedown', (e) => {
+                if (e.sourceCapabilities?.firesTouchEvents) return;
+                handleJump(e);
+            });
 
             const joystickZone = document.getElementById('joystick-zone');
             const joystickHandle = document.getElementById('joystick-handle');
@@ -1998,6 +2161,7 @@
             let joyCenter = { x: 0, y: 0 };
 
             function handleJoyStart(e) {
+                if (!state.isPlaying || state.isPaused || document.hidden) return;
                 if (joystickActive) return;
                 const touch = e.changedTouches ? e.changedTouches[0] : e;
                 if (!touch) return;
@@ -2070,6 +2234,7 @@
             }
 
             window.addEventListener('touchstart', (e) => {
+                if (!state.isPlaying || state.isPaused || document.hidden) return;
                 for (let t of e.changedTouches) {
                     if (!isUIElement(t.target) && camTouchId === null) {
                         camTouchId = t.identifier;
@@ -2117,6 +2282,7 @@
 
             let isMouseDown = false;
             window.addEventListener('mousedown', (e) => {
+                if (!state.isPlaying || state.isPaused || document.hidden) return;
                 if (!isUIElement(e.target)) {
                     isMouseDown = true;
                     lastTouchX = e.clientX;
@@ -2138,10 +2304,30 @@
             });
 
             window.addEventListener('mouseup', () => { isMouseDown = false; });
+
+            // A keyup/touchend may never arrive after an app switch. Drop only
+            // local input intent; keep authoritative physics and sent frames.
+            function resetInterruptedInput() {
+                Object.keys(keys).forEach(key => { keys[key] = false; });
+                handleJoyEnd();
+                joystickVec.x = 0;
+                joystickVec.y = 0;
+                camTouchId = null;
+                isDraggingCam = false;
+                isMouseDown = false;
+                if (typeof secureJumpIntent !== 'undefined') secureJumpIntent = false;
+                if (typeof secureJumpHeld !== 'undefined') secureJumpHeld = false;
+            }
+            window.resetGameplayInput = resetInterruptedInput;
+            window.addEventListener('blur', resetInterruptedInput);
+            document.addEventListener('visibilitychange', () => {
+                if (document.hidden) resetInterruptedInput();
+            });
         }
 
         function triggerJump() {
-            if (isGrounded && state.isPlaying && !state.isPaused) {
+            if (isGrounded && state.isPlaying && !state.isPaused && !document.hidden) {
+                if (typeof secureQueueJump === 'function') secureQueueJump();
                 playerVelocityY = 16.0;
                 isGrounded = false;
                 audio.playJump();
@@ -2153,14 +2339,7 @@
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
         }
-
-        const WHEEL_ITEMS = [
-            { label: "100 เหรียญ", value: 100, weight: 50, color: "#3b82f6" },
-            { label: "500 เหรียญ", value: 500, weight: 30, color: "#10b981" },
-            { label: "1,000 เหรียญ", value: 1000, weight: 19, color: "#8b5cf6" },
-            { label: "5,000 เหรียญ", value: 5000, weight: 0.9, color: "#f59e0b" },
-            { label: "9,999 เหรียญ", value: 9999, weight: 0.1, color: "#ef4444" }
-        ];
+        const WHEEL_ITEMS = ([{"label":"100 เหรียญ","value":100,"weight":50,"color":"#3b82f6"},{"label":"500 เหรียญ","value":500,"weight":30,"color":"#10b981"},{"label":"1,000 เหรียญ","value":1000,"weight":19,"color":"#8b5cf6"},{"label":"5,000 เหรียญ","value":5000,"weight":0.9,"color":"#f59e0b"},{"label":"9,999 เหรียญ","value":9999,"weight":0.1,"color":"#ef4444"}]);
 
         let currentWheelAngle = 0;
 
@@ -2216,6 +2395,7 @@
         }
 
         function triggerLuckyBoxModal() {
+            if (typeof window !== 'undefined' && typeof window.resetGameplayInput === 'function') window.resetGameplayInput();
             state.isPaused = true;
             const localNameTag = document.getElementById('player-nametag');
             if (localNameTag) localNameTag.style.display = 'none';
@@ -2319,6 +2499,28 @@
             const canvasRect = renderer.domElement.getBoundingClientRect();
             const maxDistance = 28; // ระยะที่สามารถเห็นชื่อผู้เล่นอื่น
 
+            // Build one conservative shortlist lazily per frame, shared by all
+            // visible labels. The sphere includes the camera and every eligible
+            // head, so geometry outside it cannot intersect a label segment.
+            let occludersReady = false;
+            const origin = camera.getWorldPosition(new THREE.Vector3());
+            function nearbyOccluders() {
+                if (occludersReady) return nameplateOccluders;
+                occludersReady = true;
+                nameplateOccluders.length = 0;
+                const reach = origin.distanceTo(playerPos) + maxDistance + 2.75;
+                const bounds = new THREE.Sphere();
+                staticMapObjects.forEach(object => {
+                    if (!object || !object.visible || !object.geometry) return;
+                    object.updateWorldMatrix(true, false);
+                    if (!object.geometry.boundingSphere) object.geometry.computeBoundingSphere();
+                    bounds.copy(object.geometry.boundingSphere).applyMatrix4(object.matrixWorld);
+                    if (bounds.center.distanceTo(origin) <= reach + bounds.radius)
+                        nameplateOccluders.push(object);
+                });
+                return nameplateOccluders;
+            }
+
             function updateTag(tag, worldPos, extraDistanceCheck = null) {
                 if (!tag) return;
 
@@ -2338,6 +2540,23 @@
                 ) {
                     tag.style.display = 'none';
                     return;
+                }
+
+                // DOM labels have no depth buffer: explicitly test opaque map
+                // geometry between the camera and remote player's head.
+                if (extraDistanceCheck !== null && typeof staticMapObjects !== 'undefined') {
+                    const direction = worldPos.clone().sub(origin);
+                    const length = direction.length();
+                    if (length > 0) {
+                        const ray = new THREE.Raycaster(origin, direction.normalize(), 0, Math.max(0, length - 0.01));
+                        const blocked = nearbyOccluders().some(object => {
+                            return ray.intersectObject(object, false).length > 0;
+                        });
+                        if (blocked) {
+                            tag.style.display = 'none';
+                            return;
+                        }
+                    }
                 }
 
                 const x = (projected.x * 0.5 + 0.5) * canvasRect.width + canvasRect.left;
@@ -2384,71 +2603,9 @@
             const nowMs = Date.now();
 
             if (state.isPlaying && !state.isPaused) {
-                let moveX = 0;
-                let moveZ = 0;
-
-                if (keys.w) moveZ -= 1;
-                if (keys.s) moveZ += 1;
-                if (keys.a) moveX -= 1;
-                if (keys.d) moveX += 1;
-
-                if (Math.abs(joystickVec.x) > 0.05) moveX = joystickVec.x;
-                if (Math.abs(joystickVec.y) > 0.05) moveZ = joystickVec.y;
-
-                const inputLen = Math.sqrt(moveX * moveX + moveZ * moveZ);
-
-                let moveSpeed = 22.0;
-                if (state.shop.speedBuffExpires > nowMs) {
-                    moveSpeed *= 2;
-                }
-
-                let targetVelX = 0;
-                let targetVelZ = 0;
-
-                if (inputLen > 0.05) {
-                    const normX = moveX / Math.max(1, inputLen);
-                    const normZ = moveZ / Math.max(1, inputLen);
-
-                    const forwardAmount = -normZ; 
-                    const rightAmount = normX;
-
-                    const worldMoveX = rightAmount * Math.cos(cameraYaw) - forwardAmount * Math.sin(cameraYaw);
-                    const worldMoveZ = -rightAmount * Math.sin(cameraYaw) - forwardAmount * Math.cos(cameraYaw);
-                    const inputMag = Math.min(inputLen, 1);
-
-                    targetVelX = worldMoveX * moveSpeed * inputMag;
-                    targetVelZ = worldMoveZ * moveSpeed * inputMag;
-                }
-
-                const accelDamp = Math.min(1, (isGrounded ? 18 : 10) * delta);
-                playerVel.x += (targetVelX - playerVel.x) * accelDamp;
-                playerVel.z += (targetVelZ - playerVel.z) * accelDamp;
-
-                const nextX = playerPos.x + playerVel.x * delta;
-                const nextZ = playerPos.z + playerVel.z * delta;
-
-                const limit = MAP_SIZE / 2 - 2;
-                const isObstacle = (x, z) => {
-                    return buildings.some(b => x >= b.minX && x <= b.maxX && z >= b.minZ && z <= b.maxZ) ||
-                           trees.some(t => x >= t.minX && x <= t.maxX && z >= t.minZ && z <= t.maxZ);
-                };
-
-                let collideX = isObstacle(nextX, playerPos.z);
-                let collideZ = isObstacle(playerPos.x, nextZ);
-
-                if (!collideX && Math.abs(nextX) < limit) playerPos.x = nextX; else playerVel.x = 0;
-                if (!collideZ && Math.abs(nextZ) < limit) playerPos.z = nextZ; else playerVel.z = 0;
-
+                securePredictMovement(delta);
                 const currentSpeed = Math.sqrt(playerVel.x * playerVel.x + playerVel.z * playerVel.z);
-
-                if (currentSpeed > 0.5) {
-                    const targetRotation = Math.atan2(playerVel.x, playerVel.z);
-                    let diff = targetRotation - playerRotation;
-                    while (diff < -Math.PI) diff += Math.PI * 2;
-                    while (diff > Math.PI) diff -= Math.PI * 2;
-                    playerRotation += diff * Math.min(1, 18 * delta);
-                    playerGroup.rotation.y = playerRotation;
-                }
+                playerGroup.rotation.y = playerRotation;
 
                 if (currentSpeed > 0.5) {
                     walkCycle += delta * 12;
@@ -2465,20 +2622,17 @@
                     rightLeg.rotation.x += (0 - rightLeg.rotation.x) * limbDamp;
                 }
 
-                if (!isGrounded) {
-                    playerPos.y += playerVelocityY * delta;
-                    playerVelocityY -= 42.0 * delta;
+                const correctionDamp = Math.min(1, 12 * delta);
+                securePredictionCorrection.x *= 1 - correctionDamp;
+                securePredictionCorrection.y *= 1 - correctionDamp;
+                securePredictionCorrection.z *= 1 - correctionDamp;
+                playerGroup.position.set(
+                    playerPos.x + securePredictionCorrection.x,
+                    playerPos.y + securePredictionCorrection.y,
+                    playerPos.z + securePredictionCorrection.z
+                );
 
-                    if (playerPos.y <= 0) {
-                        playerPos.y = 0;
-                        playerVelocityY = 0;
-                        isGrounded = true;
-                    }
-                }
-
-                playerGroup.position.copy(playerPos);
-
-                // Broadcast local position & score to multiplayer server
+                // Send intent and an ordered sequence; position remains server-owned.
                 syncMyPlayerData();
 
                 const camDx = Math.sin(cameraYaw) * Math.cos(cameraPitch) * cameraDistance;
@@ -2486,12 +2640,12 @@
                 const camDz = Math.cos(cameraYaw) * Math.cos(cameraPitch) * cameraDistance;
 
                 const targetCamPos = new THREE.Vector3(
-                    playerPos.x + camDx,
-                    playerPos.y + camDy,
-                    playerPos.z + camDz
+                    playerGroup.position.x + camDx,
+                    playerGroup.position.y + camDy,
+                    playerGroup.position.z + camDz
                 );
 
-                const rawLookAt = new THREE.Vector3(playerPos.x, playerPos.y + 1.5, playerPos.z);
+                const rawLookAt = new THREE.Vector3(playerGroup.position.x, playerGroup.position.y + 1.5, playerGroup.position.z);
                 const camDamp = Math.min(1, 12 * delta);
 
                 camera.position.lerp(targetCamPos, camDamp);
@@ -2499,9 +2653,9 @@
                 camera.lookAt(smoothCamTarget);
 
                 coins.forEach((coin) => {
-                    // Firebase เป็นตัวกลางของสถานะ แต่การกลับมาแสดงผลหลัง 1 นาที
-                    // ต้องทำได้ทันทีในเครื่องนี้โดยไม่ต้องรอ snapshot ใหม่
-                    if (!coin.active && coin.respawnTime > 0 && nowMs >= coin.respawnTime) {
+                    // Project only the cooldown supplied by the authoritative
+                    // room, using its clock offset rather than device time.
+                    if (!coin.active && coin.respawnTime > 0 && secureNow() >= coin.respawnTime) {
                         coin.active = true;
                         coin.mesh.visible = true;
                         coin.respawnTime = 0;
@@ -2543,7 +2697,7 @@
                         return;
                     }
                     op.mesh.position.lerp(op.targetPos, 0.15);
-                    
+
                     let diffRot = op.targetRot - op.mesh.rotation.y;
                     while (diffRot < -Math.PI) diffRot += Math.PI * 2;
                     while (diffRot > Math.PI) diffRot -= Math.PI * 2;
@@ -2566,14 +2720,13 @@
                 });
             }
 
+            if (state.isPlaying && state.isPaused) syncMyPlayerData();
             renderer.render(scene, camera);
         }
-
-
         // ============================================================
         // SECURE WORKER CLIENT OVERRIDES (2026-09-28)
         // Payment/entitlements + Free Server multiplayer + Coin + Lucky Box are server-authoritative.
-        // VIP gameplay remains disabled until separate VIP room routing is completed.
+        // VIP gameplay uses its separately admitted trusted room; purchases stay disabled in this rebuild.
         // ============================================================
         // FREE_10K_PHASE2C1_CLIENT
         // Free Server client now connects directly to the 10x10 ZoneRoom mesh,
@@ -2589,7 +2742,7 @@
         const SECURE_WORKER_WS_BASE = SECURE_WORKER_HTTP_BASE.replace(/^http/, 'ws') + '/play';
         const SECURE_PAYMENT_PROMPTPAY_TARGET = '0999999999'; // MUST match PAYMENT_RECEIVER_ACCOUNT before public launch.
         const SECURE_ZONE_GRID_SIZE = 10;
-        const SECURE_ZONE_SIZE = MAP_SIZE / SECURE_ZONE_GRID_SIZE;
+        const SECURE_ZONE_SIZE = 150;
 
         let secureGameSocket = null;
         let secureGameReady = false;
@@ -2605,16 +2758,51 @@
         const secureIntentionalSockets = new WeakSet();
         const secureRemoteSources = new Map();
         const secureGhostMembersByZone = new Map();
+        let secureIdentityUid = null;
+
+        function secureOnIdentityChanged(user) {
+            const nextUid = typeof user?.uid === 'string' ? user.uid : null;
+            if (secureIdentityUid === nextUid) return;
+            secureIdentityUid = nextUid;
+            state.shop.speedBuffExpires = 0;
+            state.shop.coinBuffExpires = 0;
+            state.userVipSubscriptions = {};
+            if (typeof secureCancelReconnect === 'function') secureCancelReconnect();
+            if (typeof secureSessionTickets !== 'undefined') secureSessionTickets.clear();
+            if (typeof secureAbortClientConnections === 'function') {
+                secureAbortClientConnections('Account changed', 1008);
+            } else if (secureGameSocket && secureGameSocket.secureAuthenticatedUid !== nextUid) {
+                const ws = secureGameSocket;
+                if (typeof secureClearSocketRefresh === 'function') secureClearSocketRefresh(ws);
+                secureCloseSocket(ws, 1008, 'Account changed');
+                if (secureGameSocket === ws) secureGameSocket = null;
+            }
+            if (state.isPlaying) secureReturnToMenu();
+            if (!nextUid && secureEntitlementRefreshTimer) {
+                clearInterval(secureEntitlementRefreshTimer);
+                secureEntitlementRefreshTimer = null;
+            }
+        }
 
         function secureNow() {
+            const sample = secureSetServerNow.sample;
+            if (sample) {
+                const tick = typeof performance !== 'undefined' && typeof performance.now === 'function'
+                    ? performance.now() : Date.now();
+                return sample.server + Math.max(0, tick - sample.tick);
+            }
             return Date.now() + secureServerTimeOffset;
         }
 
         function secureSetServerNow(serverNow) {
             const n = Number(serverNow);
-            if (Number.isFinite(n) && n > 0) {
-                secureServerTimeOffset = n - Date.now();
-            }
+            if (!Number.isFinite(n) || n <= 0 || n <= (secureSetServerNow.sample?.latest || 0)) return false;
+            const server = secureSetServerNow.sample ? Math.max(n, secureNow()) : n;
+            const tick = typeof performance !== 'undefined' && typeof performance.now === 'function'
+                ? performance.now() : Date.now();
+            secureSetServerNow.sample = { latest: n, server, tick };
+            secureServerTimeOffset = server - Date.now();
+            return true;
         }
 
         function secureNormalizeEntitlements(raw = {}) {
@@ -2655,14 +2843,24 @@
                 return null;
             }
 
+            const uid = user.uid;
             const token = await user.getIdToken(forceTokenRefresh);
+            if (auth.currentUser !== user || auth.currentUser?.uid !== uid) {
+                throw new Error('บัญชีเปลี่ยนระหว่างตรวจสอบสิทธิ์');
+            }
+            const headers = { 'Authorization': 'Bearer ' + token };
+            if (typeof stagingGetAppCheckToken === 'function') {
+                headers['X-Firebase-AppCheck'] = await stagingGetAppCheckToken(false);
+            }
             const response = await fetch(SECURE_WORKER_HTTP_BASE + '/entitlements', {
-                method: 'GET',
-                headers: { 'Authorization': 'Bearer ' + token }
+                method: 'GET', headers
             });
             const result = await response.json().catch(() => ({}));
             if (!response.ok || !result?.ok) {
                 throw new Error(result?.error || 'ไม่สามารถโหลดสิทธิ์จาก Server ได้');
+            }
+            if (auth.currentUser !== user || auth.currentUser?.uid !== uid) {
+                throw new Error('บัญชีเปลี่ยนระหว่างตรวจสอบสิทธิ์');
             }
 
             secureApplyEntitlements(result.entitlements, result.servers, result.serverNow);
@@ -2716,11 +2914,7 @@
             }, 60_000);
         };
 
-        const SECURE_PAYMENT_ITEMS = {
-            speed: { price: 10, title: 'เพิ่มความเร็วเคลื่อนที่ x2 (24 ช.ม.)' },
-            coin: { price: 20, title: 'เหรียญตามแมพ x2 (24 ช.ม.)' },
-            vip1: { price: 50, title: 'สิทธิ์ VIP Server 1 (30 วัน)' }
-        };
+        const SECURE_PAYMENT_ITEMS = ({"speed":{"price":10,"title":"เพิ่มความเร็วเคลื่อนที่ x2 (24 ช.ม.)"},"coin":{"price":20,"title":"เหรียญตามแมพ x2 (24 ช.ม.)"},"vip1":{"price":50,"title":"สิทธิ์ VIP Server 1 (30 วัน)"}});
 
         openPaymentModal = function(type, _price, title) {
             if (!state.isLoggedIn || !auth.currentUser) {
@@ -2729,7 +2923,7 @@
             }
 
             if (type === 'vip1') {
-                alert('เวอร์ชัน Security Test ยังปิดการซื้อ VIP ชั่วคราว จนกว่า Worker จะแยกห้อง VIP ออกจาก Free Server เรียบร้อย เพื่อไม่ให้รับเงินจริงก่อนระบบพร้อม');
+                alert('การชำระเงิน VIP ยังไม่เปิดใช้งาน: ราคา 50 บาท/เดือน ต้องยืนยันผู้ให้บริการชำระเงินก่อน');
                 return;
             }
 
@@ -2813,24 +3007,27 @@
             return false;
         };
 
-        selectVipServer = async function() {
+        selectVipServer = async function(serverId = 'vip1') {
+            if (serverId !== 'vip1' || !auth.currentUser) return false;
+            const user = auth.currentUser;
+            let result;
             try {
-                await secureLoadEntitlements(true);
+                result = await secureLoadEntitlements(true);
             } catch (err) {
                 alert('ตรวจสอบสิทธิ์ VIP กับ Server ไม่สำเร็จ: ' + err.message);
-                return;
+                return false;
             }
 
-            const vipSub = state.userVipSubscriptions.vip1;
-            const expiry = Number(vipSub?.expireTime || 0);
-            if (expiry <= secureNow()) {
+            const expiry = Number(result?.entitlements?.vip1Expires ?? result?.entitlements?.vip1_expires ?? 0);
+            if (auth.currentUser !== user || !Number.isFinite(expiry) || expiry <= secureNow()) {
                 alert('คุณยังไม่มีสิทธิ์ VIP ที่ใช้งานได้');
-                return;
+                return false;
             }
 
-            alert('สิทธิ์ VIP ของคุณถูกยืนยันจาก Server แล้ว แต่ Security Test นี้ยังไม่เปิดห้อง VIP เพราะ Worker ปัจจุบัน route /play ไปห้อง Free เดียวกัน การเข้า VIP จะเปิดหลังแยกห้องฝั่ง Server เสร็จ');
+            state.selectedServerId = 'vip1';
+            renderServersUI();
+            return true;
         };
-
         function securePlayerNameFromId(id) {
             const text = String(id || 'player');
             return 'Player-' + text.slice(-6);
@@ -2870,7 +3067,9 @@
             return `${zx},${zz}`;
         }
 
-        function secureZoneSocketUrl(zoneId) {
+        function secureZoneSocketUrl(zoneId, serverId = state.selectedServerId || 'free1') {
+            if (serverId === 'vip1') return `${SECURE_WORKER_WS_BASE}?server=vip1`;
+            if (serverId !== 'free1') throw new Error('Server ไม่ถูกต้อง');
             const normalized = secureNormalizeZoneId(zoneId);
             if (!normalized) throw new Error('Zone ไม่ถูกต้อง');
             return `${SECURE_WORKER_WS_BASE}?zone=${encodeURIComponent(normalized)}`;
@@ -2962,20 +3161,27 @@
 
         function secureApplyCoinSnapshot(serverCoins = [], serverNow = null) {
             if (serverNow) secureSetServerNow(serverNow);
-            const now = serverNow ? Number(serverNow) : secureNow();
-
-            coins.forEach(c => {
-                c.serverId = null;
-                c.active = false;
-                c.mesh.visible = false;
-            });
-
-            if (!Array.isArray(serverCoins)) return;
-
-            serverCoins.forEach(data => {
+            const now = secureNow();
+            const entries = new Map();
+            if (Array.isArray(serverCoins)) serverCoins.forEach(data => {
                 const id = Number(data?.id);
                 if (!Number.isInteger(id) || id < 0 || id >= coins.length) return;
-                const coin = coins[id];
+                entries.set(id, data);
+            });
+
+            coins.forEach((coin, id) => {
+                const data = entries.get(id);
+                if (!data) {
+                    coin.serverId = null;
+                    coin.active = false;
+                    coin.mesh.visible = false;
+                    return;
+                }
+                const cycle = Number(data.cycle) || 0;
+                if (Number.isSafeInteger(coin.serverCycle) && cycle < coin.serverCycle) return;
+                if (coin.serverCycle !== cycle) coin._collectActionRequestId = null;
+                coin.serverCycle = cycle;
+                coin._collectPendingUntil = 0;
                 coin.serverId = id;
                 coin.id = `server_coin_${id}`;
                 coin.mesh.position.x = Number(data.x) || 0;
@@ -2987,11 +3193,30 @@
             });
         }
 
+        function secureApplyCoinRetryDelay(coin, message) {
+            const retryAfterMs = Number(message?.retryAfterMs);
+            if (!Number.isFinite(retryAfterMs) || retryAfterMs <= 0) return;
+            coin._collectRetryAt = Math.max(Number(coin._collectRetryAt) || 0,
+                Date.now() + Math.min(150, retryAfterMs));
+        }
+
         function secureUpdateCoinState(message) {
             const id = Number(message?.id);
             if (!Number.isInteger(id) || id < 0 || id >= coins.length) return;
-            if (message?.serverNow) secureSetServerNow(message.serverNow);
             const coin = coins[id];
+            if (message?.requestId && coin._collectActionRequestId &&
+                message.requestId !== coin._collectActionRequestId &&
+                Number(coin._collectPendingUntil || 0) > 0) return;
+            const cycle = Number(message?.cycle);
+            if (Number.isSafeInteger(cycle) && cycle >= 0) {
+                if (Number.isSafeInteger(coin.serverCycle) && cycle < coin.serverCycle) return;
+                if (coin.serverCycle !== cycle) coin._collectActionRequestId = null;
+                coin.serverCycle = cycle;
+            }
+            if (message?.serverNow) secureSetServerNow(message.serverNow);
+            secureApplyCoinRetryDelay(coin, message);
+            if (message?.type === "coin_state" &&
+                message.requestId === coin._collectActionRequestId) coin._collectActionRequestId = null;
             coin.serverId = id;
             if (Number.isFinite(Number(message?.x)) && Number.isFinite(Number(message?.z))) {
                 coin.mesh.position.x = Number(message.x);
@@ -3003,37 +3228,394 @@
             coin.active = coin.respawnTime <= secureNow();
             coin.mesh.visible = coin.active;
         }
+        let secureInputSequence = 0;
+        let secureLastAcknowledgedSequence = -1;
+        let secureJumpIntent = false;
+        let secureJumpGeneration = 0;
+        let secureJumpHeld = false;
+        const securePendingFrames = [];
+        const securePendingInputs = [];
+        const securePredictionCorrection = { x: 0, y: 0, z: 0 };
+
+        function secureQueueJump() {
+            secureJumpGeneration++;
+            secureJumpIntent = true;
+        }
+
+        function secureMovementIntent() {
+            const directionalKeys = typeof keys === 'object' ? keys : {};
+            const joystick = typeof joystickVec === 'object' ? joystickVec : { x: 0, y: 0 };
+            const yaw = typeof cameraYaw === 'number' ? cameraYaw : 0;
+            let x = (directionalKeys.d ? 1 : 0) - (directionalKeys.a ? 1 : 0);
+            let z = (directionalKeys.s ? 1 : 0) - (directionalKeys.w ? 1 : 0);
+            if (Math.abs(joystick.x) > .05) x = joystick.x;
+            if (Math.abs(joystick.y) > .05) z = joystick.y;
+            const length = Math.hypot(x, z);
+            if (length <= .05) return { x: 0, z: 0, jump: secureJumpIntent };
+            const divisor = Math.max(1, length);
+            const magnitude = Math.min(length, 1);
+            const right = x / divisor;
+            const forward = -z / divisor;
+            // Preserve the original camera-relative controls and analog response.
+            return {
+                x: (right * Math.cos(yaw) - forward * Math.sin(yaw)) * magnitude,
+                z: (-right * Math.sin(yaw) - forward * Math.cos(yaw)) * magnitude,
+                jump: secureJumpIntent
+            };
+        }
+
+        function secureMovementState() {
+            return { x: playerPos.x, y: playerPos.y, z: playerPos.z, r: playerRotation,
+                vx: playerVel.x, vz: playerVel.z, vy: playerVelocityY, grounded: isGrounded,
+                jumpHeld: secureJumpHeld };
+        }
+
+        function secureApplyMovementState(position) {
+            playerPos.set(position.x, position.y, position.z);
+            playerRotation = position.r;
+            playerVel.x = position.vx;
+            playerVel.z = position.vz;
+            playerVelocityY = position.vy;
+            isGrounded = position.grounded;
+            secureJumpHeld = Boolean(position.jumpHeld);
+        }
+
+        function secureMovementOptions() {
+            return {
+                speed: state.shop.speedBuffExpires > secureNow()
+                    ? movement.MOVEMENT.entitledSpeed : movement.MOVEMENT.speed,
+                obstacles: [...(typeof buildings === 'undefined' ? [] : buildings),
+                    ...(typeof trees === 'undefined' ? [] : trees)],
+                bounds: movement.MOVEMENT.bounds
+            };
+        }
+
+        function securePredictMovement(delta) {
+            // Lost connections and provisional handoffs cannot advance a player.
+            // Camera and rendering continue while authority is being recovered.
+            if (!secureGameReady || (secureHandoffInProgress &&
+                !(typeof secureContinuousHandoffPredictionAllowed === 'function' && secureContinuousHandoffPredictionAllowed())) || !secureGameSocket ||
+                secureGameSocket.readyState !== WebSocket.OPEN) return;
+            const input = secureMovementIntent();
+            input.jump = secureJumpIntent;
+            const elapsed = Math.min(.1, Math.max(0, Number.isFinite(delta) ? delta : 0));
+            const options = secureMovementOptions();
+            secureApplyMovementState(movement.integrateMovement(secureMovementState(), input, elapsed, options));
+            securePendingFrames.push({ seq: secureInputSequence, input, delta: elapsed, speed: options.speed });
+            // A long stalled connection cannot retain unbounded prediction work.
+            if (securePendingFrames.length > 256) securePendingFrames.splice(0, securePendingFrames.length - 256);
+        }
+
+        function secureResetPrediction(position, motion = {}) {
+            if (!position || !['x', 'y', 'z'].every(key => Number.isFinite(Number(position[key])))) return false;
+            const y = Math.max(0, Number(position.y));
+            secureApplyMovementState({
+                x: Number(position.x), y, z: Number(position.z),
+                r: Number.isFinite(Number(position.r)) ? Number(position.r) : 0,
+                vx: Number.isFinite(Number(motion.vx)) ? Number(motion.vx) : 0,
+                vz: Number.isFinite(Number(motion.vz)) ? Number(motion.vz) : 0,
+                vy: Number.isFinite(Number(motion.vy)) ? Number(motion.vy) : 0,
+                grounded: typeof motion.grounded === 'boolean' ? motion.grounded : y === 0,
+                jumpHeld: Boolean(motion.jumpHeld)
+            });
+            const lastSequence = Number.isSafeInteger(motion.lastSeq) && motion.lastSeq >= -1 ? motion.lastSeq : -1;
+            secureInputSequence = lastSequence + 1;
+            secureLastAcknowledgedSequence = lastSequence;
+            securePendingFrames.length = 0;
+            securePendingInputs.length = 0;
+            secureJumpIntent = false;
+            secureJumpGeneration++;
+            securePredictionCorrection.x = securePredictionCorrection.y = securePredictionCorrection.z = 0;
+            secureLastMoveSentAt = 0;
+            if (playerGroup) {
+                playerGroup.position.copy(playerPos);
+                playerGroup.rotation.y = playerRotation;
+            }
+            return true;
+        }
+
+        function secureReconcileMovement(message) {
+            const position = message?.player;
+            const ack = Number(message?.ack);
+            if (message?.applied === false || !position || !Number.isSafeInteger(ack) || ack < 0 ||
+                ack <= secureLastAcknowledgedSequence || ack >= secureInputSequence ||
+                !['x', 'y', 'z', 'r'].every(key => Number.isFinite(position[key]))) return false;
+            const before = { x: playerPos.x, y: playerPos.y, z: playerPos.z };
+            const motion = message.movement || {
+                vx: message.velocity?.x, vz: message.velocity?.z,
+                vy: message.velocity?.y, grounded: message.grounded
+            };
+            let corrected = { x: position.x, y: Math.max(0, position.y), z: position.z, r: position.r,
+                vx: Number(motion.vx) || 0, vz: Number(motion.vz) || 0, vy: Number(motion.vy) || 0,
+                grounded: typeof motion.grounded === 'boolean' ? motion.grounded : position.y <= 0,
+                jumpHeld: Boolean(motion.jumpHeld) };
+            secureLastAcknowledgedSequence = ack;
+            if (securePendingInputs.some(packet => packet.seq <= ack && packet.input.jump &&
+                packet.jumpGeneration === secureJumpGeneration)) secureJumpIntent = false;
+            while (securePendingFrames.length && securePendingFrames[0].seq <= ack) securePendingFrames.shift();
+            while (securePendingInputs.length && securePendingInputs[0].seq <= ack) securePendingInputs.shift();
+            const options = secureMovementOptions();
+            for (const frame of securePendingFrames) {
+                corrected = movement.integrateMovement(corrected, frame.input, frame.delta,
+                    { ...options, speed: frame.speed });
+            }
+            secureApplyMovementState(corrected);
+            const difference = Math.hypot(before.x - corrected.x, before.y - corrected.y, before.z - corrected.z);
+            if (difference <= 4) {
+                securePredictionCorrection.x += before.x - corrected.x;
+                securePredictionCorrection.y += before.y - corrected.y;
+                securePredictionCorrection.z += before.z - corrected.z;
+            } else {
+                securePredictionCorrection.x = securePredictionCorrection.y = securePredictionCorrection.z = 0;
+            }
+            if (secureZoneFromPosition(position.x, position.z) === secureCurrentZoneId) {
+                secureLastStablePosition = { x: position.x, y: position.y, z: position.z, r: position.r };
+            }
+            return true;
+        }
+
+        // Resume capabilities stay in memory and are scoped to a verified SDK UID
+        // and Zone. A capability never replaces Firebase ID-token verification.
+        const secureSessionTickets = new Map();
+        const secureSocketRefreshTimers = new WeakMap();
+        const secureSocketRefreshExpiries = new WeakMap();
+        const secureClientSockets = new Set();
+        const secureClientWaiters = new Set();
+        let secureClientConnectionEpoch = 0;
+        let secureActiveHandoff = null;
+        let secureReconnectInProgress = false;
+        let secureReconnectGeneration = 0;
+
+        function secureConnectionEpoch() {
+            return secureClientConnectionEpoch;
+        }
+
+        function secureConnectionIsCurrent(epoch) {
+            return epoch === secureClientConnectionEpoch;
+        }
+
+        function secureRegisterClientSocket(ws) {
+            secureClientSockets.add(ws);
+        }
+
+        function secureUnregisterClientSocket(ws) {
+            secureClientSockets.delete(ws);
+        }
+
+        function secureStartHandoffOperation(source) {
+            const operation = {
+                source, target: null, uid: auth.currentUser?.uid,
+                epoch: secureClientConnectionEpoch, cancelled: false
+            };
+            if (source) secureClientSockets.add(source);
+            secureActiveHandoff = operation;
+            return operation;
+        }
+
+        function secureHandoffOperationIsCurrent(operation) {
+            return !operation.cancelled && operation.epoch === secureClientConnectionEpoch &&
+                operation.uid === auth.currentUser?.uid;
+        }
+
+        function secureRequireHandoffOperation(operation) {
+            if (!secureHandoffOperationIsCurrent(operation)) {
+                const error = new Error('Session เปลี่ยนหรือยกเลิกระหว่างย้าย Zone');
+                error.securityCancelled = true;
+                throw error;
+            }
+        }
+
+        function secureFinishHandoffOperation(operation) {
+            if (secureActiveHandoff === operation) secureActiveHandoff = null;
+        }
+
+        function secureClientDelay(delay) {
+            return new Promise((resolve, reject) => {
+                const waiter = { timer: null, reject };
+                waiter.timer = setTimeout(() => {
+                    secureClientWaiters.delete(waiter);
+                    resolve();
+                }, delay);
+                secureClientWaiters.add(waiter);
+            });
+        }
+
+        function secureAbortClientConnections(reason = 'Session cancelled', closeCode = 1000) {
+            secureClientConnectionEpoch++;
+            secureCancelReconnect();
+            if (secureActiveHandoff) {
+                secureActiveHandoff.cancelled = true;
+                if (typeof secureAbortContinuousHandoff === 'function') secureAbortContinuousHandoff(secureActiveHandoff, reason);
+                if (secureActiveHandoff.source) secureClientSockets.add(secureActiveHandoff.source);
+                if (secureActiveHandoff.target) secureClientSockets.add(secureActiveHandoff.target);
+            }
+            const rejectResume = secureHandoffResumeReject;
+            if (secureHandoffResumeTimer) clearTimeout(secureHandoffResumeTimer);
+            secureHandoffResumeTimer = null;
+            secureHandoffResumeResolve = null;
+            secureHandoffResumeReject = null;
+            if (rejectResume) {
+                const error = new Error(reason);
+                error.securityCancelled = true;
+                rejectResume(error);
+            }
+            for (const waiter of secureClientWaiters) {
+                clearTimeout(waiter.timer);
+                const error = new Error(reason);
+                error.securityCancelled = true;
+                waiter.reject(error);
+            }
+            secureClientWaiters.clear();
+            if (secureGameSocket) secureClientSockets.add(secureGameSocket);
+            for (const ws of [...secureClientSockets]) {
+                secureClearSocketRefresh(ws);
+                secureCloseSocket(ws, closeCode, reason);
+            }
+            secureClientSockets.clear();
+            secureGameSocket = null;
+            secureGameReady = false;
+            secureHandoffInProgress = false;
+            secureActiveHandoff = null;
+        }
+
+        function secureSessionKey(zoneId, uid = auth.currentUser?.uid, serverId = state.selectedServerId || 'free1') {
+            if (serverId === 'vip1') return typeof uid === 'string' && uid ? `${uid}:vip1` : '';
+            if (serverId !== 'free1') return '';
+            const zone = secureNormalizeZoneId(zoneId);
+            return typeof uid === 'string' && uid && zone ? `${uid}:${zone}` : '';
+        }
+
+        function secureGetResumeTicket(zoneId, uid = auth.currentUser?.uid, serverId = state.selectedServerId || 'free1') {
+            const key = secureSessionKey(zoneId, uid, serverId);
+            const ticket = key && secureSessionTickets.get(key);
+            if (!ticket || ticket.resumeExpiresAt <= secureNow()) {
+                if (key) secureSessionTickets.delete(key);
+                return null;
+            }
+            return ticket;
+        }
+
+        function secureRememberSession(zoneId, session, serverId = state.selectedServerId || 'free1') {
+            const key = secureSessionKey(zoneId, auth.currentUser?.uid, serverId);
+            if (!key || !session || typeof session.resumeToken !== 'string' ||
+                !session.resumeToken || typeof session.sessionId !== 'string' ||
+                !Number.isFinite(session.resumeExpiresAt) || session.resumeExpiresAt <= secureNow()) return;
+            secureSessionTickets.set(key, {
+                resumeToken: session.resumeToken,
+                resumeExpiresAt: session.resumeExpiresAt,
+                sessionId: session.sessionId
+            });
+        }
+
+        function secureClearSocketRefresh(ws) {
+            const timer = secureSocketRefreshTimers.get(ws);
+            if (timer) clearTimeout(timer);
+            secureSocketRefreshTimers.delete(ws);
+            secureSocketRefreshExpiries.delete(ws);
+        }
+
+        function secureForgetResumeTicket(zoneId) {
+            const key = secureSessionKey(zoneId);
+            if (key) secureSessionTickets.delete(key);
+        }
+
+        function secureTrackAuthenticatedSocket(ws, zoneId, session) {
+            const serverId = ws.secureServerId || state.selectedServerId || 'free1';
+            secureRememberSession(zoneId, session, serverId);
+            // Lease notices renew the resume capability, not the Firebase token.
+            // An unchanged expiry must not postpone or repeat an existing refresh.
+            if (session && secureSocketRefreshExpiries.get(ws) === session.tokenExpiresAt) return;
+            secureClearSocketRefresh(ws);
+            const uid = auth.currentUser?.uid;
+            if (!session || !uid || !Number.isFinite(session.tokenExpiresAt)) return;
+            secureSocketRefreshExpiries.set(ws, session.tokenExpiresAt);
+            const delay = Math.max(1000, Math.min(45 * 60_000, session.tokenExpiresAt - secureNow() - 60_000));
+            const timer = setTimeout(async () => {
+                secureSocketRefreshTimers.delete(ws);
+                if (ws !== secureGameSocket || ws.readyState !== WebSocket.OPEN ||
+                    secureIntentionalSockets.has(ws)) return;
+                if (auth.currentUser?.uid !== uid) {
+                    secureCloseSocket(ws, 1008, 'Account changed');
+                    secureReturnToMenu();
+                    return;
+                }
+                try {
+                    const token = await auth.currentUser.getIdToken(true);
+                    if (ws !== secureGameSocket || ws.readyState !== WebSocket.OPEN) return;
+                    if (auth.currentUser?.uid !== uid) {
+                        secureCloseSocket(ws, 1008, 'Account changed');
+                        secureReturnToMenu();
+                        return;
+                    }
+                    ws.send(JSON.stringify({
+                        type: "auth",
+                        token,
+                        protocol: serverId === 'vip1' ? 4 : 6
+                    }));
+                    // The server's auth_refreshed response supplies the next expiry.
+                } catch (_) {
+                    if (ws !== secureGameSocket) return;
+                    secureCloseSocket(ws, 1008, 'Token refresh failed');
+                    secureReturnToMenu();
+                }
+            }, delay);
+            secureSocketRefreshTimers.set(ws, timer);
+        }
+
+        function secureCancelReconnect() {
+            secureReconnectGeneration++;
+        }
+
+        async function secureResumeDisconnectedSocket(zoneId, uid, serverId = state.selectedServerId || 'free1') {
+            if (secureReconnectInProgress || !secureGetResumeTicket(zoneId, uid, serverId)) return false;
+            secureReconnectInProgress = true;
+            const generation = ++secureReconnectGeneration;
+            try {
+                // Mobile radios commonly need several seconds to reattach after a
+                // brief network toggle. Keep retrying only while the original
+                // short-lived resume capability remains valid; never fall back to
+                // a fresh session or bypass a policy rejection.
+                const reconnectDelays = [250, 500, 1000, 2000, 4000, 4000];
+                for (let attempt = 0; attempt < reconnectDelays.length; attempt++) {
+                    await secureClientDelay(reconnectDelays[attempt]);
+                    if (generation !== secureReconnectGeneration || !state.isPlaying ||
+                        secureHandoffInProgress || secureGameSocket || auth.currentUser?.uid !== uid ||
+                        (state.selectedServerId || 'free1') !== serverId ||
+                        !secureGetResumeTicket(zoneId, uid, serverId)) return false;
+                    try {
+                        await secureOpenZoneSocket(zoneId, '', attempt > 0, true);
+                        return true;
+                    } catch (_) {
+                        // Only the original account and an unexpired server ticket
+                        // can retry. A retry cannot fall back to a new spawn/session.
+                    }
+                }
+                return false;
+            } finally {
+                secureReconnectInProgress = false;
+            }
+        }
 
         function secureHandleSocketMessage(message) {
             if (!message || typeof message !== 'object') return;
 
             switch (message.type) {
-                case 'welcome': {
+                case "welcome": {
                     if (message.serverNow) secureSetServerNow(message.serverNow);
                     const isSmoothHandoffWelcome = Boolean(message.handoff) && secureHandoffInProgress;
+                    const isContinuousHandoffWelcome = isSmoothHandoffWelcome &&
+                        typeof secureContinuousHandoffDefersWelcomeWorld === 'function' && secureContinuousHandoffDefersWelcomeWorld();
                     secureCurrentZoneId = secureNormalizeZoneId(message.zone) || secureCurrentZoneId;
                     state.serverPlayerId = String(message.id || '');
-                    state.score = Number(message.score) || 0;
-                    updateScoreDisplay();
+                    if (!isContinuousHandoffWelcome) {
+                        state.score = Number(message.score) || 0;
+                        updateScoreDisplay();
+                    }
 
-                    // Initial login uses the server spawn normally. During a Zone handoff,
-                    // keep the locally rendered position/velocity moving smoothly; the
-                    // target Zone validates that current position with handoff_resume.
+                    // Login/resume starts from persisted authority. A provisional
+                    // target welcome keeps rendering stable until ownership ACK.
                     if (message.spawn && !isSmoothHandoffWelcome) {
-                        playerPos.set(
-                            Number(message.spawn.x) || 0,
-                            Number(message.spawn.y) || 0,
-                            Number(message.spawn.z) || 0
-                        );
-                        if (Number.isFinite(Number(message.spawn.r))) {
-                            playerRotation = Number(message.spawn.r);
-                        }
-                        if (playerGroup) {
-                            playerGroup.position.copy(playerPos);
-                            playerGroup.rotation.y = playerRotation;
-                        }
-                        playerVel.x = 0;
-                        playerVel.z = 0;
+                        secureResetPrediction(message.spawn, message.movement || message.motion);
                         secureRememberStablePosition();
                     }
 
@@ -3050,7 +3632,10 @@
                         }
                     });
 
-                    if (isSmoothHandoffWelcome) {
+                    if (isContinuousHandoffWelcome) {
+                        // Keep the owning source's live world state. The target's
+                        // fresh commit snapshot arrives with its ownership ACK.
+                    } else if (isSmoothHandoffWelcome) {
                         // Refresh global world UI outside the critical handoff path so
                         // 200 coin mesh updates cannot create a visible boundary hitch.
                         requestAnimationFrame(() => {
@@ -3065,119 +3650,250 @@
                     }
 
                     secureGameReady = true;
+                    if (!isSmoothHandoffWelcome && typeof secureRetryPendingBoxClaim === 'function') secureRetryPendingBoxClaim();
                     break;
                 }
-                case 'join': {
+                case "join": {
                     const p = secureNormalizePlayer(message.player);
                     if (p.id && p.id !== state.serverPlayerId) secureTrackRemotePlayer(p.id, 'local', p);
                     break;
                 }
-                case 'move': {
+                case "move": {
                     const p = secureNormalizePlayer(message.player);
-                    if (!p.id || p.id === state.serverPlayerId) break;
+                    if (!p.id) break;
+                    if (p.id === state.serverPlayerId) {
+                        if (message.serverNow) secureSetServerNow(message.serverNow);
+                        secureReconcileMovement(message);
+                        break;
+                    }
                     secureTrackRemotePlayer(p.id, 'local', p);
                     break;
                 }
-                case 'leave':
+                case "leave":
                     if (message.id) secureUntrackRemotePlayer(String(message.id), 'local');
                     break;
-                case 'ghost_snapshot':
+                case "ghost_snapshot":
+                    if (state.selectedServerId === 'vip1' || secureGameSocket?.secureServerId === 'vip1') break;
                     secureReplaceGhostSnapshot(message);
                     break;
-                case 'zone_change':
+                case "zone_change":
+                    if (state.selectedServerId === 'vip1' || secureGameSocket?.secureServerId === 'vip1') break;
                     void secureBeginZoneHandoff(message);
                     break;
-                case 'score':
-                    state.score = Number(message.score) || 0;
+                case "score":
+                    state.score = Math.max(Number(state.score) || 0, Number(message.score) || 0);
                     updateScoreDisplay();
                     break;
-                case 'leaderboard':
+                case "leaderboard":
                     updateLeaderboardUI(secureNormalizeLeaderboard(message.top));
                     break;
-                case 'coin_collect_result': {
+                case "coin_collect_result": {
                     const id = Number(message?.id);
                     if (Number.isInteger(id) && id >= 0 && id < coins.length) {
                         const coin = coins[id];
+                        if (message.requestId && coin._collectActionRequestId &&
+                            message.requestId !== coin._collectActionRequestId &&
+                            Number(coin._collectPendingUntil || 0) > 0) break;
+                        if (Number.isSafeInteger(message.cycle) && Number.isSafeInteger(coin.serverCycle) &&
+                            message.cycle < coin.serverCycle) break;
+                        secureApplyCoinRetryDelay(coin, message);
                         coin._collectPendingUntil = 0;
                         if (message.collected) {
                             if (Number.isFinite(Number(message.score))) {
-                                state.score = Number(message.score);
+                                state.score = Math.max(Number(state.score) || 0, Number(message.score));
                                 updateScoreDisplay();
                             }
                             if (message.event) secureUpdateCoinState(message.event);
                         } else {
-                            if (message.serverNow) secureSetServerNow(message.serverNow);
-                            const activeAfter = Number(message.activeAfter) || 0;
-                            coin.respawnTime = activeAfter;
-                            coin.active = activeAfter <= secureNow();
-                            coin.mesh.visible = coin.active;
+                            if (message.requestId === coin._collectActionRequestId) coin._collectActionRequestId = null;
+                            if (message.event) {
+                                secureUpdateCoinState(message.event);
+                            } else {
+                                if (message.serverNow) secureSetServerNow(message.serverNow);
+                                const activeAfter = Object.hasOwn(message, 'activeAfter')
+                                    ? Number(message.activeAfter) || 0 : Number(coin.respawnTime) || 0;
+                                coin.respawnTime = activeAfter;
+                                coin.active = activeAfter <= secureNow();
+                                coin.mesh.visible = coin.active;
+                            }
                         }
                     }
                     break;
                 }
-                case 'coin_collected':
-                case 'coin_state':
-                    secureUpdateCoinState(message);
+                case "coin_collected":
+                case "coin_state":
+                    if (message.type === "coin_state" && Array.isArray(message.coins)) {
+                        secureApplyCoinSnapshot(message.coins, message.serverNow);
+                    } else {
+                        secureUpdateCoinState(message);
+                    }
                     break;
-                case 'box_state':
+                case "box_state":
+                    if (message.requestId && message.claimed === false &&
+                        message.requestId === luckyBox?._claimActionRequestId) {
+                        luckyBox._claimActionRequestId = null;
+                        luckyBox._claimPendingRequestId = null;
+                        luckyBox._actionCycle = null;
+                    }
                     secureApplyLuckyBoxState(message.box || message.luckyBox || message, message.serverNow);
                     break;
-                case 'box_spin_ready':
+                case "box_spin_ready":
+                    if (message.requestId && luckyBox?._claimActionRequestId &&
+                        message.requestId !== luckyBox._claimActionRequestId) break;
+                    if (luckyBox) luckyBox._claimPendingRequestId = null;
                     secureApplyLuckyBoxState(message.box || message.luckyBox || null, message.serverNow);
                     triggerLuckyBoxModal();
                     break;
-                case 'box_reward':
+                case "box_reward": {
                     if (message.serverNow) secureSetServerNow(message.serverNow);
                     if (Number.isFinite(Number(message.score))) {
-                        state.score = Number(message.score);
+                        state.score = Math.max(Number(state.score) || 0, Number(message.score));
                         updateScoreDisplay();
+                    }
+                    if (message.requestId && luckyBox?._spinActionRequestId &&
+                        message.requestId !== luckyBox._spinActionRequestId) break;
+                    if (luckyBox) {
+                        if ((message.receipt && message.receipt === luckyBox._lastRewardReceipt) ||
+                            (message.requestId && message.requestId === luckyBox._lastRewardRequestId)) break;
+                        luckyBox._lastRewardReceipt = message.receipt || null;
+                        luckyBox._lastRewardRequestId = message.requestId || null;
+                        luckyBox._spinPendingRequestId = null;
                     }
                     secureAnimateWheelToReward(Number(message.reward) || 0);
                     break;
-                case 'box_error':
+                }
+                case "box_error":
                     console.warn('Lucky Box:', message.message || message);
+                    if (luckyBox?._claimPendingRequestId && message.requestId === luckyBox._claimPendingRequestId) {
+                        luckyBox._claimPendingRequestId = null;
+                    }
+                    if (luckyBox?._spinPendingRequestId &&
+                        (!message.requestId || message.requestId === luckyBox._spinPendingRequestId)) {
+                        luckyBox._spinPendingRequestId = null;
+                        state.wheelSpinning = false;
+                        document.getElementById('btn-spin-wheel').classList.remove('hidden');
+                        document.getElementById('wheel-result-msg').innerText = 'Server ยังไม่ยืนยันผล กรุณาลองอีกครั้ง';
+                    }
+                    // Timeout clears an attempt, not the unresolved action.
+                    // Never replace an accepted reward or a newer action's UI.
+                    if (state.isPlaying && state.isPaused && message.requestId &&
+                        message.requestId === luckyBox?._spinActionRequestId &&
+                        message.requestId !== luckyBox._lastRewardRequestId &&
+                        message.message === 'Lucky Box claim expired') {
+                            luckyBox._spinPendingRequestId = null;
+                            state.wheelSpinning = false;
+                            document.getElementById('btn-spin-wheel').classList.add('hidden');
+                            document.getElementById('btn-close-wheel').innerText = 'เล่นต่อ';
+                            document.getElementById('btn-close-wheel').classList.remove('hidden');
+                            document.getElementById('wheel-result-msg').innerText = 'สิทธิ์หมุนหมดอายุแล้ว กลับไปเล่นต่อได้';
+                    }
                     break;
-                case 'handoff_resumed':
+                case "handoff_resumed":
+                    // An ACK owns only the currently pending transfer. A late ACK
+                    // cannot revive a timed-out/cancelled provisional socket.
+                    if (!secureHandoffInProgress || !secureHandoffResumeResolve) break;
                     if (message.serverNow) secureSetServerNow(message.serverNow);
+                    if (typeof secureContinuousHandoffRequiresAck === 'function' && secureContinuousHandoffRequiresAck()) {
+                        if (message.continuousHandoff !== true || !secureApplyContinuousHandoffAck(message)) {
+                            secureAbortClientConnections('Invalid continuous handoff authority', 1008);
+                            secureReturnToMenu();
+                            break;
+                        }
+                    } else if (typeof secureResetPrediction === 'function') {
+                        secureResetPrediction(message.position || message, message.movement || message.motion);
+                    }
+                    if (typeof secureTrackAuthenticatedSocket === 'function' && secureGameSocket) {
+                        secureTrackAuthenticatedSocket(secureGameSocket, message.zone || secureCurrentZoneId, message.session);
+                    }
                     if (secureHandoffResumeTimer) clearTimeout(secureHandoffResumeTimer);
                     secureHandoffResumeTimer = null;
                     if (secureHandoffResumeResolve) secureHandoffResumeResolve(message);
                     secureHandoffResumeResolve = null;
                     secureHandoffResumeReject = null;
                     break;
-                case 'handoff_resume_error': {
+                case "handoff_resume_error": {
                     if (secureHandoffResumeTimer) clearTimeout(secureHandoffResumeTimer);
                     secureHandoffResumeTimer = null;
                     const err = new Error(message.message || 'Target Zone ปฏิเสธตำแหน่งต่อเนื่อง');
                     err.retryable = Boolean(message.retryable);
+                    if (message.continuousHandoff) {
+                        err.continuousHandoff = true;
+                        err.cancelledToSource = Boolean(message.cancelledToSource);
+                        err.retargetZone = secureNormalizeZoneId(message.retargetZone);
+                    }
                     if (secureHandoffResumeReject) secureHandoffResumeReject(err);
                     secureHandoffResumeResolve = null;
                     secureHandoffResumeReject = null;
                     break;
                 }
-                case 'handoff_error':
+                case "handoff_cancelled":
+                    if (typeof secureContinuousHandoffRequiresAck === 'function' && secureContinuousHandoffRequiresAck()) {
+                        if (message.continuousHandoff === true) secureApplyContinuousHandoffCancel(message);
+                        break;
+                    }
+                    if (message.serverNow) secureSetServerNow(message.serverNow);
+                    if (message.position && typeof secureResetPrediction === 'function') {
+                        const nextSequence = secureInputSequence;
+                        secureResetPrediction(message.position, message.movement || message.motion);
+                        secureInputSequence = Math.max(nextSequence, secureInputSequence,
+                            Number.isSafeInteger(message.nextSequence) && message.nextSequence >= 0
+                                ? message.nextSequence : 0);
+                        secureRememberStablePosition();
+                    }
+                    break;
+                case "handoff_error":
                     console.warn('Zone handoff:', message.message || message);
                     break;
-                case 'auth_error':
+                case "auth_error":
                     console.warn('Game auth:', message.message || message);
                     break;
-                case 'server_error':
+                case "auth_refreshed":
+                    if (message.serverNow) secureSetServerNow(message.serverNow);
+                    if (typeof secureTrackAuthenticatedSocket === 'function' && secureGameSocket) {
+                        secureTrackAuthenticatedSocket(secureGameSocket, secureCurrentZoneId, message.session);
+                    }
+                    if (message.entitlements && typeof secureApplyEntitlements === 'function') {
+                        secureApplyEntitlements(message.entitlements, null, message.serverNow);
+                    }
+                    break;
+                case "server_error":
                     console.error('Game server error:', message.message || message);
                     break;
             }
         }
 
-        async function secureOpenZoneSocket(zoneId, handoffToken = '', forceTokenRefresh = false) {
+        async function secureOpenZoneSocket(zoneId, handoffToken = '', forceTokenRefresh = false, requireResume = false, savedZoneRedirected = false) {
             if (!auth.currentUser) throw new Error('ต้องล็อกอิน Google ก่อนเข้าเล่น');
+            const serverId = state.selectedServerId || 'free1';
+            if (!['free1', 'vip1'].includes(serverId) || (serverId === 'vip1' && handoffToken)) {
+                throw new Error('Server หรือ handoff ไม่ถูกต้อง');
+            }
             const normalizedZone = secureNormalizeZoneId(zoneId);
             if (!normalizedZone) throw new Error('Zone ไม่ถูกต้อง');
+            if (requireResume && (typeof secureGetResumeTicket !== 'function' || !secureGetResumeTicket(normalizedZone))) {
+                throw new Error('Session เดิมหมดอายุ กรุณาเข้าเกมใหม่');
+            }
 
-            const token = await auth.currentUser.getIdToken(forceTokenRefresh);
+            const user = auth.currentUser;
+            const uid = user.uid;
+            const connectionEpoch = typeof secureConnectionEpoch === 'function' ? secureConnectionEpoch() : null;
+            const connectionCurrent = () => auth.currentUser === user && auth.currentUser?.uid === uid &&
+                (state.selectedServerId || 'free1') === serverId &&
+                (connectionEpoch === null || typeof secureConnectionIsCurrent !== 'function' || secureConnectionIsCurrent(connectionEpoch));
+            const token = await user.getIdToken(forceTokenRefresh);
+            if (!connectionCurrent()) {
+                throw new Error('บัญชีเปลี่ยนระหว่างเชื่อมต่อ Game Server');
+            }
 
             return new Promise((resolve, reject) => {
-                const ws = new WebSocket(secureZoneSocketUrl(normalizedZone));
+                const ws = new WebSocket(secureZoneSocketUrl(normalizedZone, serverId));
+                ws.secureAuthenticatedUid = uid;
+                ws.secureServerId = serverId;
+                if (typeof secureContinuousHandoffSocketOpened === 'function') secureContinuousHandoffSocketOpened(ws, handoffToken);
+                if (typeof secureRegisterClientSocket === 'function') secureRegisterClientSocket(ws);
                 let welcomed = false;
                 let settled = false;
+                let resumeRequested = false;
 
                 const timer = setTimeout(() => {
                     if (settled) return;
@@ -3195,12 +3911,32 @@
                 };
 
                 ws.onopen = () => {
+                    if (settled || ws.readyState !== WebSocket.OPEN) return;
+                    if (!connectionCurrent()) {
+                        failBeforeWelcome('บัญชีเปลี่ยนระหว่างเชื่อมต่อ Game Server');
+                        return;
+                    }
                     const authMessage = {
-                        type: 'auth',
+                        type: "auth",
                         token,
+                        protocol: serverId === 'vip1' ? 4 : 6,
                         name: String(state.playerName || 'Player').trim().slice(0, 12)
                     };
+                    if (typeof secureUseContinuousHandoff === 'function' && secureUseContinuousHandoff(serverId)) {
+                        authMessage.continuousHandoff = true;
+                    }
                     if (handoffToken) authMessage.handoffToken = String(handoffToken);
+                    else if (typeof secureGetResumeTicket === 'function') {
+                        const ticket = secureGetResumeTicket(normalizedZone, uid, serverId);
+                        if (requireResume && !ticket) {
+                            failBeforeWelcome('Session เดิมหมดอายุ กรุณาเข้าเกมใหม่');
+                            return;
+                        }
+                        if (ticket) {
+                            authMessage.resumeToken = ticket.resumeToken;
+                            resumeRequested = true;
+                        }
+                    }
                     ws.send(JSON.stringify(authMessage));
                 };
 
@@ -3214,7 +3950,16 @@
                     }
 
                     if (!welcomed) {
-                        if (message?.type === 'welcome') {
+                        if (settled || ws.readyState !== WebSocket.OPEN) return;
+                        if (message?.type === "welcome") {
+                            if (serverId === 'vip1' && (message.server !== 'vip1' || message.protocol !== 4 || message.handoff)) {
+                                failBeforeWelcome('VIP Server ไม่ยืนยันห้องหรือ protocol');
+                                return;
+                            }
+                            if (!connectionCurrent()) {
+                                failBeforeWelcome('บัญชีเปลี่ยนระหว่างเชื่อมต่อ Game Server');
+                                return;
+                            }
                             welcomed = true;
                             settled = true;
                             clearTimeout(timer);
@@ -3222,17 +3967,48 @@
                             secureGameReady = true;
                             secureCurrentZoneId = secureNormalizeZoneId(message.zone) || normalizedZone;
                             secureHandleSocketMessage(message);
+                            if (typeof secureTrackAuthenticatedSocket === 'function') {
+                                secureTrackAuthenticatedSocket(ws, secureCurrentZoneId, message.session);
+                            }
                             resolve({ ws, welcome: message });
                             return;
                         }
-                        if (message?.type === 'auth_error' || message?.type === 'handoff_error' || message?.type === 'server_error') {
+                        if (message?.type === "auth_error" || message?.type === "handoff_error" || message?.type === "server_error") {
+                            // A freshly authenticated login can recover its saved
+                            // Zone once. Resume/handoff capabilities remain bound
+                            // to their original Zone and never follow redirects.
+                            const savedZone = message.type === "auth_error" &&
+                                typeof message.resumeZone === 'string' && secureNormalizeZoneId(message.resumeZone);
+                            if (serverId === 'free1' && !savedZoneRedirected && !handoffToken && !requireResume && !resumeRequested &&
+                                savedZone && savedZone === message.resumeZone && savedZone !== normalizedZone && connectionCurrent()) {
+                                settled = true;
+                                clearTimeout(timer);
+                                secureCloseSocket(ws, 1000, 'Saved Zone redirect');
+                                if (!connectionCurrent()) {
+                                    reject(new Error('บัญชีเปลี่ยนระหว่างเชื่อมต่อ Game Server'));
+                                    return;
+                                }
+                                secureOpenZoneSocket(savedZone, '', forceTokenRefresh, false, true).then(result => {
+                                    if (!connectionCurrent()) {
+                                        secureCloseSocket(result.ws, 1008, 'Account changed');
+                                        reject(new Error('บัญชีเปลี่ยนระหว่างเชื่อมต่อ Game Server'));
+                                        return;
+                                    }
+                                    resolve(result);
+                                }, reject);
+                                return;
+                            }
                             failBeforeWelcome(message.message || 'Game Server ปฏิเสธการเชื่อมต่อ');
                             return;
                         }
                         return;
                     }
 
-                    if (ws === secureGameSocket) secureHandleSocketMessage(message);
+                    const handoffDispatch = typeof secureDispatchContinuousHandoffSocket === 'function'
+                        ? secureDispatchContinuousHandoffSocket(ws, message) : null;
+                    if (handoffDispatch === true || (handoffDispatch !== false && ws === secureGameSocket)) {
+                        secureHandleSocketMessage(message);
+                    }
                 };
 
                 ws.onerror = () => {
@@ -3241,6 +4017,10 @@
 
                 ws.onclose = event => {
                     clearTimeout(timer);
+                    if (typeof secureUnregisterClientSocket === 'function') secureUnregisterClientSocket(ws);
+                    if (typeof secureClearSocketRefresh === 'function') secureClearSocketRefresh(ws);
+                    if (typeof stagingOnSocketClose === 'function') stagingOnSocketClose(ws, event);
+                    if (typeof secureContinuousHandoffSocketClosed === 'function') secureContinuousHandoffSocketClosed(ws, event);
                     if (!welcomed && !settled) {
                         settled = true;
                         reject(new Error(`Zone Server ปิดการเชื่อมต่อ (${event.code})`));
@@ -3255,8 +4035,20 @@
                     secureGameSocket = null;
                     const intentional = secureIntentionalSockets.has(ws);
                     if (!intentional && state.isPlaying && !secureHandoffInProgress) {
-                        alert('การเชื่อมต่อ Game Server หลุด กรุณาเข้าเกมใหม่');
-                        secureReturnToMenu();
+                        const failClosed = () => {
+                            if (secureGameSocket || !state.isPlaying) return;
+                            alert('การเชื่อมต่อ Game Server หลุด กรุณาเข้าเกมใหม่');
+                            secureReturnToMenu();
+                        };
+                        // Policy rejection cannot be bypassed by reconnecting.
+                        if (event.code === 1008 || event.code >= 4000 ||
+                            typeof secureResumeDisconnectedSocket !== 'function') {
+                            failClosed();
+                        } else {
+                            void secureResumeDisconnectedSocket(normalizedZone, uid, serverId).then(resumed => {
+                                if (!resumed) failClosed();
+                            }, failClosed);
+                        }
                     }
                 };
             });
@@ -3286,13 +4078,14 @@
 
             let lastError = null;
             for (let attempt = 0; attempt < 3; attempt++) {
+                const continuous = typeof secureContinuousHandoffPredictionAllowed === 'function' && secureContinuousHandoffPredictionAllowed();
                 const liveZone = secureZoneFromPosition(playerPos.x, playerPos.z);
-                if (liveZone === fromZone) {
+                if (!continuous && liveZone === fromZone) {
                     const cancelled = new Error('ผู้เล่นกลับเข้า Zone เดิมระหว่าง handoff');
                     cancelled.cancelledToSource = true;
                     throw cancelled;
                 }
-                if (liveZone && liveZone !== targetZone) {
+                if (!continuous && liveZone && liveZone !== targetZone) {
                     const movedTooFar = new Error('ผู้เล่นเคลื่อนผ่าน Zone เป้าหมายระหว่าง handoff');
                     movedTooFar.retryable = false;
                     throw movedTooFar;
@@ -3300,11 +4093,8 @@
 
                 const ackPromise = secureWaitForHandoffResumeAck(3200);
                 ws.send(JSON.stringify({
-                    type: 'handoff_resume',
-                    x: Math.round(playerPos.x * 100) / 100,
-                    y: Math.round(playerPos.y * 100) / 100,
-                    z: Math.round(playerPos.z * 100) / 100,
-                    r: Math.round(playerRotation * 1000) / 1000
+                    type: "handoff_resume",
+                    input: continuous ? secureMovementIntent() : { x: 0, z: 0, jump: false }
                 }));
 
                 try {
@@ -3312,14 +4102,15 @@
                 } catch (err) {
                     lastError = err;
                     if (!err?.retryable || attempt >= 2) throw err;
-                    await new Promise(resolve => setTimeout(resolve, 120));
+                    if (typeof secureClientDelay === 'function') await secureClientDelay(120);
+                    else await new Promise(resolve => setTimeout(resolve, 120));
                 }
             }
             throw lastError || new Error('Handoff resume failed');
         }
 
         async function secureBeginZoneHandoff(message) {
-            if (secureHandoffInProgress || !state.isPlaying) return;
+            if (state.selectedServerId === 'vip1' || secureGameSocket?.secureServerId === 'vip1' || secureHandoffInProgress || !state.isPlaying) return;
 
             const fromZone = secureNormalizeZoneId(message?.from) || secureCurrentZoneId;
             const targetZone = secureNormalizeZoneId(message?.zone);
@@ -3332,21 +4123,30 @@
 
             const oldSocket = secureGameSocket;
             const fallback = { ...secureLastStablePosition };
+            const operation = typeof secureStartHandoffOperation === 'function' ? secureStartHandoffOperation(oldSocket) : null;
             let targetSocket = null;
             secureHandoffInProgress = true;
+            if (operation && typeof secureBeginContinuousHandoff === 'function') {
+                secureBeginContinuousHandoff(operation, message, fromZone, targetZone);
+            }
 
-            // IMPORTANT: do not pause state.isPaused here. The local movement/camera
-            // keeps rendering while the target Zone opens. Network-authoritative
-            // position is reconciled by one validated handoff_resume message.
+            // The staging source continues validated prediction and input while
+            // the target authenticates. Legacy clients retain the paused path.
+            // In either mode, resume cannot supply an authoritative position.
             try {
                 const result = await secureOpenZoneSocket(targetZone, handoffToken, false);
+                if (operation) secureRequireHandoffOperation(operation);
                 targetSocket = result?.ws || secureGameSocket;
+                if (operation) operation.target = targetSocket;
 
                 if (!result?.welcome?.handoff) {
                     throw new Error('Target Zone ไม่ยืนยัน handoff');
                 }
 
                 await secureResumeHandoffOnTarget(targetSocket, targetZone, fromZone);
+                if (operation) secureRequireHandoffOperation(operation);
+
+                if (typeof secureForgetResumeTicket === 'function') secureForgetResumeTicket(fromZone);
 
                 if (oldSocket && oldSocket !== targetSocket) {
                     secureCloseSocket(oldSocket, 1000, 'Zone handoff complete');
@@ -3363,6 +4163,13 @@
                     syncMyPlayerData(true);
                 }
             } catch (err) {
+                // Account/menu cancellation permanently fences this continuation.
+                // It must not restore an old account's source or a newer game.
+                if (operation && !secureHandoffOperationIsCurrent(operation)) return;
+                if (operation?.continuous && typeof secureCancelContinuousHandoff === 'function') {
+                    await secureCancelContinuousHandoff(operation, targetSocket, fromZone, err);
+                    return;
+                }
                 console.warn('Smooth zone handoff interrupted:', err);
 
                 if (err?.cancelledToSource && oldSocket && oldSocket.readyState === WebSocket.OPEN) {
@@ -3370,7 +4177,7 @@
                         secureCloseSocket(targetSocket, 1000, 'Player returned to source zone');
                     }
                     try {
-                        oldSocket.send(JSON.stringify({ type: 'handoff_cancel' }));
+                        oldSocket.send(JSON.stringify({ type: "handoff_cancel" }));
                     } catch (_) {}
                     secureGameSocket = oldSocket;
                     secureGameReady = true;
@@ -3395,16 +4202,31 @@
 
                 secureHandoffInProgress = false;
 
-                // Rollback only happens on a genuine handoff failure. Normal successful
-                // crossings never freeze or snap back.
+                // Restore the last confirmed source state while its cancellation
+                // ACK supplies the durable rollback position and next sequence.
                 if (oldSocket && oldSocket.readyState === WebSocket.OPEN) {
                     secureGameSocket = oldSocket;
                     secureGameReady = true;
                     secureCurrentZoneId = fromZone;
+                    try {
+                        oldSocket.send(JSON.stringify({ type: "handoff_cancel" }));
+                    } catch (_) {
+                        secureCloseSocket(oldSocket, 1000, 'Handoff cancel failed');
+                        secureReturnToMenu();
+                        return;
+                    }
                     playerPos.set(fallback.x, fallback.y, fallback.z);
                     playerRotation = fallback.r;
                     playerVel.x = 0;
                     playerVel.z = 0;
+                    playerVelocityY = 0;
+                    isGrounded = playerPos.y <= 0;
+                    secureJumpHeld = false;
+                    securePendingFrames.length = 0;
+                    securePendingInputs.length = 0;
+                    secureJumpIntent = false;
+                    secureJumpGeneration++;
+                    securePredictionCorrection.x = securePredictionCorrection.y = securePredictionCorrection.z = 0;
                     if (playerGroup) {
                         playerGroup.position.copy(playerPos);
                         playerGroup.rotation.y = playerRotation;
@@ -3416,12 +4238,16 @@
                     alert('ย้าย Zone ไม่สำเร็จและการเชื่อมต่อเดิมหลุด กรุณาเข้าเกมใหม่');
                     secureReturnToMenu();
                 }
+            } finally {
+                if (operation && typeof secureFinishContinuousHandoff === 'function') secureFinishContinuousHandoff(operation);
+                if (operation) secureFinishHandoffOperation(operation);
             }
         }
 
         async function secureConnectGameSocket() {
             if (!auth.currentUser) throw new Error('ต้องล็อกอิน Google ก่อนเข้าเล่น');
-            if (state.selectedServerId !== 'free1') throw new Error('Security Test เปิดเฉพาะ Free Server จนกว่า VIP room routing จะเสร็จ');
+            if (!['free1', 'vip1'].includes(state.selectedServerId)) throw new Error('Server ไม่ถูกต้อง');
+            if (typeof secureCancelReconnect === 'function') secureCancelReconnect();
 
             const existing = secureGameSocket;
             if (existing) {
@@ -3437,8 +4263,34 @@
             secureRememberStablePosition();
             return result.welcome;
         }
+        function clearLuckyBoxMesh() {
+            const mesh = luckyBox && luckyBox.mesh;
+            if (!mesh) { luckyBox = null; return; }
+            if (scene) scene.remove(mesh);
+            const geometries = new Set(), materials = new Set();
+            mesh.traverse(obj => {
+                if (obj.geometry) geometries.add(obj.geometry);
+                const list = Array.isArray(obj.material) ? obj.material : [obj.material];
+                list.forEach(material => { if (material) materials.add(material); });
+            });
+            if (scene) scene.traverse(obj => {
+                geometries.delete(obj.geometry);
+                const list = Array.isArray(obj.material) ? obj.material : [obj.material];
+                list.forEach(material => materials.delete(material));
+            });
+            geometries.forEach(geometry => geometry.dispose());
+            materials.forEach(material => material.dispose());
+            luckyBox = null;
+        }
 
         function secureReturnToMenu() {
+            state.wheelAnimation = null;
+            state.wheelSpinning = false;
+            state.wheelReward = null;
+            document.getElementById('wheel-modal').classList.add('hidden');
+            if (typeof window !== 'undefined' && typeof window.resetGameplayInput === 'function') window.resetGameplayInput();
+            if (typeof secureAbortClientConnections === 'function') secureAbortClientConnections('Returned to menu');
+            clearLuckyBoxMesh();
             state.isPlaying = false;
             state.isPaused = false;
             secureGameReady = false;
@@ -3450,6 +4302,7 @@
             secureCurrentZoneId = null;
             secureClearRemoteState();
             document.getElementById('exit-modal').classList.add('hidden');
+            document.getElementById('shop-modal').classList.add('hidden');
             document.getElementById('game-hud').classList.add('hidden');
             document.getElementById('player-nametag').classList.add('hidden');
             document.getElementById('start-screen').classList.remove('hidden');
@@ -3474,30 +4327,47 @@
             coins.forEach(c => { c.active = false; c.mesh.visible = false; });
         };
 
+        let secureEconomyRequestCounter = 0;
+
+        function secureEconomyRequestId(kind) {
+            const nonce = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+                ? crypto.randomUUID()
+                : `${Date.now().toString(36)}-${(++secureEconomyRequestCounter).toString(36)}-${Math.random().toString(36).slice(2)}`;
+            return `${kind}:${nonce}`;
+        }
+
         collectCoin = function(coin) {
-            if (secureHandoffInProgress || !coin || !coin.active || !secureGameReady || !secureGameSocket || secureGameSocket.readyState !== WebSocket.OPEN) return;
+            const socket = typeof secureHandoffEconomySocket === 'function' ? secureHandoffEconomySocket() : secureGameSocket;
+            if ((secureHandoffInProgress && !(typeof secureHandoffEconomySocket === 'function' && socket)) ||
+                !coin || !coin.active || !secureGameReady || !socket || socket.readyState !== WebSocket.OPEN) return;
             const id = Number(coin.serverId);
             if (!Number.isInteger(id)) return;
 
             const now = Date.now();
-            if (Number(coin._collectPendingUntil || 0) > now) return;
+            if (Number(coin._collectPendingUntil || 0) > now || Number(coin._collectRetryAt || 0) > now) return;
+
+            // Ordered movement frames reach authority before contact. The
+            // pickup still contains no client position, distance or score.
+            if (typeof secureFlushMovementForPickup === 'function' && secureFlushMovementForPickup() === false) return;
 
             // Immediate visual prediction: hide on contact, but score remains
             // server-authoritative. If the server rejects/times out, restore it.
             const requestId = Number(coin._collectRequestId || 0) + 1;
             coin._collectRequestId = requestId;
+            const uid = String(auth.currentUser?.uid || '');
+            if (!coin._collectActionRequestId || coin._collectActionUid !== uid) {
+                coin._collectActionRequestId = secureEconomyRequestId('coin');
+                coin._collectActionUid = uid;
+            }
             coin._collectPendingUntil = now + 2500;
             coin.active = false;
             coin.mesh.visible = false;
 
             try {
-                secureGameSocket.send(JSON.stringify({
-                    type: 'collect',
+                socket.send(JSON.stringify({
+                    type: "collect",
                     id,
-                    x: Math.round(playerPos.x * 100) / 100,
-                    y: Math.round(playerPos.y * 100) / 100,
-                    z: Math.round(playerPos.z * 100) / 100,
-                    r: Math.round(playerRotation * 1000) / 1000
+                    requestId: coin._collectActionRequestId
                 }));
             } catch (_) {
                 coin._collectPendingUntil = 0;
@@ -3524,24 +4394,20 @@
             if (!force && now - secureLastMoveSentAt < 200) return; // FREE_10K_PHASE1_CLIENT: 5Hz
             secureLastMoveSentAt = now;
 
-            const positionZone = secureZoneFromPosition(playerPos.x, playerPos.z);
-            if (positionZone && positionZone === secureCurrentZoneId) {
-                secureRememberStablePosition();
-            }
-
+            const input = state.isPaused ? { x: 0, z: 0, jump: false } : secureMovementIntent();
+            const seq = secureInputSequence++;
+            securePendingInputs.push({ seq, input, jumpGeneration: secureJumpGeneration });
+            if (securePendingInputs.length > 64) securePendingInputs.shift();
             secureGameSocket.send(JSON.stringify({
-                type: 'move',
-                x: Math.round(playerPos.x * 100) / 100,
-                y: Math.round(playerPos.y * 100) / 100,
-                z: Math.round(playerPos.z * 100) / 100,
-                r: Math.round(playerRotation * 1000) / 1000
+                type: "move",
+                input,
+                seq
             }));
         };
 
         // Lucky Box is fully server-authoritative in this build.
         // The Worker owns: one-box state, claim locking, 4-hour respawn and reward RNG.
         function secureApplyLuckyBoxState(raw = null, serverNow = null) {
-            if (serverNow) secureSetServerNow(serverNow);
             if (!raw || typeof raw !== 'object') return;
 
             if (!luckyBox || !luckyBox.mesh) {
@@ -3556,14 +4422,34 @@
                     spawnCycle: 0,
                     collecting: false,
                     claimExpiresAt: 0,
-                    claimed: false
+                    claimed: false,
+                    serverActive: false
                 };
             }
 
-            luckyBox.nextSpawnTimestamp = Number(raw.nextSpawnAt ?? raw.nextSpawnTimestamp ?? 0) || 0;
-            luckyBox.spawnCycle = Number(raw.cycle ?? raw.spawnCycle ?? 0) || 0;
+            const cycle = Number(raw.cycle ?? raw.spawnCycle ?? 0) || 0;
+            if (cycle < luckyBox.spawnCycle) return;
+            const packetAt = Number(serverNow);
+            if (cycle === luckyBox.spawnCycle && Number.isFinite(packetAt) && packetAt > 0 &&
+                packetAt < Number(luckyBox._snapshotServerNow || 0)) return;
+            const nextSpawnTimestamp = Number(raw.nextSpawnAt ?? raw.nextSpawnTimestamp ?? 0) || 0;
+            // A collection fixes one deadline for this resource cycle. Check
+            // against the current trusted clock before applying packet time:
+            // an old snapshot cannot erase or extend an ongoing cooldown.
+            if (cycle === luckyBox.spawnCycle && luckyBox.nextSpawnTimestamp > secureNow() &&
+                nextSpawnTimestamp !== luckyBox.nextSpawnTimestamp) return;
+            if (Number.isFinite(packetAt) && packetAt > 0) luckyBox._snapshotServerNow = packetAt;
+            if (serverNow) secureSetServerNow(serverNow);
+            if (luckyBox.claimed && !raw.claimed && raw.active && cycle === luckyBox.spawnCycle) {
+                // The server released the previous claim. Contact now is a new
+                // logical attempt, rather than a replay of its expired receipt.
+                luckyBox._actionCycle = null;
+            }
+            luckyBox.nextSpawnTimestamp = nextSpawnTimestamp;
+            luckyBox.spawnCycle = cycle;
             luckyBox.claimExpiresAt = Number(raw.claimExpiresAt ?? 0) || 0;
             luckyBox.claimed = Boolean(raw.claimed);
+            luckyBox.serverActive = Boolean(raw.active);
             luckyBox.collecting = false;
 
             const x = Number(raw.x);
@@ -3575,7 +4461,7 @@
             const now = secureNow();
             const claimStillActive = luckyBox.claimed && luckyBox.claimExpiresAt > now;
             const waitingRespawn = luckyBox.nextSpawnTimestamp > now;
-            luckyBox.active = Boolean(raw.active) && !claimStillActive && !waitingRespawn;
+            luckyBox.active = luckyBox.serverActive && !claimStillActive && !waitingRespawn;
             luckyBox.mesh.visible = luckyBox.active;
             secureUpdateLuckyBoxTimer();
         }
@@ -3585,15 +4471,6 @@
             if (!timerEl || !luckyBox) return;
 
             const now = secureNow();
-
-            // A claim has a short timeout. If the winner closes the page before spinning,
-            // the same global box becomes available again automatically.
-            if (luckyBox.claimed && luckyBox.claimExpiresAt > now) {
-                timerEl.innerText = 'มีผู้เล่นกำลังสุ่ม...';
-                luckyBox.active = false;
-                if (luckyBox.mesh) luckyBox.mesh.visible = false;
-                return;
-            }
 
             if (luckyBox.nextSpawnTimestamp > now) {
                 const totalSec = Math.max(0, Math.ceil((luckyBox.nextSpawnTimestamp - now) / 1000));
@@ -3606,22 +4483,58 @@
                 return;
             }
 
-            luckyBox.claimed = false;
-            luckyBox.active = true;
-            if (luckyBox.mesh) luckyBox.mesh.visible = true;
-            timerEl.innerText = 'พร้อมเปิด!';
+            // Legacy snapshots may have a pending spin without a cooldown.
+            // A collection-time cooldown takes priority for every observer.
+            if (luckyBox.claimed && luckyBox.claimExpiresAt > now) {
+                timerEl.innerText = 'มีผู้เล่นกำลังสุ่ม...';
+                luckyBox.active = false;
+                if (luckyBox.mesh) luckyBox.mesh.visible = false;
+                return;
+            }
+
+            // A clock reaching zero cannot create an authoritative spawn or
+            // release a claim. The room publishes its persisted active state.
+            luckyBox.active = Boolean(luckyBox.serverActive) && !luckyBox.claimed;
+            if (luckyBox.mesh) luckyBox.mesh.visible = luckyBox.active;
+            timerEl.innerText = luckyBox.active ? 'พร้อมเปิด!' : 'กำลังรอสถานะจาก Server...';
+        }
+
+        function secureRetryPendingBoxClaim() {
+            const requestId = luckyBox?._claimPendingRequestId;
+            if (!requestId || luckyBox._actionUid !== auth.currentUser?.uid ||
+                !state.isPlaying || state.isPaused || secureHandoffInProgress ||
+                !luckyBox.claimed || luckyBox.claimExpiresAt <= secureNow() ||
+                !secureGameReady || !secureGameSocket || secureGameSocket.readyState !== WebSocket.OPEN) return;
+            // A snapshot does not identify the owner. Replay the original request
+            // for server authorization; only BOX_SPIN_READY may open the wheel.
+            try {
+                secureGameSocket.send(JSON.stringify({ type: "collect_box", requestId }));
+            } catch (_) { /* Keep the unresolved identity for a later resume. */ }
         }
 
         function secureRequestLuckyBoxCollect() {
             if (secureHandoffInProgress || !luckyBox || !luckyBox.active || luckyBox.collecting) return;
             if (!secureGameReady || !secureGameSocket || secureGameSocket.readyState !== WebSocket.OPEN) return;
+            const uid = String(auth.currentUser?.uid || '');
+            if (!luckyBox._claimActionRequestId || luckyBox._actionCycle !== luckyBox.spawnCycle || luckyBox._actionUid !== uid) {
+                luckyBox._actionCycle = luckyBox.spawnCycle;
+                luckyBox._actionUid = uid;
+                luckyBox._claimActionRequestId = secureEconomyRequestId('box-claim');
+                luckyBox._spinActionRequestId = null;
+            }
             luckyBox.collecting = true;
+            luckyBox._claimPendingRequestId = luckyBox._claimActionRequestId;
             setTimeout(() => { if (luckyBox) luckyBox.collecting = false; }, 1200);
-            secureGameSocket.send(JSON.stringify({ type: 'collect_box' }));
+            try {
+                secureGameSocket.send(JSON.stringify({ type: "collect_box",
+                    requestId: luckyBox._claimActionRequestId }));
+            } catch (_) {
+                luckyBox.collecting = false;
+            }
         }
 
         spawnLuckyBoxes = function() {
-            if (luckyBox?.mesh && scene) scene.remove(luckyBox.mesh);
+            clearLuckyBoxMesh();
             const chestMesh = createTreasureChest();
             chestMesh.visible = false;
             scene.add(chestMesh);
@@ -3633,7 +4546,8 @@
                 spawnCycle: 0,
                 collecting: false,
                 claimExpiresAt: 0,
-                claimed: false
+                claimed: false,
+                serverActive: false
             };
             luckyBoxServerRef = null;
             const timerEl = document.getElementById('hud-box-timer');
@@ -3641,6 +4555,8 @@
         };
 
         triggerLuckyBoxModal = function() {
+            state.wheelAnimation = null;
+            if (typeof window !== 'undefined' && typeof window.resetGameplayInput === 'function') window.resetGameplayInput();
             state.isPaused = true;
             const localNameTag = document.getElementById('player-nametag');
             if (localNameTag) localNameTag.style.display = 'none';
@@ -3649,13 +4565,14 @@
             document.getElementById('wheel-modal').classList.remove('hidden');
             document.getElementById('btn-spin-wheel').classList.remove('hidden');
             document.getElementById('btn-close-wheel').classList.add('hidden');
+            document.getElementById('btn-close-wheel').innerText = 'รับรางวัล & เล่นต่อ';
             document.getElementById('wheel-result-msg').innerText = 'กดปุ่มเพื่อเริ่มหมุนวงล้อ!';
             drawLuckyWheel();
             audio.playBoxHit();
         };
 
         spinWheel = function() {
-            if (state.wheelSpinning || secureHandoffInProgress) return;
+            if (state.wheelSpinning || secureHandoffInProgress || !luckyBox) return;
             if (!secureGameReady || !secureGameSocket || secureGameSocket.readyState !== WebSocket.OPEN) {
                 alert('Game Server หลุด กรุณาเข้าเกมใหม่');
                 return;
@@ -3663,10 +4580,29 @@
             state.wheelSpinning = true;
             document.getElementById('btn-spin-wheel').classList.add('hidden');
             document.getElementById('wheel-result-msg').innerText = 'กำลังขอผลสุ่มจาก Server...';
-            secureGameSocket.send(JSON.stringify({ type: 'spin_box' }));
+            if (!luckyBox._spinActionRequestId) luckyBox._spinActionRequestId = secureEconomyRequestId('box-spin');
+            const requestId = luckyBox._spinActionRequestId;
+            luckyBox._spinPendingRequestId = requestId;
+            const attempt = {};
+            luckyBox._spinPendingAttempt = attempt;
+            const allowRetry = () => {
+                if (luckyBox?._spinPendingRequestId !== requestId ||
+                    luckyBox._spinPendingAttempt !== attempt) return;
+                luckyBox._spinPendingRequestId = null;
+                state.wheelSpinning = false;
+                document.getElementById('btn-spin-wheel').classList.remove('hidden');
+                document.getElementById('wheel-result-msg').innerText = 'ยังไม่ได้รับผลจาก Server กรุณาลองอีกครั้ง';
+            };
+            try {
+                secureGameSocket.send(JSON.stringify({ type: "spin_box", requestId }));
+                setTimeout(allowRetry, 2700);
+            } catch (_) {
+                allowRetry();
+            }
         };
-
         function secureAnimateWheelToReward(rewardValue) {
+            const animation = {};
+            state.wheelAnimation = animation;
             const selectedIdx = WHEEL_ITEMS.findIndex(item => item.value === rewardValue);
             if (selectedIdx < 0) {
                 state.wheelSpinning = false;
@@ -3688,6 +4624,7 @@
             document.getElementById('wheel-result-msg').innerText = 'กำลังหมุนวงล้อ...';
 
             function animateSpin(now) {
+                if (state.wheelAnimation !== animation || !state.isPlaying) return;
                 const elapsed = now - startTime;
                 const progress = Math.min(elapsed / duration, 1);
                 const easeOut = 1 - Math.pow(1 - progress, 3);
@@ -3724,10 +4661,12 @@
                 alert('Security Test ต้องล็อกอิน Google ก่อนเข้าเล่น เพื่อให้ Server ยืนยันตัวตนและคะแนน');
                 return;
             }
-            if (state.selectedServerId === 'vip1') {
-                await selectVipServer('vip1');
-                return;
-            }
+            const selectedServerId = state.selectedServerId;
+            const user = auth.currentUser;
+            if (typeof secureAbortClientConnections === 'function') secureAbortClientConnections('Starting game');
+            const connectionEpoch = typeof secureConnectionEpoch === 'function' ? secureConnectionEpoch() : null;
+            const startCurrent = () => auth.currentUser === user && state.selectedServerId === selectedServerId &&
+                (connectionEpoch === null || secureConnectionIsCurrent(connectionEpoch));
 
             const inputName = document.getElementById('input-username').value.trim();
             if (inputName) state.playerName = inputName;
@@ -3740,9 +4679,18 @@
             }
 
             try {
-                initServerMapData('free1');
-                await secureLoadEntitlements().catch(() => null);
+                initServerMapData("free1");
+                const result = await secureLoadEntitlements().catch(error => {
+                    if (selectedServerId === 'vip1') throw error;
+                    return null;
+                });
+                if (selectedServerId === 'vip1') {
+                    const expiry = Number(result?.entitlements?.vip1Expires ?? result?.entitlements?.vip1_expires ?? 0);
+                    if (!Number.isFinite(expiry) || expiry <= secureNow()) throw new Error('สิทธิ์ VIP หมดอายุหรือถูกยกเลิก');
+                }
+                if (!startCurrent()) throw new Error('Session เปลี่ยนระหว่างเข้าเกม');
                 await secureConnectGameSocket();
+                if (!startCurrent()) throw new Error('Session เปลี่ยนระหว่างเข้าเกม');
 
                 if (screen.orientation && screen.orientation.lock) {
                     screen.orientation.lock('landscape').catch(() => {});
@@ -3760,12 +4708,13 @@
                 syncMyPlayerData(true);
             } catch (err) {
                 console.error('Start secure game failed:', err);
+                if (!startCurrent()) return;
                 if (secureGameSocket) secureCloseSocket(secureGameSocket, 1000, 'Start failed');
                 secureGameSocket = null;
                 secureGameReady = false;
                 alert('เข้าเกมไม่สำเร็จ: ' + (err?.message || 'Game Server error'));
             } finally {
-                if (btn) {
+                if (btn && startCurrent()) {
                     btn.disabled = false;
                     btn.innerHTML = oldHtml || `<i class="fa-solid fa-gamepad"></i><span>เริ่มเล่นเกม</span>`;
                 }
@@ -3773,6 +4722,7 @@
         };
 
         confirmExitGame = function() {
+            if (typeof secureAbortClientConnections === 'function') secureAbortClientConnections('Exit game');
             const ws = secureGameSocket;
             secureGameSocket = null;
             secureGameReady = false;
@@ -3793,6 +4743,6 @@
         loadSavedBuffs();
         listenToVipServersRealtime();
         gameLoop();
-    </script>
+</script>
 </body>
 </html>

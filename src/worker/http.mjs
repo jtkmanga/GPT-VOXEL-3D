@@ -1,0 +1,377 @@
+import { PAYMENT_PRICES } from '../shared/catalog.mjs';
+import { verifyFirebaseRequestTokens } from './firebase-auth.mjs';
+import { verifyPaymentEvent, PaymentBoundaryError } from './payment-events.mjs';
+
+// Server-to-server provider adapter. A Firebase login or browser payment flag
+// cannot authorize this route; only a fresh signature over the exact bytes can.
+export async function handlePaymentWebhook(request, env) {
+  try {
+    const verified = await verifyPaymentEvent(request, env);
+    const response = await env.ROOM.getByName('free-v2-demo').fetch(new Request(
+      'https://internal/_internal/vip/apply-event', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(verified)
+      }));
+    const result = await response.json();
+    return Response.json(result, { status: response.status });
+  } catch (error) {
+    const status = error instanceof PaymentBoundaryError ? error.status : 503;
+    return Response.json({ ok: false, error: status === 503
+      ? 'Payment authority unavailable' : error.message }, { status });
+  }
+}
+
+export function corsHeaders(request, env) {
+  const origin = request.headers.get('Origin') || '';
+  const allowed = env.ALLOWED_ORIGIN || origin;
+
+  return {
+    'Access-Control-Allow-Origin': allowed,
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-Firebase-AppCheck',
+    'Vary': 'Origin'
+  };
+}
+
+export function jsonResponse(request, env, body, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      ...corsHeaders(request, env),
+      'content-type': 'application/json; charset=utf-8'
+    }
+  });
+}
+
+// A same-origin browser GET can omit Origin. Staging's explicit host guard
+// still fences it; bearer identity remains mandatory. Legacy CORS is unchanged.
+export function allowedRequestOrigin(request, env) {
+  if (!env.ALLOWED_ORIGIN || request.headers.get('Origin') === env.ALLOWED_ORIGIN) return true;
+  return env.APP_ENV === 'staging' && !request.headers.has('Origin') &&
+    new URL(request.url).origin === env.STAGING_WORKER_ORIGIN;
+}
+
+export async function handleVerifySlip(request, env) {
+  if (env.PAYMENT_MODE !== 'slip2go-production') {
+    return jsonResponse(request, env, {
+      ok: false,
+      error: 'Production payment is disabled'
+    }, 503);
+  }
+
+  if (
+    env.ALLOWED_ORIGIN &&
+    request.headers.get('Origin') !== env.ALLOWED_ORIGIN
+  ) {
+    return jsonResponse(request, env, {
+      ok: false,
+      error: 'Origin not allowed'
+    }, 403);
+  }
+
+  const authHeader = request.headers.get('Authorization') || '';
+  const match = /^Bearer\s+(.+)$/i.exec(authHeader);
+
+  if (!match) {
+    return jsonResponse(request, env, {
+      ok: false,
+      error: 'Sign in required'
+    }, 401);
+  }
+
+  let verified;
+
+  try {
+    verified = await verifyFirebaseRequestTokens(match[1], request.headers.get('X-Firebase-AppCheck'), env);
+  } catch {
+    return jsonResponse(request, env, {
+      ok: false,
+      error: 'Invalid Firebase token'
+    }, 401);
+  }
+
+  let input;
+
+  try {
+    input = await request.formData();
+  } catch {
+    return jsonResponse(request, env, {
+      ok: false,
+      error: 'Invalid form data'
+    }, 400);
+  }
+
+  const file = input.get('file');
+  const item = String(input.get('item') || '');
+
+  const prices = PAYMENT_PRICES;
+
+  const price = prices[item];
+
+  if (!price) {
+    return jsonResponse(request, env, {
+      ok: false,
+      error: 'Invalid item'
+    }, 400);
+  }
+
+  if (!(file instanceof File) || file.size <= 0) {
+    return jsonResponse(request, env, {
+      ok: false,
+      error: 'Slip image required'
+    }, 400);
+  }
+
+  if (file.size > 8 * 1024 * 1024) {
+    return jsonResponse(request, env, {
+      ok: false,
+      error: 'Slip image too large'
+    }, 413);
+  }
+
+  if (!String(file.type || '').startsWith('image/')) {
+    return jsonResponse(request, env, {
+      ok: false,
+      error: 'Image file required'
+    }, 400);
+  }
+
+  if (!env.SLIP2GO_API_SECRET || !env.PAYMENT_RECEIVER_ACCOUNT) {
+    return jsonResponse(request, env, {
+      ok: false,
+      error: 'Payment server is not configured'
+    }, 500);
+  }
+
+  const payload = {
+    checkDuplicate: true,
+    checkReceiver: [{
+      accountType: '02001',
+      accountNumber: env.PAYMENT_RECEIVER_ACCOUNT
+    }],
+    checkAmount: {
+      type: 'eq',
+      amount: String(price)
+    }
+  };
+
+  const slipForm = new FormData();
+  slipForm.append('file', file, file.name || 'slip.jpg');
+  slipForm.append('payload', JSON.stringify(payload));
+
+  let slipResponse;
+
+  try {
+    slipResponse = await fetch(
+      'https://connect.slip2go.com/api/verify-slip/qr-image/info',
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': env.SLIP2GO_API_SECRET
+        },
+        body: slipForm
+      }
+    );
+  } catch {
+    return jsonResponse(request, env, {
+      ok: false,
+      error: 'Slip verification service unavailable'
+    }, 502);
+  }
+
+  let result;
+
+  try {
+    result = await slipResponse.json();
+  } catch {
+    return jsonResponse(request, env, {
+      ok: false,
+      error: 'Invalid response from slip service'
+    }, 502);
+  }
+
+  if (!slipResponse.ok || result?.code !== '200000') {
+    return jsonResponse(request, env, {
+      ok: false,
+      error: result?.message || 'Slip verification failed',
+      code: result?.code || null
+    }, 400);
+  }
+
+  const slipData = result?.data || {};
+  const actualAmount = Number(slipData.amount);
+
+  // ตรวจยอดจากผลตอบกลับอีกครั้ง แม้เราจะส่ง checkAmount ให้ Slip2Go แล้ว
+  if (!Number.isFinite(actualAmount) || actualAmount !== price) {
+    return jsonResponse(request, env, {
+      ok: false,
+      error: 'Slip amount does not match item price'
+    }, 400);
+  }
+
+  const transRef = String(slipData.transRef || '').trim();
+  const referenceId = String(slipData.referenceId || '').trim();
+  const senderBankId = String(
+    slipData?.sender?.bank?.id || ''
+  ).trim();
+
+  let transactionId = '';
+
+  if (transRef) {
+    transactionId = `${senderBankId || 'bank'}:${transRef}`;
+  } else if (referenceId) {
+    transactionId = `ref:${referenceId}`;
+  }
+
+  if (!transactionId) {
+    return jsonResponse(request, env, {
+      ok: false,
+      error: 'Slip transaction reference missing'
+    }, 502);
+  }
+
+  // ให้ Durable Object เป็นคนมอบสิทธิ์จริง
+  let grantResponse;
+
+  try {
+    grantResponse = await env.ROOM
+      .getByName('free-v2-demo')
+      .fetch(
+        new Request(
+          'https://internal/_internal/grant-payment',
+          {
+            method: 'POST',
+            headers: {
+              'content-type': 'application/json'
+            },
+            body: JSON.stringify({
+              uid: verified.uid,
+              item,
+              amount: price,
+              transactionId
+            })
+          }
+        )
+      );
+  } catch {
+    return jsonResponse(request, env, {
+      ok: false,
+      error: 'Could not grant purchased item'
+    }, 500);
+  }
+
+  let grantResult;
+
+  try {
+    grantResult = await grantResponse.json();
+  } catch {
+    return jsonResponse(request, env, {
+      ok: false,
+      error: 'Invalid payment storage response'
+    }, 500);
+  }
+
+  if (!grantResponse.ok || !grantResult?.ok) {
+    return jsonResponse(request, env, {
+      ok: false,
+      error: grantResult?.error || 'Could not grant purchased item',
+      duplicate: grantResult?.duplicate === true
+    }, grantResult?.duplicate ? 409 : 400);
+  }
+
+  return jsonResponse(request, env, {
+    ok: true,
+    verified: true,
+    item,
+    price,
+    expiresAt: grantResult.expiresAt,
+    entitlements: grantResult.entitlements
+  });
+}
+
+
+export async function handleGetEntitlements(request, env) {
+  if (!allowedRequestOrigin(request, env)) {
+    return jsonResponse(request, env, {
+      ok: false,
+      error: 'Origin not allowed'
+    }, 403);
+  }
+
+  const authHeader = request.headers.get('Authorization') || '';
+  const match = /^Bearer\s+(.+)$/i.exec(authHeader);
+
+  if (!match) {
+    return jsonResponse(request, env, {
+      ok: false,
+      error: 'Sign in required'
+    }, 401);
+  }
+
+  let verified;
+
+  try {
+    verified = await verifyFirebaseRequestTokens(match[1], request.headers.get('X-Firebase-AppCheck'), env);
+  } catch (error) {
+    const diagnostic = env.APP_ENV === 'staging' &&
+      env.STAGING_WORKER_NAME === 'gpt-voxel-3d-staging-01' &&
+      env.TWOC2P_SANDBOX_E2E_TEST_MODE === 'true' &&
+      request.headers.get('X-Voxel-Staging-Diagnostic') === 'gate5-auth-stage-v1' &&
+      ['app-check', 'active-user'].includes(error?.authStage) ? error.authStage : undefined;
+    const diagnosticReason = diagnostic === 'active-user' &&
+      /^lookup-(?:http-(?:4\d\d|5\d\d)|transport|invalid-response|identity-mismatch|disabled|invalid-valid-since|revoked)$/.test(error?.authReason)
+      ? error.authReason : undefined;
+    return jsonResponse(request, env, {
+      ok: false,
+      error: 'Invalid Firebase token',
+      ...(diagnostic ? { diagnosticStage: diagnostic } : {}),
+      ...(diagnosticReason ? { diagnosticReason } : {})
+    }, 401);
+  }
+
+  let roomResponse;
+
+  try {
+    roomResponse = await env.ROOM
+      .getByName('free-v2-demo')
+      .fetch(
+        new Request(
+          'https://internal/_internal/get-entitlements',
+          {
+            method: 'POST',
+            headers: {
+              'content-type': 'application/json'
+            },
+            body: JSON.stringify({
+              uid: verified.uid
+            })
+          }
+        )
+      );
+  } catch {
+    return jsonResponse(request, env, {
+      ok: false,
+      error: 'Could not read entitlements'
+    }, 500);
+  }
+
+  let result;
+
+  try {
+    result = await roomResponse.json();
+  } catch {
+    return jsonResponse(request, env, {
+      ok: false,
+      error: 'Invalid entitlement response'
+    }, 500);
+  }
+
+  if (!roomResponse.ok || !result?.ok) {
+    return jsonResponse(request, env, {
+      ok: false,
+      error: result?.error || 'Could not read entitlements'
+    }, 400);
+  }
+
+  return jsonResponse(request, env, result);
+}
