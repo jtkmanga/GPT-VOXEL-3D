@@ -4,7 +4,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
 ORIGIN = "https://gpt-voxel-3d-staging-01.hjinffv5426.workers.dev"
-# Canary rerun marker: post-production-readiness reconciliation verification.
+# Canary rerun marker: restored last-known-passing harness after runner experiments.
 EXPECTED_HOST = "gpt-voxel-3d-staging-01.hjinffv5426.workers.dev"
 
 def percentile(values, p):
@@ -268,24 +268,12 @@ def main():
 
     try:
       with sync_playwright() as p:
-        browsers = []
-        def browser_for(index):
-          slot = index // 5
-          while len(browsers) <= slot:
-            browsers.append(p.chromium.launch(
-              headless=True,
-              args=[
-                "--disable-background-timer-throttling",
-                "--disable-renderer-backgrounding",
-                "--disable-backgrounding-occluded-windows",
-              ],
-            ))
-          return browsers[slot]
+        browser = p.chromium.launch(headless=True)
         try:
           for target in levels:
             while len(pages) < target:
               i = len(pages)
-              context = browser_for(i).new_context()
+              context = browser.new_context()
               context.add_init_script("self.FIREBASE_APPCHECK_DEBUG_TOKEN = " + json.dumps(debug_token) + ";")
               page = context.new_page()
               contexts.append(context)
@@ -381,9 +369,7 @@ def main():
           for context in contexts:
             try: context.close()
             except Exception: pass
-          for browser in browsers:
-            try: browser.close()
-            except Exception: pass
+          browser.close()
     except PlaywrightTimeoutError:
       report["stopReason"] = "browser-timeout"; save(); return 9
     except Exception as e:
