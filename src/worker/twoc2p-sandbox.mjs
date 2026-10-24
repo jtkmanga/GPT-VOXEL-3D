@@ -165,7 +165,7 @@ export function normalizeSandboxNotification(payload, merchantID) {
       result[field] = payload[field];
     }
   }
-  if (payload.respCode === '0000' && (!result.recurringUniqueID || result.recurringSequenceNo === undefined))
+  if (payload.respCode === '0000' && !result.recurringUniqueID)
     fail('Verified recurring payment identity required', 400);
   if (payload.tranRef !== undefined) {
     if (!safeIdentifier(payload.tranRef, 255)) fail('Invalid sandbox transaction identity', 400);
