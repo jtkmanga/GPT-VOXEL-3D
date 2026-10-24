@@ -1198,14 +1198,20 @@ export class GameRoom {
     const speedActive = Number(p.entitlements?.speedExpires || 0) > now;
 
     if (!applyMovementIntent(p,m,speedActive ? MOVEMENT.entitledSpeed : MOVEMENT.speed,now)) return;
-    this.send(ws,{type:WS_MESSAGE.MOVE,player:this.publicPlayer(p),ack:m.seq,applied:true,
+    const player=this.publicPlayer(p);
+    const nearbySource={uid:p.uid,x:p.x,z:p.z};
+    this.send(ws,{type:WS_MESSAGE.MOVE,player,ack:m.seq,applied:true,
       movement:publicMovement(p),velocity:{x:p.motion.vx,y:p.motion.vy,z:p.motion.vz},
       grounded:p.motion.grounded,serverNow:now});
-    this.broadcastNearby({type:WS_MESSAGE.MOVE,player:this.publicPlayer(p)},p,ws);
-    // Persist the authoritative socket attachment after the latency-sensitive
-    // acknowledgement/broadcast. State is still serialized on every accepted
-    // movement frame; only the ordering is changed.
+    // Persist every accepted authoritative movement frame as before.
     ws.serializeAttachment(p);
+    // Nearby fan-out is observable by other clients but is not part of the
+    // originating player's acknowledgement critical path. Snapshot the source
+    // and public player state before deferring so a later frame cannot change
+    // the event being broadcast.
+    this.ctx.waitUntil(Promise.resolve().then(() =>
+      this.broadcastNearby({type:WS_MESSAGE.MOVE,player},nearbySource,ws)
+    ));
   }
 
   async handleCollect(ws,p,m) {
