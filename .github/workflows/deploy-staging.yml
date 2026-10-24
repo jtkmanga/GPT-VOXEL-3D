@@ -14,6 +14,7 @@ on:
       - 'src/worker/game-room.mjs'
       - 'src/worker/http.mjs'
       - 'src/worker/twoc2p-sandbox.mjs'
+      - 'src/worker/twoc2p-store.mjs'
       - 'scripts/rebuild/staging-options.cjs'
       - 'wrangler.staging.jsonc'
       - '.github/workflows/deploy-staging.yml'
