@@ -434,7 +434,8 @@ test('P2 production slip verification fails closed unless payment mode is explic
 });
 
 test('P2 entitlement refresh reads verified backend payment state and logs omit tokens and secrets', async t => {
-  const h = harness(t);
+  const h = createHarness({ env: { PAYMENT_MODE: 'slip2go-production' } });
+  t.after(() => h.close());
   const uid = 'synthetic-p2-entitlement-refresh';
   const token = h.token(uid);
   const connection = await authenticate(h, { uid, token, zone: '4,4' });
