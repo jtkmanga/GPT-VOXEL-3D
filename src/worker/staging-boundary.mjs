@@ -27,7 +27,14 @@ export function stagingContext(request, env) {
     const origin = request.headers.get('Origin');
     const publicProbe = request.method === 'GET' &&
       ['/health', '/staging-config'].includes(url.pathname);
-    if (!publicProbe && origin !== null && origin !== config.workerOrigin)
+    // 2C2P's browser return is navigation only, never payment evidence. Allow
+    // this exact GET path through the staging Origin fence so the dedicated
+    // payment handler can redirect back to the app, where authenticated status
+    // reconciliation verifies server-owned state. Backend notifications remain
+    // signature-verified and all other payment routes keep the normal fence.
+    const paymentReturnNavigation = request.method === 'GET' &&
+      url.pathname === '/payments/2c2p/return';
+    if (!publicProbe && !paymentReturnNavigation && origin !== null && origin !== config.workerOrigin)
       return { enabled: true, status: 403, error: 'Origin not allowed' };
     return { enabled: true, config };
   } catch (_) {
