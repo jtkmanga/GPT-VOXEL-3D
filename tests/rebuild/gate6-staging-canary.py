@@ -4,7 +4,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
 ORIGIN = "https://gpt-voxel-3d-staging-01.hjinffv5426.workers.dev"
-# Canary rerun marker: staging movement hot-path optimization deployed and verified.
+# Canary rerun marker: post-main-reconciliation release-readiness verification.
 EXPECTED_HOST = "gpt-voxel-3d-staging-01.hjinffv5426.workers.dev"
 
 def percentile(values, p):
