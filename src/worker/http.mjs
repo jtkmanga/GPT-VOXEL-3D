@@ -52,6 +52,13 @@ export function allowedRequestOrigin(request, env) {
 }
 
 export async function handleVerifySlip(request, env) {
+  if (env.PAYMENT_MODE !== 'slip2go-production') {
+    return jsonResponse(request, env, {
+      ok: false,
+      error: 'Production payment is disabled'
+    }, 503);
+  }
+
   if (
     env.ALLOWED_ORIGIN &&
     request.headers.get('Origin') !== env.ALLOWED_ORIGIN
