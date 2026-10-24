@@ -4,7 +4,7 @@ import { validateStagingPublicConfig } from '../shared/staging.mjs';
 // setting or crossover never falls back to the preserved legacy deployment.
 export function stagingContext(request, env) {
   const selectors = ['STAGING_WORKER_NAME', 'STAGING_WORKER_ORIGIN',
-    'FIREBASE_PUBLIC_CONFIG', 'FIREBASE_APP_CHECK_SITE_KEY', 'STAGING_AUTH_MODE', 'PAYMENT_MODE'];
+    'FIREBASE_PUBLIC_CONFIG', 'FIREBASE_APP_CHECK_SITE_KEY', 'STAGING_AUTH_MODE'];
   const stagingHost = new URL(request.url).hostname.startsWith('gpt-voxel-3d-staging');
   if (env.APP_ENV === undefined && !stagingHost && selectors.every(key => env[key] === undefined))
     return { enabled: false };
