@@ -875,7 +875,6 @@ export class ZoneRoom {
     const source={x:p.x,y:p.y,z:p.z,r:p.r,motion:{...p.motion}};
     if (!applyMovementIntent(p,m,speedActive ? MOVEMENT.entitledSpeed : MOVEMENT.speed,now)) return;
     const {x,y,z,r}=p;
-    ws.serializeAttachment(p);
     const authoritativeZone=zoneFromPosition(x,z);
     if (this.env.APP_ENV==='staging' && p.continuousHandoff && authoritativeZone &&
         authoritativeZone!==p.zoneId && !zonesAreAdjacent(p.zoneId,authoritativeZone)) {
@@ -886,6 +885,10 @@ export class ZoneRoom {
       return;
     }
     this.sendMovementAck(ws,p,m.seq,now);
+    // Persist authoritative movement after the latency-sensitive ACK. This
+    // preserves per-frame state durability while keeping storage work off the
+    // response critical path.
+    ws.serializeAttachment(p);
 
     // Warmup keeps the original owner and ticket while valid movement continues.
     // Cutover validates the latest route in the serialized source seal.
