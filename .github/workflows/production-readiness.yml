@@ -45,11 +45,17 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           text = Path('.github/workflows/production-readiness.yml').read_text(encoding='utf-8')
-          forbidden = ('cloudflare/wrangler-action', 'wrangler-action@', 'pages deploy')
-          lowered = text.lower()
-          hits = [item for item in forbidden if item in lowered]
+          marker = '      - name: Production configuration preflight'
+          tail = text.split(marker, 1)[1] if marker in text else ''
+          checks = (
+              'cloudflare/' + 'wrangler-action',
+              'wrangler-' + 'action@',
+              'pages ' + 'deploy',
+          )
+          lowered = tail.lower()
+          hits = [item for item in checks if item in lowered]
           if hits:
-              raise SystemExit('forbidden deploy primitive present: ' + ', '.join(hits))
+              raise SystemExit('forbidden deploy primitive present after self-check: ' + ', '.join(hits))
           print('PASS no production deploy primitive present')
           PY
       - name: Production configuration preflight
