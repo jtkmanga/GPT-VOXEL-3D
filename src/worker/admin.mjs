@@ -97,11 +97,14 @@ export async function handleAdmin(request,env){
   const url=new URL(request.url);
   if(url.pathname==='/admin'&&request.method==='GET') return new Response(adminHtml(),{headers:{
     'content-type':'text/html; charset=utf-8','cache-control':'no-store',
-    'content-security-policy':"default-src 'self'; script-src 'self' https://www.gstatic.com 'unsafe-inline'; connect-src 'self' https://*.googleapis.com https://securetoken.googleapis.com https://accounts.google.com https://gpt-voxel-3d-staging.firebaseapp.com; frame-src https://accounts.google.com https://gpt-voxel-3d-staging.firebaseapp.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:;" }});
+    'content-security-policy':"default-src 'self'; script-src 'self' https://www.gstatic.com 'unsafe-inline'; connect-src 'self' https://*.googleapis.com https://securetoken.googleapis.com https://accounts.google.com https://gpt-voxel-3d-staging.firebaseapp.com; frame-src 'self' https://accounts.google.com https://gpt-voxel-3d-staging.firebaseapp.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:;" }});
   if(url.pathname==='/admin/api/public-config'&&request.method==='GET'){
     let firebase;try{firebase=JSON.parse(String(env?.FIREBASE_PUBLIC_CONFIG||''))}catch(_){}
     const safe=firebase&&typeof firebase==='object'&&!Array.isArray(firebase)?{apiKey:String(firebase.apiKey||''),authDomain:String(firebase.authDomain||''),projectId:String(firebase.projectId||''),appId:String(firebase.appId||''),messagingSenderId:String(firebase.messagingSenderId||'')}:null;
     if(!safe||!safe.apiKey||!safe.authDomain||safe.projectId!==env?.FIREBASE_PROJECT_ID)return json({ok:false,error:'Admin Firebase config unavailable'},503);
+    // Use same-origin auth helper on Workers; /__/auth/* is transparently proxied
+    // to the Firebase Hosting auth helper by router.mjs.
+    safe.authDomain=url.host;
     return json({ok:true,firebase:safe});
   }
 
