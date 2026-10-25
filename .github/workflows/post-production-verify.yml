@@ -67,8 +67,10 @@ jobs:
               print('PASS non-WebSocket root denied')
 
       - name: Verify WebSocket auth gates for room and zone
-        shell: node
+        shell: bash
         run: |
+          set -euo pipefail
+          node <<'NODE'
           const targets = [
             'wss://voxel-run-v2-demo.hjinffv5426.workers.dev/play?server=free1',
             'wss://voxel-run-v2-demo.hjinffv5426.workers.dev/play?server=free1&zone=0,0'
@@ -94,3 +96,4 @@ jobs:
           }
 
           for (const url of targets) await probe(url);
+          NODE
