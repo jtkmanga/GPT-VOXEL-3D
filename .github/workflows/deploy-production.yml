@@ -1,0 +1,96 @@
+name: Deploy Production Worker
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type DEPLOY-PRODUCTION-PAYMENT-DISABLED'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-voxel-run-v2-demo-production
+  cancel-in-progress: false
+
+jobs:
+  deploy-production:
+    if: github.ref == 'refs/heads/main' && inputs.confirm == 'DEPLOY-PRODUCTION-PAYMENT-DISABLED'
+    runs-on: ubuntu-24.04
+    environment: production
+    timeout-minutes: 12
+    env:
+      PRODUCTION_PAYMENT_MODE: ${{ vars.PRODUCTION_PAYMENT_MODE }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Guard explicit owner approval and production identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ inputs.confirm }}" = "DEPLOY-PRODUCTION-PAYMENT-DISABLED"
+          test "$GITHUB_REF" = "refs/heads/main"
+          test "$PRODUCTION_PAYMENT_MODE" = "disabled"
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          grep -q '"name": "voxel-run-v2-demo"' wrangler.jsonc
+          grep -q '"PAYMENT_MODE": "disabled"' wrangler.jsonc
+          grep -q '"FIREBASE_PROJECT_ID": "lucky-game-6936b"' wrangler.jsonc
+          ! grep -q 'gpt-voxel-3d-staging-01' wrangler.jsonc
+          ! grep -q 'TWOC2P_SANDBOX_' wrangler.jsonc
+      - name: Production readiness preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/rebuild/check-production-readiness.cjs
+          npm ci
+          node scripts/rebuild/run-tests.cjs
+          node scripts/rebuild/build-client.cjs --check
+          node scripts/rebuild/check-syntax.cjs
+          node scripts/rebuild/check-static.cjs
+          node scripts/rebuild/check-staging.cjs --allow-unconfigured
+          node scripts/rebuild/check-secrets.cjs
+          git diff --check
+      - name: Wrangler production dry run
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --dry-run --config wrangler.jsonc --outdir work/production-dry-run
+          test -d work/production-dry-run
+      - name: Deploy production Worker with payment disabled
+        shell: bash
+        run: npx wrangler deploy --config wrangler.jsonc
+      - name: Verify production health and payment fail-closed
+        shell: python
+        run: |
+          import urllib.error, urllib.request
+
+          origin='https://voxel-run-v2-demo.hjinffv5426.workers.dev'
+          opener=urllib.request.build_opener()
+          opener.addheaders=[('User-Agent','VOXEL-Production-Smoke/1.0'),('Accept','text/plain, application/json')]
+
+          with opener.open(origin+'/health', timeout=20) as r:
+              body=r.read(65537).decode().strip()
+              assert r.status == 200, r.status
+              assert body == 'VOXEL RUN v4 online', body
+              print('PASS /health')
+
+          req=urllib.request.Request(origin+'/verify-slip', data=b'', method='POST',
+              headers={'Content-Type':'application/octet-stream'})
+          try:
+              opener.open(req, timeout=20)
+              raise AssertionError('/verify-slip unexpectedly accepted while payment is disabled')
+          except urllib.error.HTTPError as e:
+              body=e.read(65537).decode(errors='replace')
+              assert e.code == 503, (e.code, body)
+              assert 'Production payment is disabled' in body, body
+              print('PASS /verify-slip fail-closed')
