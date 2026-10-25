@@ -26,8 +26,17 @@ export class ZoneRoom {
   sockets() { return this.ctx.getWebSockets(); }
   async alarm() {
     const now=Date.now();
-    expireAuthDeadlines(this,now);
-    await scheduleAuthAlarm(this,now);
+    let next=0;
+    for (const ws of this.sockets()) {
+      const player=this.player(ws);
+      if (player?.uid || !Number.isFinite(Number(player?.acceptedAt))) continue;
+      const due=Number(player.acceptedAt)+SECURITY.authDeadlineMs;
+      if (now>=due) {
+        clearAuthDeadline(ws);
+        try { ws.close(1008,'Authentication deadline exceeded'); } catch (_) {}
+      } else if (!next || due<next) next=due;
+    }
+    if (next) await this.ctx.storage.setAlarm(next);
   }
   activePlayer(p) { return Boolean(p?.uid && !p.revoked && !p.sessionClosed && !p.handoffResume &&
     !p.handoffPending?.sealed &&
