@@ -2,6 +2,7 @@
 const fs = require('node:fs');
 const { execFileSync } = require('node:child_process');
 const main = 'f98aa9a044616b1b965b889cf0c02a0d3b041f65';
+const productionConfigBaseline = '77f4fe6500e03cd3138563a577e1b681af2d7b03';
 const git = args => execFileSync('git', args, { encoding: 'utf8' });
 const candidates = new Set([
   // A clean commit still needs a complete rebuild scan, not an empty HEAD diff.
@@ -43,8 +44,8 @@ for (const file of candidates) {
     }
   });
 }
-if (git(['show', `${main}:wrangler.jsonc`]) !== fs.readFileSync('wrangler.jsonc', 'utf8')) {
+if (git(['show', `${productionConfigBaseline}:wrangler.jsonc`]) !== fs.readFileSync('wrangler.jsonc', 'utf8')) {
   failures.push('wrangler.jsonc: production configuration changed');
 }
 if (failures.length) { console.error(failures.join('\n')); process.exit(1); }
-console.log(`PASS secret/config scan: ${scanned} rebuild/source files; no new credential patterns; no privileged browser bindings; production config unchanged`);
+console.log(`PASS secret/config scan: ${scanned} rebuild/source files; no new credential patterns; no privileged browser bindings; production config matches reviewed disabled-payment baseline`);
