@@ -1,6 +1,17 @@
 name: Production Readiness
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/production-readiness.yml'
+      - 'scripts/rebuild/check-production-readiness.cjs'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'wrangler.jsonc'
+      - 'src/**'
+      - 'tests/**'
   workflow_dispatch:
     inputs:
       confirm:
@@ -41,7 +52,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "${{ inputs.confirm }}" = "CHECK-PRODUCTION-ONLY"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            test "${{ inputs.confirm }}" = "CHECK-PRODUCTION-ONLY"
+          fi
           python - <<'PY'
           from pathlib import Path
           text = Path('.github/workflows/production-readiness.yml').read_text(encoding='utf-8')
