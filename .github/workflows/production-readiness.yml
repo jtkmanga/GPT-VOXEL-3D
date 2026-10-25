@@ -28,7 +28,7 @@ concurrency:
 
 jobs:
   preflight:
-    if: inputs.confirm == 'CHECK-PRODUCTION-ONLY'
+    if: github.event_name == 'push' || inputs.confirm == 'CHECK-PRODUCTION-ONLY'
     runs-on: ubuntu-24.04
     environment: production
     timeout-minutes: 8
