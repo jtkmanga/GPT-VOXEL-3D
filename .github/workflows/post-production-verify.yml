@@ -2,11 +2,6 @@
 name: Post-Production Verification
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - '.github/workflows/post-production-verify.yml'
   workflow_dispatch:
 
 permissions:
