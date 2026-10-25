@@ -1060,7 +1060,11 @@ export class GameRoom {
     const pair=new WebSocketPair();
     const [client,server]=Object.values(pair);
     this.ctx.acceptWebSocket(server);
-    server.serializeAttachment({authAttempts:0,acceptedAt:Date.now()});
+    const acceptedAt=Date.now();
+    server.serializeAttachment({authAttempts:0,acceptedAt});
+    const authDue=acceptedAt+SECURITY.authDeadlineMs;
+    const currentAlarm=await this.ctx.storage.getAlarm();
+    if (currentAlarm===null || authDue<Number(currentAlarm)) await this.ctx.storage.setAlarm(authDue);
     scheduleAuthDeadline(this,server);
     return new Response(null,{status:101,webSocket:client});
   }
