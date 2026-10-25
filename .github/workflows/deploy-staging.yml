@@ -12,6 +12,7 @@ on:
       - 'src/shared/staging.mjs'
       - 'src/worker/staging-boundary.mjs'
       - 'src/worker/firebase-auth.mjs'
+      - 'src/worker/admin.mjs'
       - 'src/worker/game-room.mjs'
       - 'src/worker/zone-room.mjs'
       - 'src/worker/zone-visibility.mjs'
