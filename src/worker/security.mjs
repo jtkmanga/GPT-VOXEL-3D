@@ -113,21 +113,56 @@ export function clearAuthDeadline(ws) {
   authDeadlines.delete(ws);
 }
 
+export function nextAuthDeadline(room, now = Date.now()) {
+  let due = 0;
+  for (const socket of room.sockets()) {
+    const player = room.player(socket);
+    if (!player || player.uid || !Number.isFinite(Number(player.acceptedAt))) continue;
+    const at = Number(player.acceptedAt) + SECURITY.authDeadlineMs;
+    if (at <= now) return now;
+    if (!due || at < due) due = at;
+  }
+  return due;
+}
+
+export function expireAuthDeadlines(room, now = Date.now()) {
+  let closed = 0;
+  for (const socket of room.sockets()) {
+    const player = room.player(socket);
+    if (!player || player.uid || !Number.isFinite(Number(player.acceptedAt))) continue;
+    if (now < Number(player.acceptedAt) + SECURITY.authDeadlineMs) continue;
+    clearAuthDeadline(socket);
+    try {
+      socket.close(1008, 'Authentication deadline exceeded');
+      closed++;
+    } catch (_) {}
+  }
+  return closed;
+}
+
+export async function scheduleAuthAlarm(room, now = Date.now()) {
+  const due = nextAuthDeadline(room, now);
+  if (!due) return;
+  const current = await room.ctx.storage.getAlarm();
+  if (current === null || due < Number(current)) await room.ctx.storage.setAlarm(due);
+}
+
 export function scheduleAuthDeadline(room, ws) {
   clearAuthDeadline(ws);
   const player = room.player(ws);
   if (!player || player.uid) return;
   const acceptedAt = Number.isFinite(player.acceptedAt) ? player.acceptedAt : Date.now();
   const delay = Math.max(0, acceptedAt + SECURITY.authDeadlineMs - Date.now());
+  // Keep the in-memory timer for active Durable Objects and local tests.
   const timer = setTimeout(() => {
     authDeadlines.delete(ws);
-    // A token verifier completing after the deadline cannot revive a socket;
-    // the room also checks readyState and acceptedAt before accepting auth.
     try {
       const current = room.player(ws);
       if (current && !current.uid) ws.close(1008, 'Authentication deadline exceeded');
-    } catch (_) { /* Already-closed sockets have no authenticated session. */ }
+    } catch (_) {}
   }, delay);
   timer?.unref?.();
   authDeadlines.set(ws, timer);
+  // Durable Object alarms survive hibernation, unlike in-memory timers.
+  try { room.ctx.waitUntil(scheduleAuthAlarm(room)); } catch (_) {}
 }
