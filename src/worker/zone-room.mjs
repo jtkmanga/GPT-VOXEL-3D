@@ -24,6 +24,11 @@ export class ZoneRoom {
 
   player(ws) { return ws.deserializeAttachment(); }
   sockets() { return this.ctx.getWebSockets(); }
+  async alarm() {
+    const now=Date.now();
+    expireAuthDeadlines(this,now);
+    await scheduleAuthAlarm(this,now);
+  }
   activePlayer(p) { return Boolean(p?.uid && !p.revoked && !p.sessionClosed && !p.handoffResume &&
     !p.handoffPending?.sealed &&
     Number(p.exp)>Math.floor(Date.now()/1000) && Number(p.resumeExpiresAt)>Date.now()); }
