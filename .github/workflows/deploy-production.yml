@@ -22,7 +22,12 @@ concurrency:
 
 jobs:
   deploy-production:
-    if: github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_dispatch' && inputs.confirm == 'DEPLOY-PRODUCTION-PAYMENT-DISABLED') || (github.event_name == 'push' && github.event.head_commit.message == 'deploy: production payment-disabled owner-approved'))
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (
+        (github.event_name == 'workflow_dispatch' && inputs.confirm == 'DEPLOY-PRODUCTION-PAYMENT-DISABLED') ||
+        (github.event_name == 'push' && github.event.head_commit.message == 'deploy: production payment-disabled owner-approved')
+      )
     runs-on: ubuntu-24.04
     environment: production
     timeout-minutes: 12
