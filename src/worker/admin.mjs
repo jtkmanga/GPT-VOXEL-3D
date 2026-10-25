@@ -70,7 +70,7 @@ table{width:100%;border-collapse:collapse;margin-top:10px;background:#0d1524;fon
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script><script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
 <script>
 let auth=null,provider=null,me=null,lastControls={}; const $=id=>document.getElementById(id);
-function diag(msg){const el=$('authDiag');if(!el)return;const t=new Date().toLocaleTimeString('th-TH');el.textContent=(el.textContent+'['+t+'] '+String(msg)+'\n').slice(-4000);el.scrollTop=el.scrollHeight}
+function diag(msg){const el=$('authDiag');if(!el)return;const t=new Date().toLocaleTimeString('th-TH');el.textContent=(el.textContent+'['+t+'] '+String(msg)+'\\n').slice(-4000);el.scrollTop=el.scrollHeight}
 window.addEventListener('error',e=>diag('JS error: '+(e?.message||'unknown')));
 window.addEventListener('unhandledrejection',e=>diag('Promise error: '+(e?.reason?.code||'')+' '+(e?.reason?.message||e?.reason||'unknown')));
 diag('Browser: '+navigator.userAgent);
