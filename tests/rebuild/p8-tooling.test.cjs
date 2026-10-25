@@ -7,12 +7,15 @@ const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
 const root = path.resolve(__dirname, '../..');
 const baseline = 'f98aa9a044616b1b965b889cf0c02a0d3b041f65';
+const productionConfigBaseline = '77f4fe6500e03cd3138563a577e1b681af2d7b03';
 
 function scanFixture(t, edit) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'voxel-p8-secret-scan-'));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
-  for (const file of ['index.html', 'wrangler.jsonc']) fs.writeFileSync(path.join(directory, file),
-    execFileSync('git', ['show', `${baseline}:${file}`], { cwd: root }));
+  fs.writeFileSync(path.join(directory, 'index.html'),
+    execFileSync('git', ['show', `${baseline}:index.html`], { cwd: root }));
+  fs.writeFileSync(path.join(directory, 'wrangler.jsonc'),
+    execFileSync('git', ['show', `${productionConfigBaseline}:wrangler.jsonc`], { cwd: root }));
   edit?.(directory);
   return spawnSync(process.execPath, [path.join(root, 'scripts/rebuild/check-secrets.cjs')], {
     cwd: directory, encoding: 'utf8', env: { ...process.env,
@@ -24,7 +27,7 @@ test('P8 full-tree secret scanner accepts preserved public Firebase configuratio
   const result = scanFixture(t);
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /rebuild\/source files/);
-  assert.match(result.stdout, /production config unchanged/);
+  assert.match(result.stdout, /production config matches reviewed disabled-payment baseline/);
 });
 
 test('P8 secret scanner rejects a privileged binding added to the browser even without a secret value', t => {
