@@ -1,0 +1,96 @@
+name: Post-Production Verification
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/post-production-verify.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: post-production-verification
+  cancel-in-progress: false
+
+jobs:
+  verify-production:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Verify public production HTTP surface
+        shell: python
+        run: |
+          import json, urllib.error, urllib.request
+
+          origin='https://voxel-run-v2-demo.hjinffv5426.workers.dev'
+          opener=urllib.request.build_opener()
+          opener.addheaders=[('User-Agent','VOXEL-PostProduction/1.0'),('Accept','text/plain, application/json')]
+
+          with opener.open(origin+'/health', timeout=20) as r:
+              body=r.read(65537).decode().strip()
+              assert r.status == 200
+              assert body == 'VOXEL RUN v4 online', body
+              print('PASS /health')
+
+          req=urllib.request.Request(origin+'/verify-slip', data=b'', method='POST',
+              headers={'Content-Type':'application/octet-stream'})
+          try:
+              opener.open(req, timeout=20)
+              raise AssertionError('/verify-slip unexpectedly accepted')
+          except urllib.error.HTTPError as e:
+              body=e.read(65537).decode(errors='replace')
+              assert e.code == 503, (e.code, body)
+              assert 'Production payment is disabled' in body
+              print('PASS payment fail-closed')
+
+          try:
+              opener.open(origin+'/entitlements', timeout=20)
+              raise AssertionError('/entitlements unexpectedly allowed anonymous access')
+          except urllib.error.HTTPError as e:
+              assert e.code in (401,403), e.code
+              print('PASS anonymous entitlement denied', e.code)
+
+          try:
+              opener.open(origin+'/', timeout=20)
+              raise AssertionError('/ unexpectedly returned success')
+          except urllib.error.HTTPError as e:
+              assert e.code == 404, e.code
+              print('PASS non-WebSocket root denied')
+
+      - name: Verify WebSocket auth gates for room and zone
+        shell: node
+        run: |
+          const targets = [
+            'wss://voxel-run-v2-demo.hjinffv5426.workers.dev/play?server=free1',
+            'wss://voxel-run-v2-demo.hjinffv5426.workers.dev/play?server=free1&zone=0,0'
+          ];
+
+          async function probe(url) {
+            await new Promise((resolve, reject) => {
+              const ws = new WebSocket(url);
+              const timer = setTimeout(() => {
+                try { ws.close(); } catch {}
+                reject(new Error('timeout waiting for unauthenticated close: ' + url));
+              }, 15000);
+              ws.addEventListener('open', () => console.log('OPEN', url));
+              ws.addEventListener('message', event => console.log('MESSAGE', url, String(event.data).slice(0,200)));
+              ws.addEventListener('error', () => {});
+              ws.addEventListener('close', event => {
+                clearTimeout(timer);
+                if (event.code !== 1008) return reject(new Error(`expected policy close 1008, got ${event.code} for ${url}`));
+                console.log('PASS unauthenticated WebSocket denied', url, event.code);
+                resolve();
+              });
+            });
+          }
+
+          for (const url of targets) await probe(url);
