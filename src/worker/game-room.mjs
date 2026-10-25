@@ -6,7 +6,7 @@ import { normalizePlayerName, normalizeZoneId, adjacentZoneIds, zonesAreAdjacent
 import { COINS, coinPosition, luckyBoxPosition, secureLuckyReward } from './world.mjs';
 import { verifyFirebaseIdToken } from './firebase-auth.mjs';
 import { SessionStore, SESSION_TTL_MS } from './sessions.mjs';
-import { SECURITY, clearAuthDeadline, scheduleAuthDeadline } from './security.mjs';
+import { SECURITY, clearAuthDeadline, scheduleAuthDeadline, nextAuthDeadline, expireAuthDeadlines } from './security.mjs';
 import { enqueueFrame, sessionMetadata, checkpointPlayer } from './room-security.mjs';
 import { initializeMotion, applyMovementIntent, publicMovement } from './movement.mjs';
 import { EconomyStore } from './economy.mjs';
@@ -362,6 +362,8 @@ export class GameRoom {
       row?.claimed_uid ? Number(row.claim_expires_at)||0 : 0].filter(value=>value>Date.now());
     const pending=this.sql.exec('SELECT next_attempt_at FROM voxel_session_revocations').toArray();
     for (const retry of pending) future.push(Math.max(Date.now()+1000,Number(retry.next_attempt_at)||0));
+    const authDue=nextAuthDeadline(this);
+    if (authDue) future.push(authDue);
     const due=future.length ? Math.min(...future) : 0;
     const current=await this.ctx.storage.getAlarm();
     if (due>Date.now()) {
@@ -371,6 +373,7 @@ export class GameRoom {
   async alarm() {
     await this.ready;
     const now=Date.now();
+    expireAuthDeadlines(this,now);
     for (const retired of this.sql.exec('SELECT * FROM voxel_session_revocations WHERE next_attempt_at<=? LIMIT 64',now).toArray()) {
       let delivered=Number(retired.expires_at)<=now;
       if (!delivered) {
