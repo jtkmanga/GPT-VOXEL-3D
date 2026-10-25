@@ -73,10 +73,21 @@ jobs:
           PY
       - name: Production configuration preflight
         run: node scripts/rebuild/check-production-readiness.cjs
-      - name: Development verification suite
+      - name: Release verification suite
+        shell: bash
         run: |
+          set -euo pipefail
           npm ci
-          node scripts/rebuild/verify-development.cjs
+          if [ "${{ github.ref }}" = "refs/heads/development/voxel-continuous" ]; then
+            node scripts/rebuild/verify-development.cjs
+          else
+            node scripts/rebuild/run-tests.cjs
+            node scripts/rebuild/build-client.cjs --check
+            node scripts/rebuild/check-syntax.cjs
+            node scripts/rebuild/check-static.cjs
+            node scripts/rebuild/check-staging.cjs --allow-unconfigured
+            node scripts/rebuild/check-secrets.cjs
+          fi
       - name: Production config remains baseline
         shell: bash
         run: |
