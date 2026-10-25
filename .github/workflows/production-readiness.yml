@@ -6,7 +6,7 @@ on:
       - main
     paths:
       - '.github/workflows/production-readiness.yml'
-      - 'scripts/rebuild/check-production-readiness.cjs'
+      - 'scripts/rebuild/**'
       - 'package.json'
       - 'package-lock.json'
       - 'wrangler.jsonc'
