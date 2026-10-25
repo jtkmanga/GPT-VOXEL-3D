@@ -7,6 +7,7 @@ const config=fs.readFileSync('wrangler.jsonc','utf8');
 if(!/"name"\s*:\s*"voxel-run-v2-demo"/.test(config)) fail('production worker identity changed');
 if(/gpt-voxel-3d-staging-01|provider-neutral-test|TWOC2P_SANDBOX_|APP_ENV"\s*:\s*"staging"/.test(config)) fail('staging/sandbox config leaked into production wrangler');
 if(!/"FIREBASE_PROJECT_ID"\s*:\s*"lucky-game-6936b"/.test(config)) fail('production Firebase project baseline changed');
+if(!/"PAYMENT_MODE"\s*:\s*"disabled"/.test(config)) fail('production PAYMENT_MODE must be explicitly disabled in wrangler');
 const ref=process.env.GITHUB_REF||'';
 if(ref&&!['refs/heads/main','refs/heads/development/voxel-continuous'].includes(ref)) fail('unexpected branch');
 const mode=String(process.env.PRODUCTION_PAYMENT_MODE||'').trim();
