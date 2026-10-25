@@ -30,6 +30,30 @@ export class GameRoom {
     )`);
     this.sql.exec('CREATE INDEX IF NOT EXISTS voxel_sessions_routing_idx ON voxel_sessions(owner,lease_expires,exp)');
     this.sql.exec('CREATE TABLE IF NOT EXISTS voxel_scores (uid TEXT PRIMARY KEY, nickname TEXT NOT NULL, email TEXT NOT NULL DEFAULT \'\', score INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL)');
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS voxel_score_resets (
+      id TEXT PRIMARY KEY,
+      server_scope TEXT NOT NULL,
+      reset_at INTEGER NOT NULL,
+      reset_type TEXT NOT NULL,
+      actor TEXT NOT NULL,
+      top_score INTEGER NOT NULL DEFAULT 0,
+      winner_count INTEGER NOT NULL DEFAULT 0
+    )`);
+    this.sql.exec('CREATE INDEX IF NOT EXISTS voxel_score_resets_time_idx ON voxel_score_resets(reset_at DESC)');
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS voxel_score_reset_winners (
+      id TEXT PRIMARY KEY,
+      reset_id TEXT NOT NULL,
+      server_scope TEXT NOT NULL,
+      uid TEXT NOT NULL,
+      email TEXT NOT NULL DEFAULT '',
+      nickname TEXT NOT NULL DEFAULT '',
+      score INTEGER NOT NULL,
+      reset_at INTEGER NOT NULL,
+      reset_type TEXT NOT NULL,
+      actor TEXT NOT NULL
+    )`);
+    this.sql.exec('CREATE INDEX IF NOT EXISTS voxel_score_reset_winners_reset_idx ON voxel_score_reset_winners(reset_id)');
+    this.sql.exec('CREATE INDEX IF NOT EXISTS voxel_score_reset_winners_time_idx ON voxel_score_reset_winners(reset_at DESC)');
     try { this.sql.exec("ALTER TABLE voxel_scores ADD COLUMN email TEXT NOT NULL DEFAULT ''"); } catch (_) {}
     this.sql.exec(`CREATE TABLE IF NOT EXISTS voxel_admin_audit (
       id TEXT PRIMARY KEY,
@@ -416,17 +440,57 @@ export class GameRoom {
     return [...persisted,...local].filter(p=>Number.isFinite(Number(p.x)) && Number.isFinite(Number(p.z)))
       .map(p=>({x:Number(p.x),z:Number(p.z)}));
   }
-  async applyScheduledScoreReset(now=Date.now()) {
-    this.sql.exec('UPDATE voxel_scores SET score=0,updated_at=?',now);
-    this.sql.exec(`INSERT INTO voxel_admin_audit(id,actor,action,target_uid,old_value,new_value,created_at)
-      VALUES (?,?,?,?,?,?,?)`,crypto.randomUUID(),'system','scheduled-score-reset',null,null,0,now);
+  scoreResetHistory(limit=20) {
+    const count=Math.min(100,Math.max(1,Number(limit)||20));
+    const resets=this.sql.exec(`SELECT id,server_scope,reset_at,reset_type,actor,top_score,winner_count
+      FROM voxel_score_resets ORDER BY reset_at DESC LIMIT ?`,count).toArray();
+    return resets.map(reset=>({
+      id:String(reset.id),server:String(reset.server_scope),resetAt:Number(reset.reset_at)||0,
+      resetType:String(reset.reset_type),actor:String(reset.actor),topScore:Number(reset.top_score)||0,
+      winnerCount:Number(reset.winner_count)||0,
+      winners:this.sql.exec(`SELECT uid,email,nickname,score FROM voxel_score_reset_winners
+        WHERE reset_id=? ORDER BY email ASC,uid ASC`,reset.id).toArray().map(row=>({
+          uid:String(row.uid||''),email:String(row.email||''),nickname:String(row.nickname||''),score:Number(row.score)||0
+        }))
+    }));
+  }
+  scoreResetStatus(now=Date.now()) {
+    return {ok:true,server:this.serverScope,resetLabel:resetLabel(this.serverScope),
+      nextResetAt:nextScoreResetAt(now,this.serverScope),history:this.scoreResetHistory(30),serverNow:now};
+  }
+  async applyScoreReset({now=Date.now(),resetType='scheduled',actor='system'}={}) {
+    const type=resetType==='manual'?'manual':'scheduled';
+    const by=String(actor||'system').slice(0,320)||'system';
+    const resetId=crypto.randomUUID();
+    const maxRow=this.sql.exec('SELECT MAX(score) AS top_score FROM voxel_scores').toArray()[0];
+    const hasPlayers=Number(this.sql.exec('SELECT COUNT(*) AS n FROM voxel_scores').toArray()[0]?.n)||0;
+    const topScore=hasPlayers ? Number(maxRow?.top_score)||0 : 0;
+    const winners=hasPlayers ? this.sql.exec(`SELECT uid,email,nickname,score FROM voxel_scores
+      WHERE score=? ORDER BY updated_at ASC,uid ASC`,topScore).toArray().map(row=>({
+        uid:String(row.uid||''),email:String(row.email||''),nickname:String(row.nickname||''),score:Number(row.score)||0
+      })) : [];
+    this.ctx.storage.transactionSync(()=>{
+      this.sql.exec(`INSERT INTO voxel_score_resets(id,server_scope,reset_at,reset_type,actor,top_score,winner_count)
+        VALUES (?,?,?,?,?,?,?)`,resetId,this.serverScope,now,type,by,topScore,winners.length);
+      for (const winner of winners) this.sql.exec(`INSERT INTO voxel_score_reset_winners
+        (id,reset_id,server_scope,uid,email,nickname,score,reset_at,reset_type,actor)
+        VALUES (?,?,?,?,?,?,?,?,?,?)`,crypto.randomUUID(),resetId,this.serverScope,winner.uid,winner.email,
+        winner.nickname,winner.score,now,type,by);
+      this.sql.exec('UPDATE voxel_scores SET score=0,updated_at=?',now);
+      this.audit(by,type==='manual'?'manual-score-reset':'scheduled-score-reset',null,topScore,0,
+        {server:this.serverScope,resetId,winnerCount:winners.length});
+    });
     const leaderboard=this.top();
     const scoreEvent={type:WS_MESSAGE.SCORE,score:0,reset:true,serverNow:now};
     const boardEvent={type:WS_MESSAGE.LEADERBOARD,top:leaderboard,serverNow:now};
     this.broadcast(scoreEvent);
     this.broadcast(boardEvent);
     await Promise.allSettled([this.sendAllZones(scoreEvent),this.sendAllZones(boardEvent)]);
-    return {ok:true,server:this.serverScope,resetAt:now,nextResetAt:nextScoreResetAt(now+1000,this.serverScope)};
+    return {ok:true,server:this.serverScope,resetAt:now,resetType:type,topScore,winners,
+      nextResetAt:nextScoreResetAt(now+1000,this.serverScope),resetLabel:resetLabel(this.serverScope)};
+  }
+  async applyScheduledScoreReset(now=Date.now()) {
+    return this.applyScoreReset({now,resetType:'scheduled',actor:'system'});
   }
 
   async scheduleEconomyAlarm() {
@@ -758,6 +822,17 @@ export class GameRoom {
       }
       this.audit(actor,action,uid,null,null,{reason,kicked});
       return Response.json({ok:true,uid,action,kicked,policy:this.moderation(uid)});
+    }
+
+    if (url.pathname==='/_internal/admin/reset-status' && request.method==='GET') {
+      return Response.json(this.scoreResetStatus(Date.now()));
+    }
+
+    if (url.pathname==='/_internal/admin/manual-score-reset' && request.method==='POST') {
+      let body; try { body=await request.json(); } catch (_) { return Response.json({ok:false,error:'Invalid JSON'},{status:400}); }
+      const actor=String(body?.actor||'').trim();
+      if (!actor || actor.length>320) return Response.json({ok:false,error:'Invalid reset actor'},{status:400});
+      return Response.json(await this.applyScoreReset({now:Date.now(),resetType:'manual',actor}));
     }
 
     if (url.pathname==='/_internal/admin/scheduled-score-reset' && request.method==='POST') {
