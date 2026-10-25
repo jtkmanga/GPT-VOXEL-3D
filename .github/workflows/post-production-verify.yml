@@ -1,4 +1,4 @@
-# Rerun after production auth-alarm patch
+# Rerun after persisted auth-alarm production deploy
 name: Post-Production Verification
 
 on:
