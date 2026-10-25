@@ -41,6 +41,23 @@ const worker = {
 
     if (url.pathname==='/site-config' && request.method==='GET') return publicSiteConfig(env);
 
+    // Same-origin proxy required by Firebase Auth redirect flows on browsers that
+    // block third-party storage. Keep the browser on this Worker origin while
+    // serving Firebase's auth helper resources transparently.
+    if (url.pathname.startsWith('/__/auth/')) {
+      const project=String(env?.FIREBASE_PROJECT_ID||'').trim();
+      if (!project) return new Response('Firebase auth unavailable',{status:503});
+      const upstream=new URL(request.url);
+      upstream.protocol='https:';
+      upstream.hostname=project+'.firebaseapp.com';
+      upstream.port='';
+      const proxied=new Request(upstream.toString(),request);
+      const response=await fetch(proxied);
+      const headers=new Headers(response.headers);
+      headers.set('cache-control','no-store');
+      return new Response(response.body,{status:response.status,statusText:response.statusText,headers});
+    }
+
     if (url.pathname.startsWith('/payments/2c2p/')) return handle2c2pSandbox(request,env);
 
     if (url.pathname==='/admin' || url.pathname.startsWith('/admin/api/')) return handleAdmin(request,env);
