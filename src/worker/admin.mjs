@@ -49,7 +49,7 @@ button.primary{background:linear-gradient(180deg,#2563eb,#1d4ed8);border-color:#
 .section{margin:18px 0 22px}.section-head{display:flex;justify-content:space-between;align-items:end;gap:12px;margin:0 0 10px}.section-head h2{font-size:17px;margin:0}.section-head span{font-size:12px;color:var(--muted)}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}.card{background:linear-gradient(180deg,rgba(16,29,48,.98),rgba(12,23,39,.98));border:1px solid var(--line);border-radius:16px;padding:14px;box-shadow:var(--shadow)}.card>b{display:block;font-size:13px;margin-bottom:8px;color:#dbe8fb}
 .metric{position:relative;overflow:hidden;min-height:108px}.metric:after{content:"";position:absolute;width:82px;height:82px;border-radius:50%;right:-24px;top:-28px;background:rgba(96,165,250,.08)}.metric-label{color:var(--muted);font-size:12px}.metric-value{font-size:30px;font-weight:800;line-height:1.15;margin-top:8px;letter-spacing:-.8px}
-.control-card{min-height:150px}.control-card input{width:100%;margin-bottom:8px}.control-card .row{margin-top:8px}
+.control-card{min-height:150px}.control-card input{width:100%;margin-bottom:8px}.control-card .row{margin-top:8px}.reset-card{min-height:170px}.reset-time{font-size:17px;font-weight:800;margin:7px 0}.winner{font-size:12px;line-height:1.55;color:#c8d7eb}.reset-note{font-size:11px;color:var(--muted);margin:8px 0 10px}
 .table-card{background:rgba(13,24,40,.92);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);overflow:hidden}.scroll{overflow:auto;max-height:540px}.scroll.tall{max-height:620px}
 table{width:100%;border-collapse:separate;border-spacing:0;font-size:12px;min-width:760px}thead{position:sticky;top:0;z-index:5;background:#101d30}th{font-size:11px;color:#a9bad1;text-transform:uppercase;letter-spacing:.3px}th,td{padding:10px;border-bottom:1px solid #1d2b40;text-align:left;vertical-align:top}tbody tr:hover{background:rgba(96,165,250,.045)}tbody tr:last-child td{border-bottom:0}td input[type=number]{width:120px;min-height:34px}td button{min-height:32px;padding:6px 9px;margin:0 4px 4px 0;font-size:11px}
 .roles-card{display:grid;grid-template-columns:minmax(180px,1fr) 150px auto;gap:8px;align-items:center}.diagnostic{white-space:pre-wrap;font-size:11px;margin:8px 0 12px;max-height:150px;overflow:auto;padding:10px 12px;border:1px solid #7f2631;background:#271218;color:#fecaca;border-radius:10px}
@@ -72,6 +72,27 @@ table{width:100%;border-collapse:separate;border-spacing:0;font-size:12px;min-wi
 <div class="card metric"><div class="metric-label">Banned</div><div class="metric-value" id="bannedCount">-</div></div>
 <div class="card metric"><div class="metric-label">Muted</div><div class="metric-value" id="mutedCount">-</div></div>
 </div>
+</section>
+
+<section class="section">
+<div class="section-head"><h2>Score Reset</h2><span>ระบบอัตโนมัติเป็นหลัก · Manual reset สำหรับ Owner เท่านั้น</span></div>
+<div class="grid">
+  <div class="card reset-card">
+    <b>Free Server</b>
+    <div class="reset-time" id="freeResetNext">-</div>
+    <div class="reset-note">อัตโนมัติ: ทุกวันอาทิตย์ 00:00 น. เวลาไทย</div>
+    <div class="winner" id="freeResetWinner">ยังไม่มีประวัติการรีเซ็ต</div>
+    <div class="row"><button id="resetFree" class="danger">รีเซ็ต Free ตอนนี้</button></div>
+  </div>
+  <div class="card reset-card">
+    <b>VIP Server</b>
+    <div class="reset-time" id="vipResetNext">-</div>
+    <div class="reset-note">อัตโนมัติ: ทุกวัน 00:00 น. เวลาไทย</div>
+    <div class="winner" id="vipResetWinner">ยังไม่มีประวัติการรีเซ็ต</div>
+    <div class="row"><button id="resetVip" class="danger">รีเซ็ต VIP ตอนนี้</button></div>
+  </div>
+</div>
+<div class="table-card" style="margin-top:12px"><div class="scroll"><table><thead><tr><th>Reset time</th><th>Server</th><th>Type</th><th>Winner email</th><th>Name</th><th>Score</th></tr></thead><tbody id="resetHistory"></tbody></table></div></div>
 </section>
 
 <section class="section">
@@ -118,7 +139,9 @@ async function api(path,opt={}){const r=await fetch(path,{...opt,headers:{...(op
 async function loadMe(){me=await api('/admin/api/me');$('role').textContent=me.email+' · '+me.role}
 function fmt(t){return t?new Date(Number(t)).toLocaleString('th-TH',{timeZone:'Asia/Bangkok'}):'-'}
 function syncToggleButtons(){document.querySelectorAll('[data-toggle]').forEach(b=>b.classList.toggle('active',Boolean(lastControls[b.dataset.toggle])))}
-async function loadAll(){try{const s=$('server').value;const [o,p,a,pm]=await Promise.all([api('/admin/api/overview?server='+s),api('/admin/api/players?server='+s),api('/admin/api/audit?server='+s),api('/admin/api/payments')]);$('online').textContent=o.online;$('playersCount').textContent=o.players;$('bannedCount').textContent=o.banned;$('mutedCount').textContent=o.muted;lastControls=o.controls||{};for(const k of ['announcement','free_name','vip_name'])$(k).value=lastControls[k]||'';syncToggleButtons();renderPlayers(p.players||[]);renderAudit(a.rows||[]);renderPayments(pm.rows||[]);clearDiag();$('status').className='status ok';$('status').textContent='ออนไลน์ · อัปเดต '+fmt(o.serverNow)}catch(e){$('status').className='status err';$('status').textContent=e.message;diag('Admin data error: '+(e?.message||e),true)}}
+function resetWinnerText(status){const latest=status?.history?.[0];if(!latest)return 'ยังไม่มีประวัติการรีเซ็ต';const winners=latest.winners||[];if(!winners.length)return 'รีเซ็ตล่าสุด '+fmt(latest.resetAt)+' · ไม่มีผู้เล่น';const label=winners.map(w=>(w.email||'(no email)')+' · '+w.score+' คะแนน').join(' / ');return 'แชมป์ล่าสุด: '+label+' · '+fmt(latest.resetAt)}
+function renderResetStatus(data){const free=data?.free||{},vip=data?.vip||{};$('freeResetNext').textContent='ครั้งถัดไป '+fmt(free.nextResetAt);$('vipResetNext').textContent='ครั้งถัดไป '+fmt(vip.nextResetAt);$('freeResetWinner').textContent=resetWinnerText(free);$('vipResetWinner').textContent=resetWinnerText(vip);const rows=[];for(const status of [free,vip])for(const reset of status.history||[]){if(reset.winners?.length){for(const w of reset.winners)rows.push({reset,w})}else rows.push({reset,w:{email:'-',nickname:'-',score:0}})}rows.sort((a,b)=>Number(b.reset.resetAt)-Number(a.reset.resetAt));const body=$('resetHistory');body.innerHTML='';for(const item of rows.slice(0,60)){const tr=document.createElement('tr');for(const v of [fmt(item.reset.resetAt),item.reset.server==='vip1'?'VIP':'Free',item.reset.resetType,item.w.email||'(no email)',item.w.nickname||'-',item.w.score]){const td=document.createElement('td');td.textContent=String(v);tr.appendChild(td)}body.appendChild(tr)}}
+async function loadAll(){try{const s=$('server').value;const [o,p,a,pm,rs]=await Promise.all([api('/admin/api/overview?server='+s),api('/admin/api/players?server='+s),api('/admin/api/audit?server='+s),api('/admin/api/payments'),api('/admin/api/reset-status')]);$('online').textContent=o.online;$('playersCount').textContent=o.players;$('bannedCount').textContent=o.banned;$('mutedCount').textContent=o.muted;lastControls=o.controls||{};for(const k of ['announcement','free_name','vip_name'])$(k).value=lastControls[k]||'';syncToggleButtons();renderPlayers(p.players||[]);renderAudit(a.rows||[]);renderPayments(pm.rows||[]);renderResetStatus(rs);clearDiag();$('status').className='status ok';$('status').textContent='ออนไลน์ · อัปเดต '+fmt(o.serverNow)}catch(e){$('status').className='status err';$('status').textContent=e.message;diag('Admin data error: '+(e?.message||e),true)}}
 function renderPlayers(rows){const b=$('players');b.innerHTML='';for(const p of rows){const tr=document.createElement('tr');const ident=document.createElement('td');ident.textContent=(p.email||'(no email)')+'\\n'+p.uid;ident.style.whiteSpace='pre-line';const name=document.createElement('td');name.textContent=p.nickname;const score=document.createElement('td');const i=document.createElement('input');i.type='number';i.min='0';i.value=p.score;const save=document.createElement('button');save.textContent='Set';save.onclick=()=>setScore(p.uid,i.value);const reward=document.createElement('button');reward.textContent='+100';reward.className='good';reward.onclick=()=>rewardScore(p.uid,100);score.append(i,save,reward);const state=document.createElement('td');state.textContent=(p.online?'🟢 Online':'⚪ Offline')+'\\nVIP: '+fmt(p.vipExpiresAt);state.style.whiteSpace='pre-line';const mod=document.createElement('td');for(const [label,action] of [['Kick','kick'],['Ban 7d','ban'],['Unban','unban'],['Mute 24h','mute'],['Unmute','unmute']]){const bt=document.createElement('button');bt.textContent=label;bt.onclick=()=>moderate(p.uid,action);mod.appendChild(bt)}tr.append(ident,name,score,state,mod);b.appendChild(tr)}}
 function renderAudit(rows){const b=$('audit');b.innerHTML='';for(const x of rows){const tr=document.createElement('tr');for(const v of [fmt(x.created_at),x.actor,x.action,x.target_uid||'',x.metadata||'']){const td=document.createElement('td');td.textContent=String(v);tr.appendChild(td)}b.appendChild(tr)}}
 function renderPayments(rows){const b=$('payments');b.innerHTML='';for(const x of rows){const tr=document.createElement('tr');for(const v of [x.uid,x.item,x.amount,fmt(x.createdAt),x.transactionRef]){const td=document.createElement('td');td.textContent=String(v??'');tr.appendChild(td)}b.appendChild(tr)}}
@@ -129,6 +152,8 @@ async function setControl(key,value){await api('/admin/api/control',{method:'POS
 document.querySelectorAll('[data-control]').forEach(b=>b.onclick=()=>setControl(b.dataset.control,$(b.dataset.control).value));
 document.querySelectorAll('[data-toggle]').forEach(b=>b.onclick=()=>setControl(b.dataset.toggle,!Boolean(lastControls[b.dataset.toggle])));
 $('setRole').onclick=async()=>{await api('/admin/api/role',{method:'POST',body:JSON.stringify({email:$('roleEmail').value,role:$('roleValue').value})});await loadAll()};
+async function manualReset(server){const label=server==='vip1'?'VIP Server':'Free Server';if(!confirm('ยืนยันรีเซ็ตคะแนน '+label+' ตอนนี้? ระบบอัตโนมัติจะยังทำงานตามเวลาเดิม'))return;try{$('status').className='status muted';$('status').textContent='กำลังรีเซ็ตคะแนน '+label+'...';const result=await api('/admin/api/reset',{method:'POST',body:JSON.stringify({server})});$('status').className='status ok';$('status').textContent='รีเซ็ต '+label+' สำเร็จ · บันทึกแชมป์ '+(result.winners?.length||0)+' คน';await loadAll()}catch(e){$('status').className='status err';$('status').textContent=e.message;diag('Manual reset error: '+(e?.message||e),true)}}
+$('resetFree').onclick=()=>manualReset('free1');$('resetVip').onclick=()=>manualReset('vip1');
 $('login').onclick=async()=>{try{clearDiag();const a=await ensureAuth();provider.setCustomParameters({prompt:'select_account'});$('status').className='status muted';$('status').textContent='กำลังเปิด Google Login...';await a.signInWithPopup(provider)}catch(e){diag('Popup error: '+(e?.code||'')+' '+(e?.message||''),true);$('status').className='status err';$('status').textContent=authError(e)}};$('logout').onclick=async()=>{const a=await ensureAuth();await a.signOut()};$('refresh').onclick=loadAll;$('server').onchange=loadAll;
 $('export').onclick=async()=>{const r=await fetch('/admin/api/export?server='+$('server').value,{headers:await headers()});if(!r.ok)throw Error('Export failed');const blob=await r.blob(),u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download='voxel-'+$('server').value+'-players.csv';a.click();URL.revokeObjectURL(u)};
 $('backup').onclick=async()=>{const r=await fetch('/admin/api/backup?server='+$('server').value,{headers:await headers()});if(!r.ok)throw Error('Backup failed');const blob=await r.blob(),u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download='voxel-'+$('server').value+'-backup.json';a.click();URL.revokeObjectURL(u)};
@@ -155,6 +180,22 @@ export async function handleAdmin(request,env){
   const server=url.searchParams.get('server')||'free1', room=roomFor(env,server);
   if(['/admin/api/overview','/admin/api/players','/admin/api/audit','/admin/api/export'].includes(url.pathname)&&!room)
     return json({ok:false,error:'Invalid server'},400);
+
+  if(url.pathname==='/admin/api/reset-status'&&request.method==='GET'){
+    if(!requireRole(admin,'admin'))return json({ok:false,error:'Insufficient role'},403);
+    const free=roomFor(env,'free1'),vip=roomFor(env,'vip1');
+    const configured=await vip.fetch(new Request('https://internal/_internal/configure-scope',{
+      method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({scope:'vip1'})
+    }));
+    if(!configured.ok)return json({ok:false,error:'VIP reset status unavailable'},503);
+    const [freeResponse,vipResponse]=await Promise.all([
+      free.fetch(new Request('https://internal/_internal/admin/reset-status')),
+      vip.fetch(new Request('https://internal/_internal/admin/reset-status'))
+    ]);
+    const [freeData,vipData]=await Promise.all([freeResponse.json(),vipResponse.json()]);
+    if(!freeResponse.ok||!vipResponse.ok)return json({ok:false,error:'Reset status unavailable'},503);
+    return json({ok:true,free:freeData,vip:vipData,serverNow:Date.now()});
+  }
 
   if(url.pathname==='/admin/api/overview'&&request.method==='GET'){
     if(!requireRole(admin,'moderator'))return json({ok:false,error:'Insufficient role'},403);
@@ -196,6 +237,22 @@ export async function handleAdmin(request,env){
   }
 
   let body={}; if(request.method==='POST'){try{body=await request.json()}catch(_){return json({ok:false,error:'Invalid JSON'},400)}}
+  if(url.pathname==='/admin/api/reset'&&request.method==='POST'){
+    if(!requireRole(admin,'owner'))return json({ok:false,error:'Owner role required'},403);
+    const scope=String(body?.server||'');
+    const target=roomFor(env,scope);if(!target)return json({ok:false,error:'Invalid server'},400);
+    if(scope==='vip1'){
+      const configured=await target.fetch(new Request('https://internal/_internal/configure-scope',{
+        method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({scope:'vip1'})
+      }));
+      if(!configured.ok)return json({ok:false,error:'VIP reset scope unavailable'},503);
+    }
+    const {response,data}=await internalJson(target,'/_internal/admin/manual-score-reset',{
+      method:'POST',body:{actor:admin.identity.email}
+    });
+    return json(data,response.status);
+  }
+
   if(url.pathname==='/admin/api/score'&&request.method==='POST'){
     if(!requireRole(admin,'admin'))return json({ok:false,error:'Insufficient role'},403);
     const target=roomFor(env,body?.server);if(!target)return json({ok:false,error:'Invalid server'},400);
