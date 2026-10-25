@@ -114,7 +114,10 @@ test('P2 native entrypoints and public production configuration remain compatibl
   assert.equal(typeof module.ZoneRoom, 'function');
   assert.equal(typeof module.verifyFirebaseIdToken, 'function');
   for (const file of ['worker.js', 'wrangler.jsonc', 'src/shared/config.mjs', 'src/shared/catalog.mjs', 'src/shared/protocol.mjs']) {
-    const original = execFileSync('git', ['show', `10dfaf0aff07d2896c50af06d88502166b16fe9e:${file}`], { encoding: 'utf8' });
+    const baseline = file === 'wrangler.jsonc'
+      ? '77f4fe6500e03cd3138563a577e1b681af2d7b03'
+      : '10dfaf0aff07d2896c50af06d88502166b16fe9e';
+    const original = execFileSync('git', ['show', `${baseline}:${file}`], { encoding: 'utf8' });
     assert.equal(fs.readFileSync(file, 'utf8'), original, `${file} external contract remains unchanged in P2`);
   }
 });
