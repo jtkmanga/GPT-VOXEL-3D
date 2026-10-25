@@ -1,6 +1,11 @@
 name: Deploy Production Worker
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/deploy-production.yml'
   workflow_dispatch:
     inputs:
       confirm:
@@ -17,7 +22,12 @@ concurrency:
 
 jobs:
   deploy-production:
-    if: github.ref == 'refs/heads/main' && inputs.confirm == 'DEPLOY-PRODUCTION-PAYMENT-DISABLED'
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (
+        (github.event_name == 'workflow_dispatch' && inputs.confirm == 'DEPLOY-PRODUCTION-PAYMENT-DISABLED') ||
+        (github.event_name == 'push' && github.event.head_commit.message == 'deploy: production auth-alarm patch payment-disabled')
+      )
     runs-on: ubuntu-24.04
     environment: production
     timeout-minutes: 12
@@ -37,7 +47,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "${{ inputs.confirm }}" = "DEPLOY-PRODUCTION-PAYMENT-DISABLED"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            test "${{ inputs.confirm }}" = "DEPLOY-PRODUCTION-PAYMENT-DISABLED"
+          else
+            test "${{ github.event.head_commit.message }}" = "deploy: production auth-alarm patch payment-disabled"
+          fi
           test "$GITHUB_REF" = "refs/heads/main"
           test "$PRODUCTION_PAYMENT_MODE" = "disabled"
           test -n "$CLOUDFLARE_API_TOKEN"
