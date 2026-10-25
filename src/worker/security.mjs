@@ -161,8 +161,10 @@ export function scheduleAuthDeadline(room, ws) {
       if (current && !current.uid) ws.close(1008, 'Authentication deadline exceeded');
     } catch (_) {}
   }, delay);
-  timer?.unref?.();
+  // Keep the timer referenced until the authentication deadline. Security
+  // takes priority over hibernating an unauthenticated socket during this
+  // bounded 10-second window; the Durable Object alarm remains a backup.
   authDeadlines.set(ws, timer);
-  // Durable Object alarms survive hibernation, unlike in-memory timers.
+  // Durable Object alarms provide an additional persisted deadline backup.
   try { room.ctx.waitUntil(scheduleAuthAlarm(room)); } catch (_) {}
 }
