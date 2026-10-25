@@ -3,7 +3,8 @@
   "main": "worker.js",
   "compatibility_date": "2026-09-27",
   "vars": {
-    "FIREBASE_PROJECT_ID": "lucky-game-6936b"
+    "FIREBASE_PROJECT_ID": "lucky-game-6936b",
+    "PAYMENT_MODE": "disabled"
   },
   "durable_objects": {
     "bindings": [
