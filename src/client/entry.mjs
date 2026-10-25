@@ -9,6 +9,7 @@ import * as movement from '../shared/movement.mjs';
 
 export { config, protocol, catalog, movement };
 export const CLIENT_SOURCES = [
+  "./live-site-config.js",
   "./auth-state.js",
   "./audio.js",
   "./firebase-multiplayer.js",

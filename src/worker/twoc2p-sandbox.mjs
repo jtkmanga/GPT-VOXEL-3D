@@ -187,6 +187,14 @@ const failureReply = error => reply({ ok: false, error: error instanceof Twoc2pS
   ? error.message : 'Sandbox payment authority unavailable' },
   error instanceof Twoc2pSandboxError || error instanceof Twoc2pJwtError ? error.status : 503);
 
+async function assertPaymentsNotPaused(env) {
+  const response=await env.ROOM.getByName('free-v2-demo').fetch(
+    new Request('https://internal/_internal/admin/runtime-controls'));
+  const data=await response.json();
+  if (!response.ok) fail('Payment authority unavailable',503);
+  if (data?.paymentPaused===true) fail('Payments are temporarily paused',503);
+}
+
 async function internalCall(env, action, body) {
   const response = await env.ROOM.getByName('free-v2-demo').fetch(new Request(
     `https://internal/_internal/2c2p/${action}`, { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify(body) }));
@@ -215,6 +223,7 @@ export async function handle2c2pSandbox(request, env) {
     const action = path === '/payments/2c2p/backend' ? 'backend' : 'checkout';
     const config = twoc2pSandboxConfig(env, action);
     if (path === '/payments/2c2p/backend') {
+      await assertPaymentsNotPaused(env);
       if (request.method !== 'POST') return reply({ok:false,error:'Method not allowed'},405);
       const payload = await verify2c2pJwt(envelopeToken(await boundedJson(request)),config.secret);
       const notification = normalizeSandboxNotification(payload,config.merchantID);
@@ -235,6 +244,7 @@ export async function handle2c2pSandbox(request, env) {
       requireCurrentIdentity(identity);
       return reply(status);
     }
+    await assertPaymentsNotPaused(env);
     const input = await boundedJson(request,2048);
     if (Object.keys(input).length !== 1 || !safeIdentifier(input.requestId,128) || input.requestId.length < 16)
       fail('Invalid sandbox checkout request',400);

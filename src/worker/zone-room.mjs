@@ -409,7 +409,7 @@ export class ZoneRoom {
           method:'POST',
           headers:{'content-type':'application/json'},
           body:JSON.stringify(refresh ? {uid:verified.uid} :
-            {uid:verified.uid,name:normalizePlayerName(m?.name,'Player')})
+            {uid:verified.uid,name:normalizePlayerName(m?.name,'Player'),email:verified.email||''})
         })
       );
       bootstrap=await response.json();

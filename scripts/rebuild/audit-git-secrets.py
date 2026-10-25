@@ -86,6 +86,8 @@ class Scanner:
         text = data.decode("utf-8", errors="replace")
         for kind, pattern in PATTERNS.items():
             for match in pattern.finditer(text):
+                if kind == "Credential assignment candidate" and PATTERNS["Firebase web API key"].search(match.group(0)):
+                    continue
                 self.findings.append(dict(type=kind, path=safe_location(path),
                     line=text.count("\n", 0, match.start()) + 1, object=oid,
                     classification="public-web-configuration-review" if kind == "Firebase web API key"

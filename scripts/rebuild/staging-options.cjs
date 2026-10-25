@@ -6,7 +6,7 @@ const ROOT = path.resolve(__dirname, '../..');
 const STAGING_ROOT = path.join(ROOT, 'work/staging');
 const PRODUCTION_MAIN = '77f4fe6500e03cd3138563a577e1b681af2d7b03';
 const SCAFFOLD_NAME = 'gpt-voxel-3d-staging-01';
-const VAR_KEYS = ['APP_ENV', 'STAGING_WORKER_NAME', 'STAGING_WORKER_ORIGIN', 'ALLOWED_ORIGIN',
+const VAR_KEYS = ['APP_ENV', 'ADMIN_OWNER_EMAIL', 'STAGING_WORKER_NAME', 'STAGING_WORKER_ORIGIN', 'ALLOWED_ORIGIN',
   'FIREBASE_PROJECT_ID', 'FIREBASE_PUBLIC_CONFIG', 'FIREBASE_APP_CHECK_SITE_KEY',
   'FIREBASE_ONLINE_USER_CHECK', 'STAGING_AUTH_MODE', 'PAYMENT_MODE',
   'TWOC2P_SANDBOX_ENABLED', 'TWOC2P_SANDBOX_CHECKOUT_ENABLED', 'TWOC2P_SANDBOX_BACKEND_ENABLED',
@@ -94,7 +94,7 @@ function scaffoldConfig(configFile = path.join(ROOT, 'wrangler.staging.jsonc')) 
 }
 function varsForManifest(manifest) {
   return {
-    APP_ENV: 'staging', STAGING_WORKER_NAME: manifest.workerName,
+    APP_ENV: 'staging', ADMIN_OWNER_EMAIL: 'jtkmanga@gmail.com', STAGING_WORKER_NAME: manifest.workerName,
     STAGING_WORKER_ORIGIN: manifest.workerOrigin, ALLOWED_ORIGIN: manifest.workerOrigin,
     FIREBASE_PROJECT_ID: manifest.firebase.projectId,
     FIREBASE_PUBLIC_CONFIG: JSON.stringify(manifest.firebase),
@@ -113,13 +113,17 @@ function varsForManifest(manifest) {
 }
 async function validateStagingWrangler(value, configFile, { allowUnconfigured = false, allowTest = false } = {}) {
   configFile = path.resolve(configFile);
-  exactKeys(value, ['name', 'main', 'compatibility_date', 'workers_dev', 'preview_urls', 'vars', 'assets',
+  exactKeys(value, ['name', 'main', 'compatibility_date', 'workers_dev', 'preview_urls', 'triggers', 'vars', 'assets',
     'durable_objects', 'migrations'], 'staging Worker');
   if (path.resolve(path.dirname(configFile), value.main || '') !== path.join(ROOT, 'worker.js')) {
     throw Error('Staging entrypoint must be the verified local worker.js');
   }
   if (value.compatibility_date !== '2026-09-27' || value.workers_dev !== true || value.preview_urls !== false) {
     throw Error('Staging runtime or public routing configuration differs from the isolated scaffold');
+  }
+  exactKeys(value.triggers, ['crons'], 'staging triggers');
+  if (JSON.stringify(value.triggers.crons) !== JSON.stringify(['0 17 * * *'])) {
+    throw Error('Staging cron schedule must be exactly midnight Asia/Bangkok');
   }
   exactKeys(value.vars, VAR_KEYS, 'staging vars');
   if (Object.values(value.vars).some(item => typeof item !== 'string')) throw Error('Staging vars must be strings');

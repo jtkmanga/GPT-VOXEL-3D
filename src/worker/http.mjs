@@ -2,11 +2,20 @@ import { PAYMENT_PRICES } from '../shared/catalog.mjs';
 import { verifyFirebaseRequestTokens } from './firebase-auth.mjs';
 import { verifyPaymentEvent, PaymentBoundaryError } from './payment-events.mjs';
 
+async function paymentsPaused(env) {
+  try {
+    const response=await env.ROOM.getByName('free-v2-demo').fetch(new Request('https://internal/_internal/admin/runtime-controls'));
+    const data=await response.json();
+    return response.ok && data?.paymentPaused===true;
+  } catch (_) { return false; }
+}
+
 // Server-to-server provider adapter. A Firebase login or browser payment flag
 // cannot authorize this route; only a fresh signature over the exact bytes can.
 export async function handlePaymentWebhook(request, env) {
   try {
     const verified = await verifyPaymentEvent(request, env);
+    if (await paymentsPaused(env)) return Response.json({ok:false,error:'Payments are temporarily paused'},{status:503});
     const response = await env.ROOM.getByName('free-v2-demo').fetch(new Request(
       'https://internal/_internal/vip/apply-event', {
         method: 'POST', headers: { 'content-type': 'application/json' },
@@ -57,6 +66,10 @@ export async function handleVerifySlip(request, env) {
       ok: false,
       error: 'Production payment is disabled'
     }, 503);
+  }
+
+  if (await paymentsPaused(env)) {
+    return jsonResponse(request, env, { ok:false, error:'Payments are temporarily paused' }, 503);
   }
 
   if (

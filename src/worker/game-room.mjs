@@ -14,6 +14,7 @@ import { VipStore } from './vip-store.mjs';
 import { validVipUid, VIP_PRODUCT, normalizePaymentEvent, paymentEventFingerprint } from './payment-events.mjs';
 import { handoffPosition } from './handoff-continuity.mjs';
 import { handle2c2pInternal } from './twoc2p-sandbox.mjs';
+import { nextScoreResetAt, resetLabel } from './score-reset.mjs';
 
 export class GameRoom {
   constructor(ctx,env) {
@@ -28,7 +29,39 @@ export class GameRoom {
       PRIMARY KEY(uid,session_id,owner)
     )`);
     this.sql.exec('CREATE INDEX IF NOT EXISTS voxel_sessions_routing_idx ON voxel_sessions(owner,lease_expires,exp)');
-    this.sql.exec('CREATE TABLE IF NOT EXISTS voxel_scores (uid TEXT PRIMARY KEY, nickname TEXT NOT NULL, score INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL)');
+    this.sql.exec('CREATE TABLE IF NOT EXISTS voxel_scores (uid TEXT PRIMARY KEY, nickname TEXT NOT NULL, email TEXT NOT NULL DEFAULT \'\', score INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL)');
+    try { this.sql.exec("ALTER TABLE voxel_scores ADD COLUMN email TEXT NOT NULL DEFAULT ''"); } catch (_) {}
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS voxel_admin_audit (
+      id TEXT PRIMARY KEY,
+      actor TEXT NOT NULL,
+      action TEXT NOT NULL,
+      target_uid TEXT,
+      old_value INTEGER,
+      new_value INTEGER,
+      created_at INTEGER NOT NULL,
+      metadata TEXT NOT NULL DEFAULT ''
+    )`);
+    try { this.sql.exec("ALTER TABLE voxel_admin_audit ADD COLUMN metadata TEXT NOT NULL DEFAULT ''"); } catch (_) {}
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS voxel_admin_controls (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_by TEXT NOT NULL DEFAULT '',
+      updated_at INTEGER NOT NULL DEFAULT 0
+    )`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS voxel_moderation (
+      uid TEXT PRIMARY KEY,
+      banned_until INTEGER NOT NULL DEFAULT 0,
+      muted_until INTEGER NOT NULL DEFAULT 0,
+      reason TEXT NOT NULL DEFAULT '',
+      updated_by TEXT NOT NULL DEFAULT '',
+      updated_at INTEGER NOT NULL DEFAULT 0
+    )`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS voxel_admin_roles (
+      email TEXT PRIMARY KEY,
+      role TEXT NOT NULL,
+      updated_by TEXT NOT NULL,
+      updated_at INTEGER NOT NULL
+    )`);
     this.sql.exec('CREATE TABLE IF NOT EXISTS voxel_coins (id INTEGER PRIMARY KEY, respawn_at INTEGER NOT NULL)');
     try { this.sql.exec('ALTER TABLE voxel_coins ADD COLUMN cycle INTEGER NOT NULL DEFAULT 0'); } catch (_) {}
     this.sql.exec(`CREATE TABLE IF NOT EXISTS voxel_lucky_box (
@@ -107,6 +140,33 @@ export class GameRoom {
       await this.scheduleEconomyAlarm();
     });
     for (const ws of this.sockets()) scheduleAuthDeadline(this,ws);
+  }
+  control(key,fallback='') {
+    const row=this.sql.exec('SELECT value FROM voxel_admin_controls WHERE key=?',key).toArray()[0];
+    return row ? String(row.value) : fallback;
+  }
+  controlBool(key) { return this.control(key,'false')==='true'; }
+  setControl(key,value,actor) {
+    const now=Date.now(), next=String(value ?? '');
+    const previous=this.control(key,'');
+    this.sql.exec(`INSERT INTO voxel_admin_controls(key,value,updated_by,updated_at) VALUES (?,?,?,?)
+      ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_by=excluded.updated_by,updated_at=excluded.updated_at`,
+      key,next,actor,now);
+    this.audit(actor,'set-control',null,null,null,{key,previous,next});
+    return next;
+  }
+  moderation(uid) {
+    const row=this.sql.exec('SELECT * FROM voxel_moderation WHERE uid=?',uid).toArray()[0]||{};
+    const now=Date.now();
+    return {bannedUntil:Number(row.banned_until)||0,mutedUntil:Number(row.muted_until)||0,
+      banned:(Number(row.banned_until)||0)>now,muted:(Number(row.muted_until)||0)>now,
+      reason:String(row.reason||''),updatedBy:String(row.updated_by||''),updatedAt:Number(row.updated_at)||0};
+  }
+  audit(actor,action,targetUid=null,oldValue=null,newValue=null,metadata={}) {
+    this.sql.exec(`INSERT INTO voxel_admin_audit(id,actor,action,target_uid,old_value,new_value,created_at,metadata)
+      VALUES (?,?,?,?,?,?,?,?)`,crypto.randomUUID(),String(actor||'system').slice(0,320),String(action||'unknown').slice(0,80),
+      targetUid?String(targetUid).slice(0,128):null,Number.isSafeInteger(oldValue)?oldValue:null,
+      Number.isSafeInteger(newValue)?newValue:null,Date.now(),JSON.stringify(metadata||{}).slice(0,4000));
   }
   player(ws) { return ws.deserializeAttachment(); }
   sockets() { return this.ctx.getWebSockets(); }
@@ -356,6 +416,19 @@ export class GameRoom {
     return [...persisted,...local].filter(p=>Number.isFinite(Number(p.x)) && Number.isFinite(Number(p.z)))
       .map(p=>({x:Number(p.x),z:Number(p.z)}));
   }
+  async applyScheduledScoreReset(now=Date.now()) {
+    this.sql.exec('UPDATE voxel_scores SET score=0,updated_at=?',now);
+    this.sql.exec(`INSERT INTO voxel_admin_audit(id,actor,action,target_uid,old_value,new_value,created_at)
+      VALUES (?,?,?,?,?,?,?)`,crypto.randomUUID(),'system','scheduled-score-reset',null,null,0,now);
+    const leaderboard=this.top();
+    const scoreEvent={type:WS_MESSAGE.SCORE,score:0,reset:true,serverNow:now};
+    const boardEvent={type:WS_MESSAGE.LEADERBOARD,top:leaderboard,serverNow:now};
+    this.broadcast(scoreEvent);
+    this.broadcast(boardEvent);
+    await Promise.allSettled([this.sendAllZones(scoreEvent),this.sendAllZones(boardEvent)]);
+    return {ok:true,server:this.serverScope,resetAt:now,nextResetAt:nextScoreResetAt(now+1000,this.serverScope)};
+  }
+
   async scheduleEconomyAlarm() {
     const row=this.sql.exec('SELECT next_spawn_at,claimed_uid,claim_expires_at FROM voxel_lucky_box WHERE id=1').toArray()[0];
     const future=[Number(row?.next_spawn_at)||0,
@@ -578,6 +651,184 @@ export class GameRoom {
     const url = new URL(request.url);
 
     if (url.pathname.startsWith('/_internal/2c2p/')) return handle2c2pInternal(request,this);
+
+    if (url.pathname==='/_internal/admin/role-check' && request.method==='GET') {
+      const email=String(url.searchParams.get('email')||'').trim().toLowerCase();
+      const owner=String(this.env.ADMIN_OWNER_EMAIL||'').trim().toLowerCase();
+      if (email && email===owner) return Response.json({ok:true,role:'owner'});
+      const row=this.sql.exec('SELECT role FROM voxel_admin_roles WHERE email=?',email).toArray()[0];
+      return Response.json({ok:true,role:row && ['admin','moderator'].includes(row.role)?row.role:null});
+    }
+
+    if (url.pathname==='/_internal/admin/runtime-controls' && request.method==='GET') {
+      return Response.json({ok:true,
+        announcement:this.control('announcement',''),
+        freeName:this.control('free_name','Free Server ฟรีไม่จำกัด'),
+        vipName:this.control('vip_name','VIP Server 1'),
+        maintenanceFree:this.controlBool('maintenance_free'),
+        maintenanceVip:this.controlBool('maintenance_vip'),
+        paymentPaused:this.controlBool('payment_emergency'),
+        vipAdmissionPaused:this.controlBool('vip_admission_emergency'),
+        serverNow:Date.now()});
+    }
+
+    if (url.pathname==='/_internal/admin/player-policy' && request.method==='GET') {
+      const uid=String(url.searchParams.get('uid')||'');
+      if (!uid || uid.length>128) return Response.json({ok:false,error:'Invalid UID'},{status:400});
+      return Response.json({ok:true,...this.moderation(uid)});
+    }
+
+    if (url.pathname==='/_internal/admin/overview' && request.method==='GET') {
+      const now=Date.now(), sec=Math.floor(now/1000);
+      const activeSessions=Number(this.sql.exec('SELECT COUNT(*) AS n FROM voxel_sessions WHERE lease_expires>? AND (exp=0 OR exp>?)',now,sec).toArray()[0]?.n)||0;
+      const players=Number(this.sql.exec('SELECT COUNT(*) AS n FROM voxel_scores').toArray()[0]?.n)||0;
+      const banned=Number(this.sql.exec('SELECT COUNT(*) AS n FROM voxel_moderation WHERE banned_until>?',now).toArray()[0]?.n)||0;
+      const muted=Number(this.sql.exec('SELECT COUNT(*) AS n FROM voxel_moderation WHERE muted_until>?',now).toArray()[0]?.n)||0;
+      return Response.json({ok:true,server:this.serverScope,online:activeSessions,players,banned,muted,
+        leaderboard:this.top(),controls:{
+          announcement:this.control('announcement',''),freeName:this.control('free_name','Free Server ฟรีไม่จำกัด'),
+          vipName:this.control('vip_name','VIP Server 1'),maintenanceFree:this.controlBool('maintenance_free'),
+          maintenanceVip:this.controlBool('maintenance_vip'),paymentPaused:this.controlBool('payment_emergency'),
+          vipAdmissionPaused:this.controlBool('vip_admission_emergency')},serverNow:now});
+    }
+
+    if (url.pathname==='/_internal/admin/audit' && request.method==='GET') {
+      const rows=this.sql.exec('SELECT actor,action,target_uid,old_value,new_value,created_at,metadata FROM voxel_admin_audit ORDER BY created_at DESC LIMIT 500').toArray();
+      return Response.json({ok:true,rows});
+    }
+
+    if (url.pathname==='/_internal/admin/payments' && request.method==='GET') {
+      const rows=this.sql.exec('SELECT uid,item,amount,created_at,transaction_id FROM voxel_payments ORDER BY created_at DESC LIMIT 500').toArray()
+        .map(r=>({uid:r.uid,item:r.item,amount:Number(r.amount)||0,createdAt:Number(r.created_at)||0,
+          transactionRef:String(r.transaction_id||'').slice(-8)}));
+      return Response.json({ok:true,rows});
+    }
+
+    if (url.pathname==='/_internal/admin/role-set' && request.method==='POST') {
+      let body; try { body=await request.json(); } catch (_) { return Response.json({ok:false,error:'Invalid JSON'},{status:400}); }
+      const email=String(body?.email||'').trim().toLowerCase(), role=String(body?.role||'').toLowerCase(), actor=String(body?.actor||'');
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !['admin','moderator','none'].includes(role) || !actor)
+        return Response.json({ok:false,error:'Invalid role update'},{status:400});
+      if (email===String(this.env.ADMIN_OWNER_EMAIL||'').trim().toLowerCase()) return Response.json({ok:false,error:'Owner role is immutable'},{status:409});
+      if (role==='none') this.sql.exec('DELETE FROM voxel_admin_roles WHERE email=?',email);
+      else this.sql.exec(`INSERT INTO voxel_admin_roles(email,role,updated_by,updated_at) VALUES (?,?,?,?)
+        ON CONFLICT(email) DO UPDATE SET role=excluded.role,updated_by=excluded.updated_by,updated_at=excluded.updated_at`,
+        email,role,actor,Date.now());
+      this.audit(actor,'set-role',null,null,null,{email,role});
+      return Response.json({ok:true,email,role});
+    }
+
+    if (url.pathname==='/_internal/admin/control-set' && request.method==='POST') {
+      let body; try { body=await request.json(); } catch (_) { return Response.json({ok:false,error:'Invalid JSON'},{status:400}); }
+      const key=String(body?.key||''), actor=String(body?.actor||''), value=body?.value;
+      const allowed=['announcement','free_name','vip_name','maintenance_free','maintenance_vip','payment_emergency','vip_admission_emergency'];
+      if (!allowed.includes(key)||!actor) return Response.json({ok:false,error:'Invalid control'},{status:400});
+      if (['maintenance_free','maintenance_vip','payment_emergency','vip_admission_emergency'].includes(key) && typeof value!=='boolean')
+        return Response.json({ok:false,error:'Boolean control required'},{status:400});
+      const text=typeof value==='boolean'?String(value):String(value||'').trim();
+      if (text.length>300) return Response.json({ok:false,error:'Control value too long'},{status:400});
+      const next=this.setControl(key,text,actor);
+      return Response.json({ok:true,key,value:next});
+    }
+
+    if (url.pathname==='/_internal/admin/moderate' && request.method==='POST') {
+      let body; try { body=await request.json(); } catch (_) { return Response.json({ok:false,error:'Invalid JSON'},{status:400}); }
+      const uid=String(body?.uid||''), action=String(body?.action||''), actor=String(body?.actor||''), reason=String(body?.reason||'').slice(0,300);
+      if (!uid||uid.length>128||!actor||!['ban','unban','mute','unmute','kick'].includes(action))
+        return Response.json({ok:false,error:'Invalid moderation request'},{status:400});
+      const now=Date.now(), old=this.moderation(uid);
+      if (action!=='kick') {
+        const duration=Math.min(365*24*60*60*1000,Math.max(0,Number(body?.durationMs)||0));
+        const bannedUntil=action==='ban'?now+(duration||7*24*60*60*1000):action==='unban'?0:old.bannedUntil;
+        const mutedUntil=action==='mute'?now+(duration||24*60*60*1000):action==='unmute'?0:old.mutedUntil;
+        this.sql.exec(`INSERT INTO voxel_moderation(uid,banned_until,muted_until,reason,updated_by,updated_at)
+          VALUES (?,?,?,?,?,?) ON CONFLICT(uid) DO UPDATE SET banned_until=excluded.banned_until,
+          muted_until=excluded.muted_until,reason=excluded.reason,updated_by=excluded.updated_by,updated_at=excluded.updated_at`,
+          uid,bannedUntil,mutedUntil,reason,actor,now);
+      }
+      let kicked=0;
+      if (action==='kick'||action==='ban') {
+        for (const ws of this.sockets()) {
+          const p=this.player(ws); if (p?.uid===uid) { try { await this.closeSession(ws,1008,action==='ban'?'Account banned':'Kicked by admin'); } catch (_) {} kicked++; }
+        }
+        const row=this.sessions.row(uid);
+        if (row?.session_id && row?.owner && row.owner!=='room') {
+          try { await this.retireOwner({uid,sessionId:row.session_id,owner:row.owner}); kicked++; } catch (_) {}
+        }
+      }
+      this.audit(actor,action,uid,null,null,{reason,kicked});
+      return Response.json({ok:true,uid,action,kicked,policy:this.moderation(uid)});
+    }
+
+    if (url.pathname==='/_internal/admin/scheduled-score-reset' && request.method==='POST') {
+      return Response.json(await this.applyScheduledScoreReset(Date.now()));
+    }
+
+    if (url.pathname==='/_internal/admin/list-players' && request.method==='GET') {
+      const now=Date.now();
+      const players=this.sql.exec(`SELECT s.uid,s.email,s.nickname,s.score,s.updated_at,
+        COALESCE(m.banned_until,0) AS banned_until,COALESCE(m.muted_until,0) AS muted_until
+        FROM voxel_scores s LEFT JOIN voxel_moderation m ON m.uid=s.uid
+        ORDER BY s.score DESC,s.updated_at ASC,s.uid ASC LIMIT 50000`).toArray().map(p=>({
+          ...p,online:Boolean(this.sessions.row(p.uid)?.lease_expires>now),
+          bannedUntil:Number(p.banned_until)||0,mutedUntil:Number(p.muted_until)||0,
+          vipExpiresAt:this.serverScope==='free1'?Number(this.vip.entitlement(p.uid).expiresAt)||0:Number(this.entitlementSnapshot(p.uid).vip1Expires)||0
+        }));
+      return Response.json({ok:true,server:this.serverScope,players,
+        nextResetAt:nextScoreResetAt(Date.now(),this.serverScope),
+        resetSchedule:resetLabel(this.serverScope),serverNow:Date.now()});
+    }
+
+    if (url.pathname==='/_internal/admin/set-score' && request.method==='POST') {
+      let body;
+      try { body=await request.json(); } catch (_) { return Response.json({ok:false,error:'Invalid JSON'},{status:400}); }
+      const uid=typeof body?.uid==='string' ? body.uid : '';
+      const score=Number(body?.score);
+      const actor=typeof body?.actor==='string' ? body.actor.slice(0,320) : '';
+      if (!uid || uid.length>128 || !Number.isSafeInteger(score) || score<0 || score>1000000000000 || !actor)
+        return Response.json({ok:false,error:'Invalid admin score update'},{status:400});
+      const row=this.sql.exec('SELECT score FROM voxel_scores WHERE uid=?',uid).toArray()[0];
+      if (!row) return Response.json({ok:false,error:'Player not found'},{status:404});
+      const oldScore=Number(row.score)||0, now=Date.now();
+      this.ctx.storage.transactionSync(()=>{
+        this.sql.exec('UPDATE voxel_scores SET score=?,updated_at=? WHERE uid=?',score,now,uid);
+        this.audit(actor,'set-score',uid,oldScore,score,{});
+      });
+      const leaderboard=this.top();
+      const scoreEvent={type:WS_MESSAGE.SCORE,score,reset:score<oldScore,uid,serverNow:now};
+      for (const ws of this.sockets()) if (this.player(ws)?.uid===uid) this.send(ws,scoreEvent);
+      const boardEvent={type:WS_MESSAGE.LEADERBOARD,top:leaderboard,serverNow:now};
+      this.broadcast(boardEvent);
+      this.ctx.waitUntil(Promise.allSettled([this.sendAllZones(scoreEvent),this.sendAllZones(boardEvent)]));
+      return Response.json({ok:true,uid,score,oldScore,leaderboard,serverNow:now});
+    }
+
+    if (url.pathname==='/_internal/admin/add-score' && request.method==='POST') {
+      let body;
+      try { body=await request.json(); } catch (_) { return Response.json({ok:false,error:'Invalid JSON'},{status:400}); }
+      const uid=typeof body?.uid==='string' ? body.uid : '';
+      const delta=Number(body?.delta);
+      const actor=typeof body?.actor==='string' ? body.actor.slice(0,320) : '';
+      const reason=typeof body?.reason==='string' ? body.reason.slice(0,300) : 'admin-reward';
+      if (!uid || uid.length>128 || !Number.isSafeInteger(delta) || delta<=0 || delta>1000000000 || !actor)
+        return Response.json({ok:false,error:'Invalid admin reward'},{status:400});
+      const row=this.sql.exec('SELECT score FROM voxel_scores WHERE uid=?',uid).toArray()[0];
+      if (!row) return Response.json({ok:false,error:'Player not found'},{status:404});
+      const oldScore=Number(row.score)||0, score=oldScore+delta, now=Date.now();
+      if (!Number.isSafeInteger(score) || score>1000000000000)
+        return Response.json({ok:false,error:'Score limit exceeded'},{status:409});
+      this.ctx.storage.transactionSync(()=>{
+        this.sql.exec('UPDATE voxel_scores SET score=?,updated_at=? WHERE uid=?',score,now,uid);
+        this.audit(actor,'add-score',uid,oldScore,score,{delta,reason});
+      });
+      const leaderboard=this.top();
+      const scoreEvent={type:WS_MESSAGE.SCORE,score,uid,serverNow:now};
+      for (const ws of this.sockets()) if (this.player(ws)?.uid===uid) this.send(ws,scoreEvent);
+      const boardEvent={type:WS_MESSAGE.LEADERBOARD,top:leaderboard,serverNow:now};
+      this.broadcast(boardEvent);
+      this.ctx.waitUntil(Promise.allSettled([this.sendAllZones(scoreEvent),this.sendAllZones(boardEvent)]));
+      return Response.json({ok:true,uid,oldScore,delta,score,leaderboard,serverNow:now});
+    }
 
     if (url.pathname==='/_internal/staging-handoff-commit' && request.method==='POST') {
       if (this.env.APP_ENV!=='staging') return Response.json({ok:false},{status:404});
@@ -965,17 +1216,21 @@ export class GameRoom {
       }
 
       const now = Date.now();
+      const policy=this.moderation(uid);
+      if (policy.banned) return Response.json({ok:false,error:'Account banned',bannedUntil:policy.bannedUntil},{status:403});
+      if (this.controlBool('maintenance_free')) return Response.json({ok:false,error:'Free Server maintenance'},{status:503});
       const fallbackName = 'Player-' + uid.slice(-6);
       const nickname = normalizePlayerName(body?.name, fallbackName);
+      const email=typeof body?.email==='string' && body.email.length<=320 ? body.email.trim().toLowerCase() : '';
       const previous = this.sql.exec(
-        'SELECT nickname FROM voxel_scores WHERE uid=?',uid
+        'SELECT nickname,email FROM voxel_scores WHERE uid=?',uid
       ).toArray()[0];
 
       this.sql.exec(
-        `INSERT INTO voxel_scores(uid,nickname,score,updated_at)
-         VALUES (?, ?, 0, ?)
-         ON CONFLICT(uid) DO UPDATE SET nickname=excluded.nickname`,
-        uid, nickname, now
+        `INSERT INTO voxel_scores(uid,nickname,email,score,updated_at)
+         VALUES (?, ?, ?, 0, ?)
+         ON CONFLICT(uid) DO UPDATE SET nickname=excluded.nickname,email=CASE WHEN excluded.email<>'' THEN excluded.email ELSE voxel_scores.email END`,
+        uid, nickname, email, now
       );
 
       const score = Number(
@@ -1089,6 +1344,12 @@ export class GameRoom {
     let verified;
     try { verified=await verifyFirebaseIdToken(m.token,this.projectId); }
     catch (_) { this.send(ws,{type:WS_MESSAGE.AUTH_ERROR,message:'Firebase sign-in failed'}); ws.close(1008,'Invalid ID token'); return; }
+    const policy=this.moderation(verified.uid);
+    if (policy.banned || (this.serverScope==='vip1' && this.controlBool('maintenance_vip'))) {
+      this.send(ws,{type:WS_MESSAGE.AUTH_ERROR,message:policy.banned?'Account banned':'VIP Server maintenance'});
+      ws.close(1008,policy.banned?'Account banned':'Server maintenance');
+      return;
+    }
     p=this.player(ws); // Another auth frame may have completed during certificate fetch.
     if (!p || p.revoked || p.sessionClosed || (typeof ws.readyState==='number' && ws.readyState!==1)) return;
     if (!p.uid && Date.now()>=Number(p.acceptedAt)+SECURITY.authDeadlineMs) {
@@ -1145,7 +1406,9 @@ export class GameRoom {
     }
     const id=session.playerId;
     const nickname=normalizePlayerName(m?.name,'Player-'+uid.slice(-6));
-    this.sql.exec('INSERT INTO voxel_scores(uid,nickname,score,updated_at) VALUES (?, ?, 0, ?) ON CONFLICT(uid) DO UPDATE SET nickname=excluded.nickname',uid,nickname,now);
+    this.sql.exec(`INSERT INTO voxel_scores(uid,nickname,email,score,updated_at) VALUES (?, ?, ?, 0, ?)
+      ON CONFLICT(uid) DO UPDATE SET nickname=excluded.nickname,email=CASE WHEN excluded.email<>'' THEN excluded.email ELSE voxel_scores.email END`,
+      uid,nickname,verified.email||'',now);
     const score=this.sql.exec('SELECT score FROM voxel_scores WHERE uid=?',uid).toArray()[0]?.score||0;
     Object.assign(p,{uid,exp:verified.exp,id,nickname:normalizePlayerName(m?.name,nickname),
       ...session.position,sessionId:session.sessionId,resumeToken:session.resumeToken,
