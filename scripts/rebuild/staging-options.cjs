@@ -4,7 +4,7 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const ROOT = path.resolve(__dirname, '../..');
 const STAGING_ROOT = path.join(ROOT, 'work/staging');
-const PRODUCTION_MAIN = 'ea9da135ce408663f8905f649034281882295c05';
+const PRODUCTION_MAIN = '77f4fe6500e03cd3138563a577e1b681af2d7b03';
 const SCAFFOLD_NAME = 'gpt-voxel-3d-staging-01';
 const VAR_KEYS = ['APP_ENV', 'STAGING_WORKER_NAME', 'STAGING_WORKER_ORIGIN', 'ALLOWED_ORIGIN',
   'FIREBASE_PROJECT_ID', 'FIREBASE_PUBLIC_CONFIG', 'FIREBASE_APP_CHECK_SITE_KEY',
