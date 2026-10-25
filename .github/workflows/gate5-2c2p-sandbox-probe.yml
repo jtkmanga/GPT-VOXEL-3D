@@ -1,0 +1,40 @@
+name: Gate 5 2C2P Sandbox Probe
+
+on:
+  push:
+    branches: [development/voxel-continuous]
+    paths:
+      - '.github/workflows/gate5-2c2p-sandbox-probe.yml'
+      - 'tests/rebuild/gate5-2c2p-sandbox-probe.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gate5-2c2p-sandbox-probe
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    if: github.ref == 'refs/heads/development/voxel-continuous'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run owner-approved 2C2P sandbox-only probe
+        run: python tests/rebuild/gate5-2c2p-sandbox-probe.py
+      - name: Upload sanitized sandbox evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gate5-2c2p-sandbox-probe
+          path: work/gate5/2c2p-sandbox-probe.json
+          if-no-files-found: error
+          retention-days: 7

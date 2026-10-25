@@ -1,6 +1,29 @@
 name: Deploy Staging Worker
 
 on:
+  push:
+    branches:
+      - development/voxel-continuous
+    paths:
+      - 'src/client/staging-runtime.js'
+      - 'src/client/secure-socket-handoff.js'
+      - 'scripts/rebuild/build-staging-client.cjs'
+      - 'src/shared/staging.mjs'
+      - 'src/worker/staging-boundary.mjs'
+      - 'src/worker/firebase-auth.mjs'
+      - 'src/worker/game-room.mjs'
+      - 'src/worker/zone-room.mjs'
+      - 'src/worker/zone-visibility.mjs'
+      - 'src/worker/room-security.mjs'
+      - 'src/worker/movement.mjs'
+      - 'src/worker/spatial.mjs'
+      - 'src/worker/handoff-continuity.mjs'
+      - 'src/worker/http.mjs'
+      - 'src/worker/twoc2p-sandbox.mjs'
+      - 'src/worker/twoc2p-store.mjs'
+      - 'scripts/rebuild/staging-options.cjs'
+      - 'wrangler.staging.jsonc'
+      - '.github/workflows/deploy-staging.yml'
   workflow_dispatch:
     inputs:
       confirm:
@@ -17,30 +40,64 @@ concurrency:
 
 jobs:
   deploy-staging:
-    if: github.ref == 'refs/heads/development/voxel-continuous' && inputs.confirm == 'DEPLOY-STAGING-ONLY'
+    if: github.ref == 'refs/heads/development/voxel-continuous' && (github.event_name == 'push' || inputs.confirm == 'DEPLOY-STAGING-ONLY')
     runs-on: ubuntu-24.04
     environment: staging
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: development/voxel-continuous
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 24
       - run: npm ci
       - name: Guard staging identity and production isolation
         shell: bash
+        env:
+          STAGING_PUBLIC_MANIFEST: ${{ vars.STAGING_PUBLIC_MANIFEST }}
         run: |
           set -euo pipefail
           test "$GITHUB_REF" = "refs/heads/development/voxel-continuous"
           grep -q '"name": "gpt-voxel-3d-staging-01"' wrangler.staging.jsonc
           ! grep -q '"name": "voxel-run-v2-demo"' wrangler.staging.jsonc
-          test -n "${{ vars.STAGING_PUBLIC_MANIFEST }}"
-          printf '%s' "${{ vars.STAGING_PUBLIC_MANIFEST }}" > /tmp/staging-public.json
+          test -n "$STAGING_PUBLIC_MANIFEST"
+          node <<'NODE'
+          const fs = require('node:fs');
+          const raw = process.env.STAGING_PUBLIC_MANIFEST || '';
+          let apiKey;
+          try { apiKey = JSON.parse(raw)?.firebase?.apiKey; } catch {}
+          if (!apiKey) apiKey = raw.match(/AIza[A-Za-z0-9_-]{35}/)?.[0];
+          if (!/^AIza[A-Za-z0-9_-]{35}$/.test(apiKey || '')) {
+            console.error('FAIL staging manifest: Firebase public API key is missing or malformed; values withheld');
+            process.exit(1);
+          }
+          const manifest = {
+            environment: 'staging',
+            workerName: 'gpt-voxel-3d-staging-01',
+            workerOrigin: 'https://gpt-voxel-3d-staging-01.hjinffv5426.workers.dev',
+            firebase: {
+              apiKey,
+              authDomain: 'gpt-voxel-3d-staging.firebaseapp.com',
+              projectId: 'gpt-voxel-3d-staging',
+              appId: '1:1043756307296:web:12eedcd65502c7da92c405',
+              messagingSenderId: '1043756307296'
+            },
+            appCheck: {
+              provider: 'recaptcha-enterprise',
+              siteKey: '6LeTiPktAAAAAKLLxG6W5VGTuL1r4JyGdG2o8TFW'
+            },
+            authMode: 'popup'
+          };
+          fs.writeFileSync('/tmp/staging-public.json', JSON.stringify(manifest));
+          NODE
           node scripts/rebuild/prepare-staging.cjs --config /tmp/staging-public.json --out work/staging/prepared
           node scripts/rebuild/check-staging.cjs --config work/staging/prepared/wrangler.jsonc
           grep -q '"name": "gpt-voxel-3d-staging-01"' work/staging/prepared/wrangler.jsonc
+          # Validate the generated deploy artifact itself. The source checkout may
+          # intentionally contain other Wrangler configs; they are never deployed here.
+          test -f work/staging/prepared/wrangler.jsonc
+          test -f worker.js
       - name: Deploy staging only
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -51,14 +108,17 @@ jobs:
         run: |
           import json, urllib.request
           origin='https://gpt-voxel-3d-staging-01.hjinffv5426.workers.dev'
+          opener=urllib.request.build_opener()
+          opener.addheaders=[('User-Agent','GPT-VOXEL-Staging-Health/1.0'),('Accept','text/plain, application/json')]
           for path in ('/health','/staging-config'):
-              with urllib.request.urlopen(origin+path, timeout=20) as r:
+              with opener.open(origin+path, timeout=20) as r:
                   body=r.read(65537)
                   assert r.status == 200 and len(body) <= 65536
                   if path == '/health':
                       assert body.decode().strip() == 'GPT-VOXEL-3D staging online'
                   else:
-                      cfg=json.loads(body)
-                      assert cfg.get('environment') == 'staging'
-                      assert cfg.get('workerOrigin') == origin
+                      c=json.loads(body)
+                      assert c.get('environment') == 'staging'
+                      assert c.get('workerOrigin') == origin
+                      assert c.get('appCheck', {}).get('provider') == 'recaptcha-enterprise'
                   print('PASS', path)

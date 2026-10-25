@@ -1,0 +1,50 @@
+name: Gate 5 2C2P Sandbox E2E
+# Owner-approved staging-only one-shot sandbox transaction trigger; retry after required-claims alignment.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [development/voxel-continuous]
+    paths:
+      - '.github/workflows/gate5-2c2p-e2e.yml'
+      - 'src/worker/firebase-auth.mjs'
+      - 'src/worker/http.mjs'
+      - 'src/worker/twoc2p-sandbox.mjs'
+      - 'tests/rebuild/gate5-2c2p-e2e.py'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gate5-2c2p-sandbox-e2e
+  cancel-in-progress: true
+
+jobs:
+  approved-first-transaction:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[run-gate5-e2e-once]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Playwright Chromium
+        run: |
+          python -m pip install playwright==1.62.0
+          python -m playwright install chromium
+      - name: Run exactly one owner-approved simulated sandbox transaction
+        env:
+          FIREBASE_APPCHECK_DEBUG_TOKEN: ${{ secrets.FIREBASE_APPCHECK_DEBUG_TOKEN }}
+        run: python tests/rebuild/gate5-2c2p-e2e.py
+      - name: Upload sanitized Gate 5 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gate5-2c2p-sandbox-e2e
+          path: work/gate5/2c2p-e2e.json
+          if-no-files-found: error
+          retention-days: 7

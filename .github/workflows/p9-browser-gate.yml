@@ -1,0 +1,126 @@
+name: P9 Staging Browser Gate
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [development/voxel-continuous]
+    paths:
+      - .github/workflows/p9-browser-gate.yml
+      - tests/rebuild/p9-browser.py
+      - tests/rebuild/p9-integration.test.cjs
+      - scripts/rebuild/build-staging-client.cjs
+      - src/client/**
+      - src/shared/**
+      - src/worker/**
+      - package.json
+      - package-lock.json
+
+permissions:
+  contents: read
+
+jobs:
+  public-staging-read-only:
+    if: github.ref == 'refs/heads/development/voxel-continuous'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Read existing public staging health and configuration
+        shell: python
+        run: |
+          import json, urllib.request, urllib.error
+          origin = 'https://gpt-voxel-3d-staging-01.hjinffv5426.workers.dev'
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, *args, **kwargs):
+                  return None
+          client = urllib.request.build_opener(NoRedirect())
+          client.addheaders = [('User-Agent', 'GPT-VOXEL-Staging-Health/1.0'), ('Accept', 'text/plain, application/json')]
+          for path in ('/health', '/staging-config'):
+              try:
+                  with client.open(origin + path, timeout=20) as response:
+                      body = response.read(65537)
+                      print('HTTP', response.status, 'path', path, 'bytes', len(body))
+                      assert response.status == 200 and len(body) <= 65536
+                      if path == '/health':
+                          assert body.decode().strip() == 'GPT-VOXEL-3D staging online'
+                      else:
+                          config = json.loads(body)
+                          assert config.get('environment') == 'staging'
+                          assert config.get('workerOrigin') == origin
+                      print('PASS public staging read-only:', path)
+              except urllib.error.HTTPError as error:
+                  # Emit only fixed labels and booleans, never raw headers/body,
+                  # cookies, proxy URLs, redirect targets or exception messages.
+                  headers = error.headers
+                  body = error.read(65537)
+                  lower = body.lower()
+                  diagnostic = {
+                      'body_truncated': len(body) > 65536,
+                      'cloudflare_server': headers.get('Server', '').lower() == 'cloudflare',
+                      'cf_ray_present': bool(headers.get('CF-Ray')),
+                      'challenge_header': headers.get('cf-mitigated', '').lower() == 'challenge',
+                      'html_content': headers.get_content_type() == 'text/html',
+                      'json_content': headers.get_content_type() == 'application/json',
+                      'via_header_present': bool(headers.get('Via')),
+                      'proxy_auth_header_present': bool(headers.get('Proxy-Authenticate')),
+                      'cloudflare_body_marker': b'cloudflare' in lower,
+                      'challenge_body_marker': b'/cdn-cgi/challenge-platform/' in lower,
+                      'access_body_marker': b'cloudflare access' in lower,
+                      'app_origin_error': False,
+                  }
+                  if len(body) <= 65536:
+                      try:
+                          payload = json.loads(body)
+                          diagnostic['app_origin_error'] = isinstance(payload, dict) and payload.get('error') == 'Origin not allowed'
+                      except (ValueError, UnicodeError):
+                          pass
+                  print('DIAGNOSTIC', json.dumps(diagnostic, sort_keys=True))
+                  print('Scope: markers are hints, not attribution proof; no bypass or retry.')
+                  raise SystemExit('FAIL public staging read-only: ' + path + ' HTTP ' + str(error.code))
+              except Exception as error:
+                  raise SystemExit('FAIL public staging read-only: ' + path + ' ' + type(error).__name__ + ' (details omitted)')
+          print('Scope: two unauthenticated GETs only; no deployment-source, account-isolation, login, payment or capacity certification.')
+  staging-browser-fixtures:
+    if: github.ref == 'refs/heads/development/voxel-continuous'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: npm ci
+      - name: Run reconnect/session unit gate
+        run: node --test tests/rebuild/p2-client.test.cjs
+      - run: python -m pip install playwright==1.62.0
+      - run: python -m playwright install --with-deps chromium
+      - name: Provide browser executable required by existing P9 scenarios
+        shell: bash
+        run: |
+          set -euo pipefail
+          browser_path="$(python -c 'from playwright.sync_api import sync_playwright; p=sync_playwright().start(); print(p.chromium.executable_path); p.stop()')"
+          test -x "$browser_path"
+          sudo ln -sf "$browser_path" /usr/bin/chromium
+      - name: Run unchanged P9 browser scenarios (synthetic auth and transport)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tests/rebuild/p9-browser.py 2>&1 | tee p9-browser.log
+      - name: Preserve fixture evidence with source identity
+        if: always()
+        shell: bash
+        run: |
+          printf 'Source: %s\nScope: Chromium, generated staging client, synthetic auth/transport, emulated mobile. Not live authentication, payment, physical mobile or capacity evidence.\n' "$GITHUB_SHA" > p9-scope.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: p9-browser-fixture-evidence
+          path: |
+            p9-browser.log
+            p9-scope.txt
+          retention-days: 7
+          if-no-files-found: error
