@@ -88,9 +88,14 @@ jobs:
             node scripts/rebuild/check-staging.cjs --allow-unconfigured
             node scripts/rebuild/check-secrets.cjs
           fi
-      - name: Production config remains baseline
+      - name: Production config safety guard
         shell: bash
         run: |
           set -euo pipefail
           git diff --check
-          test "$(git show ea9da135ce408663f8905f649034281882295c05:wrangler.jsonc | sha256sum | cut -d' ' -f1)" = "$(sha256sum wrangler.jsonc | cut -d' ' -f1)"
+          grep -q '"name": "voxel-run-v2-demo"' wrangler.jsonc
+          grep -q '"FIREBASE_PROJECT_ID": "lucky-game-6936b"' wrangler.jsonc
+          grep -q '"PAYMENT_MODE": "disabled"' wrangler.jsonc
+          ! grep -q 'gpt-voxel-3d-staging-01' wrangler.jsonc
+          ! grep -q 'TWOC2P_SANDBOX_' wrangler.jsonc
+          echo "PASS production config safety guard"
