@@ -38,50 +38,87 @@ function requireRole(admin,minimum){
 function adminHtml(){
 return `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>VOXEL RUN Admin</title><style>
-*{box-sizing:border-box}body{font-family:system-ui,sans-serif;margin:0;background:#07101f;color:#eef2ff}main{max-width:1400px;margin:auto;padding:16px}
-h1,h2{margin:.3em 0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}.card{background:#101827;border:1px solid #273449;border-radius:14px;padding:14px}
-.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}button,input,select,textarea{font:inherit;padding:9px;border-radius:8px;border:1px solid #3a4a63;background:#0b1322;color:#eef2ff}button{cursor:pointer}button.danger{border-color:#7f1d1d;background:#3f1118}button.good{border-color:#166534;background:#102d1b}
-table{width:100%;border-collapse:collapse;margin-top:10px;background:#0d1524;font-size:13px}th,td{padding:8px;border-bottom:1px solid #253248;text-align:left;vertical-align:top}.scroll{overflow:auto;max-height:520px}.muted{color:#94a3b8}.ok{color:#86efac}.err{color:#fca5a5}.pill{padding:3px 7px;border:1px solid #3a4a63;border-radius:999px;font-size:11px}textarea{width:100%;min-height:70px}
+:root{color-scheme:dark;--bg:#07111f;--panel:#0d1828;--panel2:#101d30;--line:#213149;--line2:#2d405d;--text:#edf4ff;--muted:#91a3bc;--accent:#60a5fa;--accent2:#1d4ed8;--good:#4ade80;--goodbg:#102b1e;--warn:#fbbf24;--danger:#f87171;--dangerbg:#38151b;--shadow:0 14px 35px rgba(0,0,0,.22)}
+*{box-sizing:border-box}html{background:var(--bg)}body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:0;background:radial-gradient(circle at 20% -10%,#102847 0,transparent 34%),var(--bg);color:var(--text);min-height:100vh}main{max-width:1460px;margin:auto;padding:18px}
+.topbar{position:sticky;top:0;z-index:30;margin:-18px -18px 18px;padding:14px 18px;background:rgba(7,17,31,.92);backdrop-filter:blur(14px);border-bottom:1px solid rgba(96,165,250,.15);display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:11px;min-width:220px;flex:1}.brand-mark{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;background:linear-gradient(145deg,#2563eb,#0ea5e9);box-shadow:0 8px 24px rgba(37,99,235,.28);font-weight:900}.brand h1{font-size:20px;margin:0;letter-spacing:.2px}.brand small{display:block;color:var(--muted);margin-top:1px}
+.top-actions,.row,.toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.toolbar{padding:12px 14px;background:rgba(13,24,40,.75);border:1px solid var(--line);border-radius:14px;margin-bottom:18px;box-shadow:var(--shadow)}
+button,input,select,textarea{font:inherit;border:1px solid var(--line2);background:#0a1423;color:var(--text);border-radius:10px;min-height:38px}button{cursor:pointer;padding:8px 12px;font-weight:650;transition:.16s ease}button:hover{border-color:#4b6b95;transform:translateY(-1px)}button:active{transform:none}input,select{padding:8px 10px}textarea{width:100%;min-height:94px;padding:10px;resize:vertical}input:focus,select:focus,textarea:focus{outline:2px solid rgba(96,165,250,.22);border-color:var(--accent)}
+button.primary{background:linear-gradient(180deg,#2563eb,#1d4ed8);border-color:#3b82f6}button.ghost{background:#0b1728}button.good{border-color:#21683e;background:var(--goodbg);color:#a7f3c0}button.danger{border-color:#7f2631;background:var(--dangerbg);color:#fecaca}button.active{border-color:#3b82f6;background:#142c4f;color:#dbeafe;box-shadow:inset 0 0 0 1px rgba(96,165,250,.16)}
+.pill{padding:5px 9px;border:1px solid var(--line2);border-radius:999px;font-size:11px;background:#0a1423;color:#c9d8ec}.status{margin:0 0 12px;padding:9px 12px;border-radius:10px;background:#0b1728;border:1px solid var(--line);font-size:13px}.muted{color:var(--muted)}.ok{color:#a7f3c0;border-color:#215d3a;background:#0e231a}.err{color:#fecaca;border-color:#7f2631;background:#30141a}
+.section{margin:18px 0 22px}.section-head{display:flex;justify-content:space-between;align-items:end;gap:12px;margin:0 0 10px}.section-head h2{font-size:17px;margin:0}.section-head span{font-size:12px;color:var(--muted)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}.card{background:linear-gradient(180deg,rgba(16,29,48,.98),rgba(12,23,39,.98));border:1px solid var(--line);border-radius:16px;padding:14px;box-shadow:var(--shadow)}.card>b{display:block;font-size:13px;margin-bottom:8px;color:#dbe8fb}
+.metric{position:relative;overflow:hidden;min-height:108px}.metric:after{content:"";position:absolute;width:82px;height:82px;border-radius:50%;right:-24px;top:-28px;background:rgba(96,165,250,.08)}.metric-label{color:var(--muted);font-size:12px}.metric-value{font-size:30px;font-weight:800;line-height:1.15;margin-top:8px;letter-spacing:-.8px}
+.control-card{min-height:150px}.control-card input{width:100%;margin-bottom:8px}.control-card .row{margin-top:8px}
+.table-card{background:rgba(13,24,40,.92);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);overflow:hidden}.scroll{overflow:auto;max-height:540px}.scroll.tall{max-height:620px}
+table{width:100%;border-collapse:separate;border-spacing:0;font-size:12px;min-width:760px}thead{position:sticky;top:0;z-index:5;background:#101d30}th{font-size:11px;color:#a9bad1;text-transform:uppercase;letter-spacing:.3px}th,td{padding:10px;border-bottom:1px solid #1d2b40;text-align:left;vertical-align:top}tbody tr:hover{background:rgba(96,165,250,.045)}tbody tr:last-child td{border-bottom:0}td input[type=number]{width:120px;min-height:34px}td button{min-height:32px;padding:6px 9px;margin:0 4px 4px 0;font-size:11px}
+.roles-card{display:grid;grid-template-columns:minmax(180px,1fr) 150px auto;gap:8px;align-items:center}.diagnostic{white-space:pre-wrap;font-size:11px;margin:8px 0 12px;max-height:150px;overflow:auto;padding:10px 12px;border:1px solid #7f2631;background:#271218;color:#fecaca;border-radius:10px}
+@media(max-width:720px){main{padding:12px}.topbar{margin:-12px -12px 12px;padding:11px 12px}.brand h1{font-size:18px}.brand small{display:none}.top-actions{width:100%}.top-actions button{flex:1}.toolbar>*{flex:1 1 130px}.grid{grid-template-columns:1fr 1fr}.metric{min-height:92px}.metric-value{font-size:25px}.section{margin:15px 0 18px}.roles-card{grid-template-columns:1fr}.table-card{border-radius:12px}.scroll{max-height:520px}table{font-size:11px;min-width:720px}th,td{padding:8px}.control-card{min-height:auto}}
+@media(max-width:430px){.grid{grid-template-columns:1fr 1fr}.metric{padding:12px}.metric-value{font-size:23px}.section-head span{display:none}}
 </style></head><body><main>
-<div class="row"><h1 style="flex:1">VOXEL RUN Admin</h1><span id="role" class="pill">signed out</span><button id="login">Google Login</button><button id="logout">Logout</button></div>
-<p id="status" class="muted">ยังไม่ได้เข้าสู่ระบบ</p>
-<pre id="authDiag" class="muted" style="white-space:pre-wrap;font-size:11px;margin:6px 0 10px;max-height:120px;overflow:auto"></pre>
-<div class="row"><select id="server"><option value="free1">Free Server</option><option value="vip1">VIP Server</option></select><button id="refresh">รีเฟรชทั้งหมด</button><button id="export">Export CSV</button><button id="backup">Backup JSON</button></div>
+<header class="topbar">
+  <div class="brand"><div class="brand-mark">VR</div><div><h1>VOXEL RUN Admin</h1><small>Live operations · staging</small></div></div>
+  <div class="top-actions"><span id="role" class="pill">signed out</span><button id="login" class="primary">Google Login</button><button id="logout" class="ghost">Logout</button></div>
+</header>
+<p id="status" class="status muted">ยังไม่ได้เข้าสู่ระบบ</p>
+<pre id="authDiag" class="diagnostic" hidden></pre>
+<div class="toolbar"><select id="server"><option value="free1">Free Server</option><option value="vip1">VIP Server</option></select><button id="refresh" class="ghost">รีเฟรชทั้งหมด</button><button id="export" class="ghost">Export CSV</button><button id="backup" class="ghost">Backup JSON</button></div>
 
-<h2>Dashboard</h2><div class="grid">
-<div class="card"><b>Online</b><div id="online">-</div></div><div class="card"><b>Players</b><div id="playersCount">-</div></div>
-<div class="card"><b>Banned</b><div id="bannedCount">-</div></div><div class="card"><b>Muted</b><div id="mutedCount">-</div></div>
+<section class="section">
+<div class="section-head"><h2>Dashboard</h2><span>สถานะเซิร์ฟเวอร์แบบเรียลไทม์</span></div>
+<div class="grid">
+<div class="card metric"><div class="metric-label">Online now</div><div class="metric-value" id="online">-</div></div>
+<div class="card metric"><div class="metric-label">Players</div><div class="metric-value" id="playersCount">-</div></div>
+<div class="card metric"><div class="metric-label">Banned</div><div class="metric-value" id="bannedCount">-</div></div>
+<div class="card metric"><div class="metric-label">Muted</div><div class="metric-value" id="mutedCount">-</div></div>
 </div>
+</section>
 
-<h2>Live Site / Server Controls</h2><div class="grid">
-<div class="card"><b>ประกาศ</b><textarea id="announcement" maxlength="300"></textarea><button data-control="announcement">บันทึกประกาศ</button></div>
-<div class="card"><b>ชื่อเซิร์ฟเวอร์</b><input id="free_name" maxlength="80"><input id="vip_name" maxlength="80"><div class="row"><button data-control="free_name">Free name</button><button data-control="vip_name">VIP name</button></div></div>
-<div class="card"><b>Maintenance</b><div class="row"><button data-toggle="maintenance_free">Free</button><button data-toggle="maintenance_vip">VIP</button></div></div>
-<div class="card"><b>Emergency</b><div class="row"><button class="danger" data-toggle="payment_emergency">Pause payment</button><button class="danger" data-toggle="vip_admission_emergency">Pause VIP admission</button></div></div>
+<section class="section">
+<div class="section-head"><h2>Live Site / Server Controls</h2><span>การเปลี่ยนแปลงมีผลกับ staging ทันที</span></div>
+<div class="grid">
+<div class="card control-card"><b>ประกาศ</b><textarea id="announcement" maxlength="300" placeholder="ข้อความประกาศในเกม"></textarea><div class="row"><button class="primary" data-control="announcement">บันทึกประกาศ</button></div></div>
+<div class="card control-card"><b>ชื่อเซิร์ฟเวอร์</b><input id="free_name" maxlength="80" placeholder="Free Server"><input id="vip_name" maxlength="80" placeholder="VIP Server"><div class="row"><button class="ghost" data-control="free_name">บันทึก Free</button><button class="ghost" data-control="vip_name">บันทึก VIP</button></div></div>
+<div class="card control-card"><b>Maintenance</b><div class="row"><button class="ghost" data-toggle="maintenance_free">Free</button><button class="ghost" data-toggle="maintenance_vip">VIP</button></div><p class="muted">เปิดใช้เมื่อจำเป็นต้องหยุดให้บริการชั่วคราว</p></div>
+<div class="card control-card"><b>Emergency</b><div class="row"><button class="danger" data-toggle="payment_emergency">Pause payment</button><button class="danger" data-toggle="vip_admission_emergency">Pause VIP admission</button></div><p class="muted">Owner only · ใช้เมื่อเกิดเหตุฉุกเฉิน</p></div>
 </div>
+</section>
 
-<h2>Players</h2><div class="scroll"><table><thead><tr><th>Email / UID</th><th>Name</th><th>Score</th><th>Online/VIP</th><th>Moderation</th></tr></thead><tbody id="players"></tbody></table></div>
+<section class="section">
+<div class="section-head"><h2>Players</h2><span>คะแนน สถานะ และ moderation</span></div>
+<div class="table-card"><div class="scroll tall"><table><thead><tr><th>Email / UID</th><th>Name</th><th>Score</th><th>Online / VIP</th><th>Moderation</th></tr></thead><tbody id="players"></tbody></table></div></div>
+</section>
 
-<h2>Roles</h2><div class="card row"><input id="roleEmail" placeholder="email"><select id="roleValue"><option value="moderator">Moderator</option><option value="admin">Admin</option><option value="none">Remove</option></select><button id="setRole">บันทึก Role</button></div>
+<section class="section">
+<div class="section-head"><h2>Roles</h2><span>กำหนดสิทธิ์ผู้ดูแล</span></div>
+<div class="card roles-card"><input id="roleEmail" placeholder="email@example.com"><select id="roleValue"><option value="moderator">Moderator</option><option value="admin">Admin</option><option value="none">Remove</option></select><button id="setRole" class="primary">บันทึก Role</button></div>
+</section>
 
-<h2>Payments (safe fields)</h2><div class="scroll"><table><thead><tr><th>UID</th><th>Item</th><th>Amount</th><th>Time</th><th>Ref</th></tr></thead><tbody id="payments"></tbody></table></div>
-<h2>Audit Log</h2><div class="scroll"><table><thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Target</th><th>Detail</th></tr></thead><tbody id="audit"></tbody></table></div>
+<section class="section">
+<div class="section-head"><h2>Payments</h2><span>แสดงเฉพาะ safe fields</span></div>
+<div class="table-card"><div class="scroll"><table><thead><tr><th>UID</th><th>Item</th><th>Amount</th><th>Time</th><th>Ref</th></tr></thead><tbody id="payments"></tbody></table></div></div>
+</section>
+
+<section class="section">
+<div class="section-head"><h2>Audit Log</h2><span>ประวัติการทำงานของ Admin</span></div>
+<div class="table-card"><div class="scroll"><table><thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Target</th><th>Detail</th></tr></thead><tbody id="audit"></tbody></table></div></div>
+</section>
 
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script><script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script><script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-check-compat.js"></script>
 <script>
 let auth=null,provider=null,appCheck=null,me=null,lastControls={}; const $=id=>document.getElementById(id);
-function diag(msg){const el=$('authDiag');if(!el)return;const t=new Date().toLocaleTimeString('th-TH');el.textContent=(el.textContent+'['+t+'] '+String(msg)+'\\n').slice(-4000);el.scrollTop=el.scrollHeight}
-window.addEventListener('error',e=>diag('JS error: '+(e?.message||'unknown')));
-window.addEventListener('unhandledrejection',e=>diag('Promise error: '+(e?.reason?.code||'')+' '+(e?.reason?.message||e?.reason||'unknown')));
-diag('Browser: '+navigator.userAgent);
-diag('Cookies: '+(navigator.cookieEnabled?'enabled':'disabled'));
+function diag(msg,important=false){const el=$('authDiag');if(!el)return;const t=new Date().toLocaleTimeString('th-TH');el.textContent=(el.textContent+'['+t+'] '+String(msg)+'\\n').slice(-4000);el.scrollTop=el.scrollHeight;if(important)el.hidden=false}
+function clearDiag(){const el=$('authDiag');if(el){el.hidden=true;el.textContent=''}}
+window.addEventListener('error',e=>diag('JS error: '+(e?.message||'unknown'),true));
+window.addEventListener('unhandledrejection',e=>diag('Promise error: '+(e?.reason?.code||'')+' '+(e?.reason?.message||e?.reason||'unknown'),true));
 function authError(e){const code=String(e?.code||'');if(code==='auth/unauthorized-domain')return 'โดเมน staging ยังไม่ได้รับอนุญาตใน Firebase Authentication';if(code==='auth/popup-blocked'||code==='auth/popup-closed-by-user'||code==='auth/cancelled-popup-request')return 'เบราว์เซอร์ปิดหน้าต่างเข้าสู่ระบบ กรุณาลองใหม่';return e?.message||'เข้าสู่ระบบไม่สำเร็จ'}
-async function ensureAuth(){if(auth)return auth;diag('Loading Firebase config...');const r=await fetch('/admin/api/public-config',{cache:'no-store'}),j=await r.json();if(!r.ok)throw Error(j.error||'Firebase config unavailable');diag('Firebase config OK · authDomain='+j.firebase.authDomain);firebase.initializeApp(j.firebase);if(!j.appCheck?.siteKey)throw Error('Firebase App Check config unavailable');appCheck=firebase.appCheck();appCheck.activate(new firebase.appCheck.ReCaptchaEnterpriseProvider(j.appCheck.siteKey),true);diag('Firebase App Check initialized');try{const token=await appCheck.getToken(false);if(!token?.token)throw Error('App Check token missing');diag('Firebase App Check token ready')}catch(e){diag('App Check error: '+(e?.code||'')+' '+(e?.message||''));throw Error('Firebase App Check token unavailable')}auth=firebase.auth();provider=new firebase.auth.GoogleAuthProvider();diag('Firebase Auth initialized');try{await auth.getRedirectResult()}catch(e){diag('Redirect result error: '+(e?.code||'')+' '+(e?.message||''));$('status').className='err';$('status').textContent=authError(e)}auth.onAuthStateChanged(async u=>{diag('Auth state: '+(u?'SIGNED IN':'signed out'));if(u){await loadMe();await loadAll();}else{me=null;$('role').textContent='signed out';if(!$('status').classList.contains('err'))$('status').textContent='ยังไม่ได้เข้าสู่ระบบ';}});return auth}
+async function ensureAuth(){if(auth)return auth;diag('Loading Firebase config...');const r=await fetch('/admin/api/public-config',{cache:'no-store'}),j=await r.json();if(!r.ok)throw Error(j.error||'Firebase config unavailable');diag('Firebase config OK · authDomain='+j.firebase.authDomain);firebase.initializeApp(j.firebase);if(!j.appCheck?.siteKey)throw Error('Firebase App Check config unavailable');appCheck=firebase.appCheck();appCheck.activate(new firebase.appCheck.ReCaptchaEnterpriseProvider(j.appCheck.siteKey),true);diag('Firebase App Check initialized');try{const token=await appCheck.getToken(false);if(!token?.token)throw Error('App Check token missing');diag('Firebase App Check token ready')}catch(e){diag('App Check error: '+(e?.code||'')+' '+(e?.message||''),true);throw Error('Firebase App Check token unavailable')}auth=firebase.auth();provider=new firebase.auth.GoogleAuthProvider();diag('Firebase Auth initialized');try{await auth.getRedirectResult()}catch(e){diag('Redirect result error: '+(e?.code||'')+' '+(e?.message||''),true);$('status').className='status err';$('status').textContent=authError(e)}auth.onAuthStateChanged(async u=>{diag('Auth state: '+(u?'SIGNED IN':'signed out'));if(u){await loadMe();await loadAll();}else{me=null;$('role').textContent='signed out';if(!$('status').classList.contains('err'))$('status').textContent='ยังไม่ได้เข้าสู่ระบบ';}});return auth}
 async function headers(){const a=await ensureAuth(),u=a.currentUser;if(!u)throw Error('กรุณาเข้าสู่ระบบ');return {'Authorization':'Bearer '+await u.getIdToken(),'Content-Type':'application/json'}}
 async function api(path,opt={}){const r=await fetch(path,{...opt,headers:{...(opt.headers||{}),...(await headers())}});const type=r.headers.get('content-type')||'';const j=type.includes('json')?await r.json():await r.text();if(!r.ok)throw Error(j?.error||j||'Request failed');return j}
 async function loadMe(){me=await api('/admin/api/me');$('role').textContent=me.email+' · '+me.role}
 function fmt(t){return t?new Date(Number(t)).toLocaleString('th-TH',{timeZone:'Asia/Bangkok'}):'-'}
-async function loadAll(){try{const s=$('server').value;const [o,p,a,pm]=await Promise.all([api('/admin/api/overview?server='+s),api('/admin/api/players?server='+s),api('/admin/api/audit?server='+s),api('/admin/api/payments')]);$('online').textContent=o.online;$('playersCount').textContent=o.players;$('bannedCount').textContent=o.banned;$('mutedCount').textContent=o.muted;lastControls=o.controls||{};for(const k of ['announcement','free_name','vip_name'])$(k).value=lastControls[k]||'';renderPlayers(p.players||[]);renderAudit(a.rows||[]);renderPayments(pm.rows||[]);$('status').className='ok';$('status').textContent='ออนไลน์ · อัปเดต '+fmt(o.serverNow)}catch(e){$('status').className='err';$('status').textContent=e.message}}
+function syncToggleButtons(){document.querySelectorAll('[data-toggle]').forEach(b=>b.classList.toggle('active',Boolean(lastControls[b.dataset.toggle])))}
+async function loadAll(){try{const s=$('server').value;const [o,p,a,pm]=await Promise.all([api('/admin/api/overview?server='+s),api('/admin/api/players?server='+s),api('/admin/api/audit?server='+s),api('/admin/api/payments')]);$('online').textContent=o.online;$('playersCount').textContent=o.players;$('bannedCount').textContent=o.banned;$('mutedCount').textContent=o.muted;lastControls=o.controls||{};for(const k of ['announcement','free_name','vip_name'])$(k).value=lastControls[k]||'';syncToggleButtons();renderPlayers(p.players||[]);renderAudit(a.rows||[]);renderPayments(pm.rows||[]);clearDiag();$('status').className='status ok';$('status').textContent='ออนไลน์ · อัปเดต '+fmt(o.serverNow)}catch(e){$('status').className='status err';$('status').textContent=e.message;diag('Admin data error: '+(e?.message||e),true)}}
 function renderPlayers(rows){const b=$('players');b.innerHTML='';for(const p of rows){const tr=document.createElement('tr');const ident=document.createElement('td');ident.textContent=(p.email||'(no email)')+'\\n'+p.uid;ident.style.whiteSpace='pre-line';const name=document.createElement('td');name.textContent=p.nickname;const score=document.createElement('td');const i=document.createElement('input');i.type='number';i.min='0';i.value=p.score;const save=document.createElement('button');save.textContent='Set';save.onclick=()=>setScore(p.uid,i.value);const reward=document.createElement('button');reward.textContent='+100';reward.className='good';reward.onclick=()=>rewardScore(p.uid,100);score.append(i,save,reward);const state=document.createElement('td');state.textContent=(p.online?'🟢 Online':'⚪ Offline')+'\\nVIP: '+fmt(p.vipExpiresAt);state.style.whiteSpace='pre-line';const mod=document.createElement('td');for(const [label,action] of [['Kick','kick'],['Ban 7d','ban'],['Unban','unban'],['Mute 24h','mute'],['Unmute','unmute']]){const bt=document.createElement('button');bt.textContent=label;bt.onclick=()=>moderate(p.uid,action);mod.appendChild(bt)}tr.append(ident,name,score,state,mod);b.appendChild(tr)}}
 function renderAudit(rows){const b=$('audit');b.innerHTML='';for(const x of rows){const tr=document.createElement('tr');for(const v of [fmt(x.created_at),x.actor,x.action,x.target_uid||'',x.metadata||'']){const td=document.createElement('td');td.textContent=String(v);tr.appendChild(td)}b.appendChild(tr)}}
 function renderPayments(rows){const b=$('payments');b.innerHTML='';for(const x of rows){const tr=document.createElement('tr');for(const v of [x.uid,x.item,x.amount,fmt(x.createdAt),x.transactionRef]){const td=document.createElement('td');td.textContent=String(v??'');tr.appendChild(td)}b.appendChild(tr)}}
@@ -92,10 +129,10 @@ async function setControl(key,value){await api('/admin/api/control',{method:'POS
 document.querySelectorAll('[data-control]').forEach(b=>b.onclick=()=>setControl(b.dataset.control,$(b.dataset.control).value));
 document.querySelectorAll('[data-toggle]').forEach(b=>b.onclick=()=>setControl(b.dataset.toggle,!Boolean(lastControls[b.dataset.toggle])));
 $('setRole').onclick=async()=>{await api('/admin/api/role',{method:'POST',body:JSON.stringify({email:$('roleEmail').value,role:$('roleValue').value})});await loadAll()};
-$('login').onclick=async()=>{try{diag('Google Login clicked');const a=await ensureAuth();provider.setCustomParameters({prompt:'select_account'});$('status').className='muted';$('status').textContent='กำลังเปิด Google Login...';let finished=false;const watchdog=setTimeout(()=>{if(!finished&&!a.currentUser){diag('Popup still pending after 10s');$('status').className='err';$('status').textContent='Google Login ยังไม่ตอบกลับ · ดูบรรทัด Auth diagnostic ด้านบน'}},10000);const result=await a.signInWithPopup(provider);finished=true;clearTimeout(watchdog);diag('Popup resolved: '+(result?.user?'user received':'no user'))}catch(e){diag('Popup error: '+(e?.code||'')+' '+(e?.message||''));$('status').className='err';$('status').textContent=authError(e)}};$('logout').onclick=async()=>{const a=await ensureAuth();await a.signOut()};$('refresh').onclick=loadAll;$('server').onchange=loadAll;
+$('login').onclick=async()=>{try{clearDiag();const a=await ensureAuth();provider.setCustomParameters({prompt:'select_account'});$('status').className='status muted';$('status').textContent='กำลังเปิด Google Login...';await a.signInWithPopup(provider)}catch(e){diag('Popup error: '+(e?.code||'')+' '+(e?.message||''),true);$('status').className='status err';$('status').textContent=authError(e)}};$('logout').onclick=async()=>{const a=await ensureAuth();await a.signOut()};$('refresh').onclick=loadAll;$('server').onchange=loadAll;
 $('export').onclick=async()=>{const r=await fetch('/admin/api/export?server='+$('server').value,{headers:await headers()});if(!r.ok)throw Error('Export failed');const blob=await r.blob(),u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download='voxel-'+$('server').value+'-players.csv';a.click();URL.revokeObjectURL(u)};
 $('backup').onclick=async()=>{const r=await fetch('/admin/api/backup?server='+$('server').value,{headers:await headers()});if(!r.ok)throw Error('Backup failed');const blob=await r.blob(),u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download='voxel-'+$('server').value+'-backup.json';a.click();URL.revokeObjectURL(u)};
-setInterval(()=>{if(auth?.currentUser)loadAll()},5000);ensureAuth().catch(e=>{$('status').className='err';$('status').textContent=e.message});
+setInterval(()=>{if(auth?.currentUser)loadAll()},5000);ensureAuth().catch(e=>{diag('Auth startup error: '+(e?.message||e),true);$('status').className='status err';$('status').textContent=e.message});
 </script></main></body></html>`;
 }
 
