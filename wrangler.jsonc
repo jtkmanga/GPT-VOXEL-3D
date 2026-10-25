@@ -2,9 +2,6 @@
   "name": "voxel-run-v2-demo",
   "main": "worker.js",
   "compatibility_date": "2026-09-27",
-  "triggers": {
-    "crons": ["0 17 * * *"]
-  },
   "vars": {
     "FIREBASE_PROJECT_ID": "lucky-game-6936b",
     "PAYMENT_MODE": "disabled"
