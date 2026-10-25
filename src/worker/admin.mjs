@@ -86,7 +86,7 @@ async function setControl(key,value){await api('/admin/api/control',{method:'POS
 document.querySelectorAll('[data-control]').forEach(b=>b.onclick=()=>setControl(b.dataset.control,$(b.dataset.control).value));
 document.querySelectorAll('[data-toggle]').forEach(b=>b.onclick=()=>setControl(b.dataset.toggle,!Boolean(lastControls[b.dataset.toggle])));
 $('setRole').onclick=async()=>{await api('/admin/api/role',{method:'POST',body:JSON.stringify({email:$('roleEmail').value,role:$('roleValue').value})});await loadAll()};
-$('login').onclick=async()=>{try{const a=await ensureAuth();const mobile=/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);if(mobile){$('status').className='muted';$('status').textContent='กำลังไปหน้า Google Login...';await a.signInWithRedirect(provider);return}await a.signInWithPopup(provider)}catch(e){$('status').className='err';$('status').textContent=authError(e)}};$('logout').onclick=async()=>{const a=await ensureAuth();await a.signOut()};$('refresh').onclick=loadAll;$('server').onchange=loadAll;
+$('login').onclick=async()=>{try{const a=await ensureAuth();provider.setCustomParameters({prompt:'select_account'});$('status').className='muted';$('status').textContent='กำลังเปิด Google Login...';await a.signInWithPopup(provider)}catch(e){$('status').className='err';$('status').textContent=authError(e)}};$('logout').onclick=async()=>{const a=await ensureAuth();await a.signOut()};$('refresh').onclick=loadAll;$('server').onchange=loadAll;
 $('export').onclick=async()=>{const r=await fetch('/admin/api/export?server='+$('server').value,{headers:await headers()});if(!r.ok)throw Error('Export failed');const blob=await r.blob(),u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download='voxel-'+$('server').value+'-players.csv';a.click();URL.revokeObjectURL(u)};
 $('backup').onclick=async()=>{const r=await fetch('/admin/api/backup?server='+$('server').value,{headers:await headers()});if(!r.ok)throw Error('Backup failed');const blob=await r.blob(),u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download='voxel-'+$('server').value+'-backup.json';a.click();URL.revokeObjectURL(u)};
 setInterval(()=>{if(auth?.currentUser)loadAll()},5000);ensureAuth().catch(e=>{$('status').className='err';$('status').textContent=e.message});
@@ -102,9 +102,6 @@ export async function handleAdmin(request,env){
     let firebase;try{firebase=JSON.parse(String(env?.FIREBASE_PUBLIC_CONFIG||''))}catch(_){}
     const safe=firebase&&typeof firebase==='object'&&!Array.isArray(firebase)?{apiKey:String(firebase.apiKey||''),authDomain:String(firebase.authDomain||''),projectId:String(firebase.projectId||''),appId:String(firebase.appId||''),messagingSenderId:String(firebase.messagingSenderId||'')}:null;
     if(!safe||!safe.apiKey||!safe.authDomain||safe.projectId!==env?.FIREBASE_PROJECT_ID)return json({ok:false,error:'Admin Firebase config unavailable'},503);
-    // Use same-origin auth helper on Workers; /__/auth/* is transparently proxied
-    // to the Firebase Hosting auth helper by router.mjs.
-    safe.authDomain=url.host;
     return json({ok:true,firebase:safe});
   }
 
