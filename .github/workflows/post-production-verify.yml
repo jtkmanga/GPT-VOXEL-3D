@@ -1,4 +1,4 @@
-# Rerun after hard auth-deadline production deploy
+# Verify production auth gate after hardening
 name: Post-Production Verification
 
 on:
@@ -82,15 +82,19 @@ jobs:
               const ws = new WebSocket(url);
               const timer = setTimeout(() => {
                 try { ws.close(); } catch {}
-                reject(new Error('timeout waiting for unauthenticated close: ' + url));
-              }, 15000);
-              ws.addEventListener('open', () => console.log('OPEN', url));
+                reject(new Error('timeout waiting for auth-gate close: ' + url));
+              }, 8000);
+              ws.addEventListener('open', () => {
+                console.log('OPEN', url);
+                // Valid gameplay packet, intentionally sent before authentication.
+                ws.send(JSON.stringify({type:'collect_box'}));
+              });
               ws.addEventListener('message', event => console.log('MESSAGE', url, String(event.data).slice(0,200)));
               ws.addEventListener('error', () => {});
               ws.addEventListener('close', event => {
                 clearTimeout(timer);
                 if (event.code !== 1008) return reject(new Error(`expected policy close 1008, got ${event.code} for ${url}`));
-                console.log('PASS unauthenticated WebSocket denied', url, event.code);
+                console.log('PASS unauthenticated gameplay denied', url, event.code);
                 resolve();
               });
             });
