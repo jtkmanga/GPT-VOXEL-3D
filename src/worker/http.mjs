@@ -75,6 +75,15 @@ const PROMPTPAY_TYPES = Object.freeze({
   e_wallet: { accountType: '02004', pattern: /^\d{1,32}$/ }
 });
 
+function paymentRolloutAllowed(env, identity) {
+  const rollout=String(env.PAYMENT_ROLLOUT||'canary').trim();
+  if(rollout==='public') return true;
+  if(rollout!=='canary') return false;
+  const owner=String(env.ADMIN_OWNER_EMAIL||'').trim().toLowerCase();
+  const email=String(identity?.email||'').trim().toLowerCase();
+  return Boolean(owner&&email&&email===owner);
+}
+
 export function slip2goReceiverConfig(env) {
   const promptPayType=String(env.PAYMENT_RECEIVER_TYPE||'phone_number').trim();
   const rule=PROMPTPAY_TYPES[promptPayType];
@@ -111,10 +120,14 @@ export async function handlePaymentQr(request, env) {
   }
   const match=/^Bearer\s+(.+)$/i.exec(request.headers.get('Authorization')||'');
   if(!match) return jsonResponse(request, env, {ok:false,error:'Sign in required'}, 401);
+  let verified;
   try {
-    await verifyFirebaseRequestTokens(match[1],request.headers.get('X-Firebase-AppCheck'),env);
+    verified=await verifyFirebaseRequestTokens(match[1],request.headers.get('X-Firebase-AppCheck'),env);
   } catch (_) {
     return jsonResponse(request, env, {ok:false,error:'Invalid Firebase token'}, 401);
+  }
+  if(!paymentRolloutAllowed(env,verified)) {
+    return jsonResponse(request,env,{ok:false,error:'Payment canary is restricted'},403);
   }
   let input;
   try { input=await request.json(); }
@@ -203,6 +216,13 @@ export async function handleVerifySlip(request, env) {
       ok: false,
       error: 'Invalid Firebase token'
     }, 401);
+  }
+
+  if (!paymentRolloutAllowed(env, verified)) {
+    return jsonResponse(request, env, {
+      ok: false,
+      error: 'Payment canary is restricted'
+    }, 403);
   }
 
   let input;
