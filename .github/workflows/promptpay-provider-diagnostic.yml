@@ -1,0 +1,32 @@
+name: PromptPay Provider Diagnostic
+
+on:
+  push:
+    branches:
+      - development/promptpay-dynamic-qr
+    paths:
+      - '.github/workflows/promptpay-provider-diagnostic.yml'
+      - 'tests/rebuild/gate5-2c2p-promptpay-probe.py'
+
+permissions:
+  contents: read
+
+jobs:
+  compare-sandbox-probes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Compare legacy token probe and PPQR probe
+        shell: bash
+        run: |
+          set +e
+          python tests/rebuild/gate5-2c2p-sandbox-probe.py
+          legacy=$?
+          python tests/rebuild/gate5-2c2p-promptpay-probe.py
+          promptpay=$?
+          echo "LEGACY_PROBE_EXIT=$legacy"
+          echo "PROMPTPAY_PROBE_EXIT=$promptpay"
+          exit 0
