@@ -50,6 +50,9 @@ config.vars={
   FIREBASE_PUBLIC_CONFIG:JSON.stringify(firebase),
   FIREBASE_APP_CHECK_SITE_KEY:siteKey
 };
+if (typeof config.main!=='string' || !config.main.trim()) fail('production Worker entrypoint is missing');
+const entryAbsolute=path.resolve(path.dirname(basePath),config.main);
+config.main=path.relative(outDir,entryAbsolute).split(path.sep).join('/');
 fs.mkdirSync(outDir,{recursive:true});
 fs.writeFileSync(outPath,JSON.stringify(config,null,2)+'\n',{mode:0o600});
 console.log('PASS production config prepared: values withheld; payment disabled; cron present');
