@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - release/production-prep
     paths:
       - '.github/workflows/production-readiness.yml'
       - 'scripts/rebuild/**'
@@ -73,6 +74,8 @@ jobs:
           PY
       - name: Production configuration preflight
         run: node scripts/rebuild/check-production-readiness.cjs
+      - name: Prepare production config (no deploy)
+        run: node scripts/rebuild/prepare-production.cjs
       - name: Release verification suite
         shell: bash
         run: |
@@ -96,6 +99,15 @@ jobs:
           grep -q '"name": "voxel-run-v2-demo"' wrangler.jsonc
           grep -q '"FIREBASE_PROJECT_ID": "lucky-game-6936b"' wrangler.jsonc
           grep -q '"PAYMENT_MODE": "disabled"' wrangler.jsonc
+          grep -q '"0 17 \* \* \*"' wrangler.jsonc
+          grep -q '"ADMIN_OWNER_EMAIL": "jtkmanga@gmail.com"' wrangler.jsonc
           ! grep -q 'gpt-voxel-3d-staging-01' wrangler.jsonc
           ! grep -q 'TWOC2P_SANDBOX_' wrangler.jsonc
           echo "PASS production config safety guard"
+      - name: Wrangler production dry run (prepared config only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --dry-run --config work/production/prepared/wrangler.jsonc --outdir work/production-dry-run
+          test -d work/production-dry-run
+          echo "PASS production dry run; no deployment performed"
