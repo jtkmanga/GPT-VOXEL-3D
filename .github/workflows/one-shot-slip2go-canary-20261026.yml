@@ -1,0 +1,123 @@
+name: One-Shot Slip2Go Canary 2026-10-26
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/one-shot-slip2go-canary-20261026.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-voxel-run-v2-demo-production
+  cancel-in-progress: false
+
+jobs:
+  deploy-canary:
+    runs-on: ubuntu-24.04
+    environment: production
+    timeout-minutes: 15
+    env:
+      PRODUCTION_PAYMENT_MODE: slip2go-production
+      PRODUCTION_SLIP2GO_ROLLOUT: canary
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Guard exact owner-approved canary commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/main"
+          test "$(git rev-parse HEAD^)" = "8f7057012ac03d6202c334d29ee91aa040887467"
+          changed="$(git diff-tree --no-commit-id --name-only -r HEAD)"
+          test "$changed" = ".github/workflows/one-shot-slip2go-canary-20261026.yml"
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          grep -q '"PAYMENT_MODE": "disabled"' wrangler.jsonc
+      - name: Confirm protected Slip2Go bindings without reading values
+        shell: python
+        run: |
+          import json, os, urllib.request
+          account=os.environ['CLOUDFLARE_ACCOUNT_ID']; token=os.environ['CLOUDFLARE_API_TOKEN']
+          url=f'https://api.cloudflare.com/client/v4/accounts/{account}/workers/scripts/voxel-run-v2-demo/settings'
+          req=urllib.request.Request(url,headers={'Authorization':'Bearer '+token,'Accept':'application/json'})
+          with urllib.request.urlopen(req,timeout=20) as r:
+              data=json.load(r)
+          bindings=data.get('result',{}).get('bindings',[])
+          secrets={x.get('name') for x in bindings if x.get('type')=='secret_text'}
+          required={'SLIP2GO_API_SECRET','PAYMENT_RECEIVER_ACCOUNT'}
+          missing=required-secrets
+          if missing:
+              raise SystemExit('Missing protected Slip2Go binding(s): '+', '.join(sorted(missing)))
+          with open(os.environ['GITHUB_ENV'],'a',encoding='utf-8') as f:
+              f.write('PRODUCTION_SLIP2GO_CONFIG_VERIFIED=true\n')
+          print('PASS protected Slip2Go binding names present; values not read')
+      - name: Canary production preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          node scripts/rebuild/check-production-readiness.cjs
+          node scripts/rebuild/prepare-production.cjs
+          node scripts/rebuild/run-tests.cjs
+          node scripts/rebuild/build-client.cjs --check
+          node scripts/rebuild/check-syntax.cjs
+          node scripts/rebuild/check-static.cjs
+          node scripts/rebuild/check-staging.cjs --allow-unconfigured
+          node scripts/rebuild/check-secrets.cjs
+          git diff --check
+          grep -q '"PAYMENT_MODE": "slip2go-production"' work/production/prepared/wrangler.jsonc
+          grep -q '"PAYMENT_ROLLOUT": "canary"' work/production/prepared/wrangler.jsonc
+          grep -q '"ADMIN_OWNER_EMAIL": "jtkmanga@gmail.com"' work/production/prepared/wrangler.jsonc
+          ! grep -q 'SLIP2GO_API_SECRET' work/production/prepared/wrangler.jsonc
+          ! grep -q 'PAYMENT_RECEIVER_ACCOUNT' work/production/prepared/wrangler.jsonc
+      - name: Wrangler Canary dry run
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --dry-run --config work/production/prepared/wrangler.jsonc --outdir work/slip2go-canary-dry-run
+          test -d work/slip2go-canary-dry-run
+      - name: Deploy owner-only Slip2Go Canary
+        shell: bash
+        run: npx wrangler deploy --config work/production/prepared/wrangler.jsonc
+      - name: Verify Canary production state
+        shell: python
+        run: |
+          import json, os, urllib.error, urllib.request
+          origin='https://voxel-run-v2-demo.hjinffv5426.workers.dev'
+          with urllib.request.urlopen(origin+'/health',timeout=20) as r:
+              body=r.read(65537).decode().strip()
+              assert r.status==200 and body=='VOXEL RUN v4 online',(r.status,body)
+
+          req=urllib.request.Request(origin+'/payment-qr',
+              data=json.dumps({'item':'vip1'}).encode(),method='POST',
+              headers={'Content-Type':'application/json','Origin':'https://jtkmanga.github.io'})
+          try:
+              urllib.request.urlopen(req,timeout=20)
+              raise AssertionError('Unauthenticated payment QR unexpectedly succeeded')
+          except urllib.error.HTTPError as e:
+              body=e.read(65537).decode(errors='replace')
+              assert e.code==401,(e.code,body)
+
+          account=os.environ['CLOUDFLARE_ACCOUNT_ID']; token=os.environ['CLOUDFLARE_API_TOKEN']
+          url=f'https://api.cloudflare.com/client/v4/accounts/{account}/workers/scripts/voxel-run-v2-demo/settings'
+          settings=urllib.request.Request(url,headers={'Authorization':'Bearer '+token,'Accept':'application/json'})
+          with urllib.request.urlopen(settings,timeout=20) as r:
+              data=json.load(r)
+          bindings=data.get('result',{}).get('bindings',[])
+          plain={x.get('name'):x.get('text') for x in bindings if x.get('type')=='plain_text'}
+          secrets={x.get('name') for x in bindings if x.get('type')=='secret_text'}
+          assert plain.get('PAYMENT_MODE')=='slip2go-production',plain.get('PAYMENT_MODE')
+          assert plain.get('PAYMENT_ROLLOUT')=='canary',plain.get('PAYMENT_ROLLOUT')
+          assert plain.get('ADMIN_OWNER_EMAIL')=='jtkmanga@gmail.com',plain.get('ADMIN_OWNER_EMAIL')
+          assert {'SLIP2GO_API_SECRET','PAYMENT_RECEIVER_ACCOUNT'} <= secrets
+          print('PASS owner-only Slip2Go Canary deployed; public rollout remains disabled')
