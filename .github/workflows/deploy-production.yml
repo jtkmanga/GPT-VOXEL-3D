@@ -23,7 +23,6 @@ jobs:
     timeout-minutes: 12
     env:
       PRODUCTION_PAYMENT_MODE: ${{ vars.PRODUCTION_PAYMENT_MODE }}
-      PRODUCTION_APP_CHECK_SITE_KEY: ${{ vars.PRODUCTION_APP_CHECK_SITE_KEY }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
