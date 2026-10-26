@@ -71,7 +71,8 @@ def main():
         base="https://gpt-voxel-3d-staging-01.hjinffv5426.workers.dev"
         token=post_signed(TOKEN_URL,{
           "merchantID":merchant,"invoiceNo":invoice,"description":"VOXEL VIP PromptPay sandbox probe",
-          "amount":50.00,"currencyCode":"THB","paymentChannel":["PPQR"],
+          "amount":50.00,"currencyCode":"THB","paymentChannel":["QR"],
+          "nonceStr":uuid.uuid4().hex,
           "frontendReturnUrl":base+"/?payment=promptpay-return",
           "backendReturnUrl":base+"/payments/promptpay/backend"
         },secret)
