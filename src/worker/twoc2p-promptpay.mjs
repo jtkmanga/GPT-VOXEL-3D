@@ -174,7 +174,8 @@ export function buildPromptPayPaymentTokenRequest(checkout, cfg) {
     description: 'VOXEL RUN VIP Server 30 days',
     amount: checkout.amount,
     currencyCode: 'THB',
-    paymentChannel: [TWOC2P_PROMPTPAY.channel],
+    paymentChannel: ['QR'],
+    nonceStr: crypto.randomUUID().replace(/-/g, ''),
     frontendReturnUrl: cfg.returnUrl,
     backendReturnUrl: cfg.workerOrigin + '/payments/promptpay/backend'
   };
