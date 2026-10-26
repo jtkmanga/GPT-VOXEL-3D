@@ -17,7 +17,7 @@ export function sandboxCalendarPeriodEnd(start) {
   return date.getTime();
 }
 
-function verifiedSandboxCalendarEvent(raw, now = Date.now()) {
+function verifiedSandboxCalendarEvent(raw, now = Date.now(), quotedAmount = VIP_PRODUCT.amount) {
   const keys = ['eventId', 'subscriptionId', 'uid', 'version', 'status', 'product',
     'amount', 'currency', 'periodStart', 'periodEnd'];
   if (!raw || typeof raw !== 'object' || Array.isArray(raw) ||
@@ -25,8 +25,8 @@ function verifiedSandboxCalendarEvent(raw, now = Date.now()) {
       typeof raw.eventId !== 'string' || !/^2c2p:sandbox:[a-f0-9]{64}$/.test(raw.eventId) ||
       typeof raw.subscriptionId !== 'string' || !/^2c2p:sandbox:[A-Za-z0-9]{1,20}$/.test(raw.subscriptionId) ||
       !validVipUid(raw.uid) || raw.version !== 1 || raw.status !== 'active' ||
-      raw.product !== VIP_PRODUCT.id || !Number.isSafeInteger(raw.amount) || raw.amount < 1 || raw.amount > 100000 ||
-      raw.currency !== 'THB' ||
+      raw.product !== VIP_PRODUCT.id || !Number.isSafeInteger(quotedAmount) || quotedAmount < 1 || quotedAmount > 100000 ||
+      raw.amount !== quotedAmount || raw.currency !== 'THB' ||
       raw.periodStart > now || raw.periodEnd !== sandboxCalendarPeriodEnd(raw.periodStart) ||
       raw.periodEnd <= now) throw Error('Invalid verified Sandbox calendar event');
   return Object.fromEntries(keys.map(key => [key, raw[key]]));
@@ -105,9 +105,9 @@ export class VipStore {
   // Only the private verified-invoice adapter calls this method. Browser flags,
   // the generic webhook and client-supplied periods cannot enter this boundary.
   // Legacy applyEvent retains its exact fixed-30-day schema and assertions.
-  applyVerifiedSandboxCalendarEvent({ event: input, fingerprint }) {
+  applyVerifiedSandboxCalendarEvent({ event: input, fingerprint, quotedAmount = VIP_PRODUCT.amount }) {
     let event;
-    try { event = verifiedSandboxCalendarEvent(input); }
+    try { event = verifiedSandboxCalendarEvent(input,Date.now(),quotedAmount); }
     catch (_) { return denied('Invalid verified Sandbox calendar event', 400); }
     if (typeof fingerprint !== 'string' || !/^[a-f0-9]{64}$/.test(fingerprint) ||
         event.eventId !== `2c2p:sandbox:${fingerprint}`)
