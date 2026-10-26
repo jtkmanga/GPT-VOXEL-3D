@@ -198,7 +198,8 @@
             }
 
             if (type === 'vip1') {
-                const vipPrice = Number(liveSiteConfig?.pricing?.vip1) || SECURE_PAYMENT_ITEMS.vip1.price;
+                const livePricing = typeof liveSiteConfig !== 'undefined' ? liveSiteConfig?.pricing : null;
+                const vipPrice = Number(livePricing?.vip1) || SECURE_PAYMENT_ITEMS.vip1.price;
                 alert('การชำระเงิน VIP ยังไม่เปิดใช้งาน: ราคา ' + vipPrice + ' บาท/เดือน ต้องยืนยันผู้ให้บริการชำระเงินก่อน');
                 return;
             }
@@ -209,7 +210,8 @@
                 return;
             }
 
-            const livePrice = Number(liveSiteConfig?.pricing?.[type]);
+            const livePricing = typeof liveSiteConfig !== 'undefined' ? liveSiteConfig?.pricing : null;
+            const livePrice = Number(livePricing?.[type]);
             const price = Number.isSafeInteger(livePrice) && livePrice > 0 ? livePrice : cfg.price;
             state.pendingPayment = { type, price, title: title || cfg.title };
             document.getElementById('pay-item-title').innerText = state.pendingPayment.title;
