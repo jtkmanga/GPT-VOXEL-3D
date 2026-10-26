@@ -6,6 +6,7 @@ let liveSiteConfig = {
     maintenanceVip: false,
     paymentPaused: false,
     vipAdmissionPaused: false,
+    promptPayEnabled: false,
     pricing: { currency:'THB', speed:10, coin:20, vip1:50 }
 };
 
@@ -18,6 +19,7 @@ function liveApplySiteConfig(value = {}) {
         maintenanceVip: value.maintenanceVip === true,
         paymentPaused: value.paymentPaused === true,
         vipAdmissionPaused: value.vipAdmissionPaused === true,
+        promptPayEnabled: value.promptPayEnabled === true,
         pricing: {
             currency: value?.pricing?.currency === 'THB' ? 'THB' : 'THB',
             speed: Number.isSafeInteger(Number(value?.pricing?.speed)) && Number(value.pricing.speed) > 0 ? Number(value.pricing.speed) : 10,
