@@ -428,12 +428,14 @@
                     <img id="promptpay-qr-img" src="" alt="PromptPay QR" class="w-48 h-48 object-contain mx-auto">
                 </div>
                 <div id="payment-account-info" class="text-[11px] text-slate-400">
-                    QR จะถูกสร้างใหม่สำหรับแต่ละรายการชำระเงิน
+                    ระบบจะสร้าง PromptPay QR จาก Server
                 </div>
-                <div id="payment-status" class="text-xs text-amber-300 font-semibold">พร้อมสร้างรายการชำระเงิน</div>
+                <div id="payment-status" class="text-xs text-amber-300 font-semibold">
+                    พร้อมสร้างรายการชำระเงิน
+                </div>
 
                 <!-- Slip Upload & Check Section -->
-                <div id="payment-slip-section" class="text-left space-y-1.5 pt-2 border-t border-slate-800">
+                <div class="text-left space-y-1.5 pt-2 border-t border-slate-800">
                     <label class="block text-xs font-bold text-amber-400">อัปโหลดสลิปโอนเงินเพื่อตรวจสอบอัตโนมัติ:</label>
                     <input type="file" id="slip-file-input" accept="image/*" class="w-full text-xs text-slate-300 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-amber-500 file:text-slate-950 hover:file:bg-amber-400 cursor-pointer bg-slate-800 rounded-xl border border-slate-700">
                 </div>
