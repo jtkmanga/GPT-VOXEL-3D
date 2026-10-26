@@ -21,7 +21,11 @@ for(const required of [
 const paymentSource=fs.readFileSync('src/client/secure-entitlements-payment.js','utf8');
 if(!paymentSource.includes("const SECURE_WORKER_HTTP_BASE = 'https://voxel-run-v2-demo.hjinffv5426.workers.dev'"))
   fail('production Worker client origin drifted');
-need('PRODUCTION_APP_CHECK_SITE_KEY');
+const appCheckMatch=/PRODUCTION_APP_CHECK_SITE_KEY\s*=\s*"([^"]+)"/.exec(authSource);
+if(!appCheckMatch) fail('production App Check key declaration is missing');
+else if(appCheckMatch[1]==='__VOXEL_PRODUCTION_APP_CHECK_SITE_KEY__') fail('production App Check site key is still a placeholder');
+else if(appCheckMatch[1].length<10||appCheckMatch[1].length>256||/[\s\u0000-\u001f\u007f]/.test(appCheckMatch[1]))
+  fail('production App Check site key format is invalid');
 
 if(mode==='2c2p-production'){
   need('PRODUCTION_TWOC2P_MERCHANT_ID');need('PRODUCTION_TWOC2P_SECRET_KEY');
