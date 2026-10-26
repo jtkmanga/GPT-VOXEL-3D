@@ -2997,7 +2997,13 @@ setTimeout(() => {
         };
 
         const SECURE_PAYMENT_ITEMS = ({"speed":{"price":10,"title":"เพิ่มความเร็วเคลื่อนที่ x2 (24 ช.ม.)"},"coin":{"price":20,"title":"เหรียญตามแมพ x2 (24 ช.ม.)"},"vip1":{"price":50,"title":"สิทธิ์ VIP Server 1 (30 วัน)"}});
-        const secureBaseClosePaymentModal = closePaymentModal;
+        // VIP payments use server-generated 2C2P PPQR only; no static receiver is embedded in the client.
+        const secureBaseClosePaymentModal = typeof closePaymentModal === 'function'
+            ? closePaymentModal
+            : function() {
+                const modal = typeof document !== 'undefined' ? document.getElementById('payment-modal') : null;
+                if (modal?.classList) modal.classList.add('hidden');
+            };
         let securePromptPayPollTimer = null;
         let securePromptPayPolling = false;
 
