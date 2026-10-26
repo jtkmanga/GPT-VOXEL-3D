@@ -14,7 +14,6 @@ import { VipStore } from './vip-store.mjs';
 import { validVipUid, VIP_PRODUCT, normalizePaymentEvent, paymentEventFingerprint } from './payment-events.mjs';
 import { handoffPosition } from './handoff-continuity.mjs';
 import { handle2c2pInternal } from './twoc2p-sandbox.mjs';
-import { handlePromptPayInternal } from './twoc2p-promptpay.mjs';
 import { nextScoreResetAt, resetLabel } from './score-reset.mjs';
 
 export class GameRoom {
@@ -737,7 +736,6 @@ export class GameRoom {
     const url = new URL(request.url);
 
     if (url.pathname.startsWith('/_internal/2c2p/')) return handle2c2pInternal(request,this);
-    if (url.pathname.startsWith('/_internal/promptpay/')) return handlePromptPayInternal(request,this);
 
     if (url.pathname==='/_internal/admin/role-check' && request.method==='GET') {
       const email=String(url.searchParams.get('email')||'').trim().toLowerCase();
