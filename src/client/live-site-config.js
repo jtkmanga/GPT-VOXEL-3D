@@ -5,7 +5,8 @@ let liveSiteConfig = {
     maintenanceFree: false,
     maintenanceVip: false,
     paymentPaused: false,
-    vipAdmissionPaused: false
+    vipAdmissionPaused: false,
+    pricing: { currency:'THB', speed:10, coin:20, vip1:50 }
 };
 
 function liveApplySiteConfig(value = {}) {
@@ -16,7 +17,13 @@ function liveApplySiteConfig(value = {}) {
         maintenanceFree: value.maintenanceFree === true,
         maintenanceVip: value.maintenanceVip === true,
         paymentPaused: value.paymentPaused === true,
-        vipAdmissionPaused: value.vipAdmissionPaused === true
+        vipAdmissionPaused: value.vipAdmissionPaused === true,
+        pricing: {
+            currency: value?.pricing?.currency === 'THB' ? 'THB' : 'THB',
+            speed: Number.isSafeInteger(Number(value?.pricing?.speed)) && Number(value.pricing.speed) > 0 ? Number(value.pricing.speed) : 10,
+            coin: Number.isSafeInteger(Number(value?.pricing?.coin)) && Number(value.pricing.coin) > 0 ? Number(value.pricing.coin) : 20,
+            vip1: Number.isSafeInteger(Number(value?.pricing?.vip1)) && Number(value.pricing.vip1) > 0 ? Number(value.pricing.vip1) : 50
+        }
     };
     const announcement = document.getElementById('live-announcement');
     if (announcement) {
@@ -27,6 +34,9 @@ function liveApplySiteConfig(value = {}) {
     if (free) free.textContent = '🌐 ' + liveSiteConfig.freeName;
     const vip = document.getElementById('live-vip-name');
     if (vip) vip.textContent = '👑 ' + liveSiteConfig.vipName;
+    const vipPrice = document.getElementById('live-vip-price');
+    if (vipPrice) vipPrice.textContent = liveSiteConfig.pricing.vip1 + ' บาท/เดือน';
+    if (typeof updateShopUI === 'function') updateShopUI();
     if (typeof renderServersUI === 'function') renderServersUI();
 }
 
