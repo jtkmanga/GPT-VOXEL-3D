@@ -30,9 +30,15 @@ if(!['disabled','slip2go-production'].includes(paymentMode))
   fail('PRODUCTION_PAYMENT_MODE must be disabled or slip2go-production');
 if(paymentMode==='slip2go-production' && process.env.PRODUCTION_SLIP2GO_CONFIG_VERIFIED!=='true')
   fail('Slip2Go production configuration has not been verified');
+const paymentRollout=paymentMode==='slip2go-production'
+  ? String(process.env.PRODUCTION_SLIP2GO_ROLLOUT||'').trim() : '';
+if(paymentMode==='slip2go-production' && !['canary','public'].includes(paymentRollout))
+  fail('Slip2Go rollout must be canary or public');
 config.triggers={...(config.triggers||{}),crons:['0 17 * * *']};
 config.vars={...(config.vars||{}),ADMIN_OWNER_EMAIL:'jtkmanga@gmail.com',PAYMENT_MODE:paymentMode,
-  ...(paymentMode==='slip2go-production'?{PAYMENT_RECEIVER_TYPE:'phone_number'}:{})};
+  ...(paymentMode==='slip2go-production'?{
+    PAYMENT_RECEIVER_TYPE:'phone_number',PAYMENT_ROLLOUT:paymentRollout
+  }:{})};
 
 const firebase=productionFirebasePublicConfig();
 if(firebase.projectId!=='lucky-game-6936b'||firebase.authDomain!=='lucky-game-6936b.firebaseapp.com')
