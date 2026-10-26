@@ -35,23 +35,6 @@
             }
             return token;
         }
-        if (new URLSearchParams(location.search).get('appcheck_probe') === '1') {
-            window.addEventListener('load', async () => {
-                const box=document.createElement('div');
-                box.id='production-appcheck-probe';
-                box.style='position:fixed;z-index:2147483647;top:12px;left:12px;right:12px;padding:14px;border-radius:12px;background:#07101f;color:#fff;font:600 14px system-ui;border:1px solid #334155;box-shadow:0 10px 30px rgba(0,0,0,.35)';
-                box.textContent='Checking Production App Check...';
-                document.body.appendChild(box);
-                try {
-                    const token=await secureGetAppCheckToken(true);
-                    box.textContent=(typeof token==='string'&&token.length>=20)?'Production App Check: OK':'Production App Check: INVALID';
-                } catch (e) {
-                    const code=String(e?.code||'').slice(0,80);
-                    const message=String(e?.message||'').replace(/[\r\n\t]+/g,' ').slice(0,140);
-                    box.textContent='Production App Check: ERROR'+(code?' ['+code+']':'')+(message?' '+message:'');
-                }
-            },{once:true});
-        }
         const auth = firebase.auth();
         const database = firebase.database();
         const googleProvider = new firebase.auth.GoogleAuthProvider();
