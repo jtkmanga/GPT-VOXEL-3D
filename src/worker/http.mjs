@@ -187,7 +187,7 @@ export async function handleVerifySlip(request, env) {
       {
         method: 'POST',
         headers: {
-          'Authorization': env.SLIP2GO_API_SECRET
+          'Authorization': `Bearer ${env.SLIP2GO_API_SECRET}`
         },
         body: slipForm
       }

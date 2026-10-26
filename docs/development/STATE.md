@@ -1,5 +1,33 @@
 # Current development state
 
+## D073 — Slip2Go Bearer authentication guard (2026-10-26)
+
+Starting source ac99cf30be1d97cbad13998546ceeeec2aa20aea. Owner-approved correction after the live production
+canary returned Slip2Go 401001 Authentication Token Mismatch. The merged
+production payment change in PR #7 introduced two provider call sites on main
+(QR generation and slip verification) that sent the protected API secret as the
+entire Authorization value. The Slip2Go Authentication example shown by the
+owner requires a Bearer credential scheme.
+
+This bounded development-branch change updates the existing Slip2Go verification
+call to send `Authorization: Bearer <secret>` without exposing the secret and
+adds a regression that rejects any raw `Authorization: env.SLIP2GO_API_SECRET`
+usage in `src/worker/http.mjs`. The current development branch does not yet
+contain main's production QR-generation handler, so this task does not claim the
+live production QR call is fixed yet.
+
+Pre-publish checks available in this execution: exact-source guard confirmed one
+raw development call before replacement; patched-source guard confirmed no raw
+call remains and the Bearer form is present; the new Node test file passed
+`node --check`. The full repository runner could not be executed locally because
+this environment cannot resolve github.com for cloning. GitHub CI is required
+before any promotion. No main change, merge, production deployment, payment,
+secret read/rotation, account permission change or provider request was made.
+
+Unresolved blocker: production main still needs a narrowly reviewed hotfix for
+both PR #7 provider call sites, followed by full tests/dry-run and separate owner
+authorization before production deployment.
+
 ## D070 — reconcile Gate 7 reviewed history baseline (2026-10-23)
 
 Starting source 675d85413af328e3c09446da574a0b6ee0bc6f56. Independently
