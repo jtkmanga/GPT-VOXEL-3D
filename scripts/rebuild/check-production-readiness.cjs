@@ -16,9 +16,11 @@ if(!['disabled','2c2p-production'].includes(mode)) fail('invalid production paym
 const authSource=fs.readFileSync('src/client/auth-state.js','utf8');
 for(const required of [
   'projectId: "lucky-game-6936b"',
-  'authDomain: "lucky-game-6936b.firebaseapp.com"',
-  "const SECURE_WORKER_HTTP_BASE = 'https://voxel-run-v2-demo.hjinffv5426.workers.dev'"
-]) if(!authSource.includes(required)) fail('production client public configuration drifted');
+  'authDomain: "lucky-game-6936b.firebaseapp.com"'
+]) if(!authSource.includes(required)) fail('production Firebase client configuration drifted');
+const paymentSource=fs.readFileSync('src/client/secure-entitlements-payment.js','utf8');
+if(!paymentSource.includes("const SECURE_WORKER_HTTP_BASE = 'https://voxel-run-v2-demo.hjinffv5426.workers.dev'"))
+  fail('production Worker client origin drifted');
 need('PRODUCTION_APP_CHECK_SITE_KEY');
 
 if(mode==='2c2p-production'){
