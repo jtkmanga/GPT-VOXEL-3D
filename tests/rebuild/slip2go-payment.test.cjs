@@ -21,6 +21,24 @@ test('Slip2Go receiver config maps PromptPay type and keeps account details serv
   assert.throws(()=>slip2goReceiverConfig({PAYMENT_RECEIVER_ACCOUNT:'bad'}),/not configured/);
 });
 
+test('payment QR endpoint answers browser CORS preflight',async t=>{
+  const h=createHarness({env:{ALLOWED_ORIGIN:'https://jtkmanga.github.io'}});
+  t.after(()=>h.close());
+  const response=await h.request('/payment-qr',{
+    method:'OPTIONS',
+    headers:{
+      Origin:'https://jtkmanga.github.io',
+      'Access-Control-Request-Method':'POST',
+      'Access-Control-Request-Headers':'authorization,content-type,x-firebase-appcheck'
+    }
+  });
+  assert.equal(response.status,204);
+  assert.equal(response.headers.get('Access-Control-Allow-Origin'),'https://jtkmanga.github.io');
+  assert.match(response.headers.get('Access-Control-Allow-Methods')||'',/POST/);
+  const allowHeaders=(response.headers.get('Access-Control-Allow-Headers')||'').toLowerCase();
+  for(const name of ['authorization','content-type','x-firebase-appcheck']) assert.ok(allowHeaders.includes(name),name);
+});
+
 test('payment QR endpoint fails closed while production payment is disabled',async t=>{
   const h=createHarness({env:{PAYMENT_MODE:'disabled'}});
   t.after(()=>h.close());
