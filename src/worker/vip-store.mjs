@@ -25,7 +25,8 @@ function verifiedSandboxCalendarEvent(raw, now = Date.now()) {
       typeof raw.eventId !== 'string' || !/^2c2p:sandbox:[a-f0-9]{64}$/.test(raw.eventId) ||
       typeof raw.subscriptionId !== 'string' || !/^2c2p:sandbox:[A-Za-z0-9]{1,20}$/.test(raw.subscriptionId) ||
       !validVipUid(raw.uid) || raw.version !== 1 || raw.status !== 'active' ||
-      raw.product !== VIP_PRODUCT.id || raw.amount !== VIP_PRODUCT.amount || raw.currency !== 'THB' ||
+      raw.product !== VIP_PRODUCT.id || !Number.isSafeInteger(raw.amount) || raw.amount < 1 || raw.amount > 100000 ||
+      raw.currency !== 'THB' ||
       raw.periodStart > now || raw.periodEnd !== sandboxCalendarPeriodEnd(raw.periodStart) ||
       raw.periodEnd <= now) throw Error('Invalid verified Sandbox calendar event');
   return Object.fromEntries(keys.map(key => [key, raw[key]]));
