@@ -55,6 +55,22 @@ test('VIP QR uses authoritative 50 THB server price and Slip2Go secret only on W
   assert.equal(h.records.fetches.filter(record=>record.url===SLIP_QR_URL).length,1);
 });
 
+test('Slip2Go canary allows only the configured owner account',async t=>{
+  const h=createHarness({env:{PAYMENT_ROLLOUT:'canary',ADMIN_OWNER_EMAIL:'owner@example.invalid'}});
+  t.after(()=>h.close());
+  const requestFor=(uid,email)=>h.request('/payment-qr',{
+    method:'POST',
+    headers:{Authorization:'Bearer '+h.token(uid,{email}),'Content-Type':'application/json'},
+    body:JSON.stringify({item:'vip1'})
+  });
+  const denied=await requestFor('non-owner','player@example.invalid');
+  assert.equal(denied.status,403);
+  assert.equal((await denied.json()).error,'Payment canary is restricted');
+  const allowed=await requestFor('owner-user','owner@example.invalid');
+  assert.equal(allowed.status,200);
+  assert.equal((await allowed.json()).ok,true);
+});
+
 test('verified VIP slip grants exactly 30 days once and duplicate receipt cannot grant twice',async t=>{
   const h=createHarness();
   t.after(()=>h.close());
