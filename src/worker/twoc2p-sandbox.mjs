@@ -118,7 +118,8 @@ export function validateSandboxHostedUrl(value) {
 }
 
 export function buildSandboxPaymentTokenRequest(checkout, merchantID) {
-  if (!ownObject(checkout) || checkout.merchantID !== merchantID || checkout.amount !== 50 ||
+  if (!ownObject(checkout) || checkout.merchantID !== merchantID ||
+      !Number.isSafeInteger(checkout.amount) || checkout.amount < 1 || checkout.amount > 100000 ||
       checkout.currencyCode !== 'THB' || !safeIdentifier(checkout.invoiceNo, 20) ||
       !safeIdentifier(checkout.invoicePrefix, 15) || !Number.isSafeInteger(checkout.periodEnd))
     fail('Sandbox invoice unavailable', 503);
@@ -127,10 +128,10 @@ export function buildSandboxPaymentTokenRequest(checkout, merchantID) {
     fail('Monthly billing policy requires verification', 503);
   const dd = String(day).padStart(2, '0'), mm = String(next.getUTCMonth() + 1).padStart(2, '0');
   return { merchantID, invoiceNo: checkout.invoiceNo, description: 'VIP Server calendar-month sandbox subscription',
-    amount: 50, currencyCode: 'THB', paymentChannel: ['CC'],
+    amount: checkout.amount, currencyCode: 'THB', paymentChannel: ['CC'],
     frontendReturnUrl: `${TWOC2P_SANDBOX.origin}/payments/2c2p/return`,
     backendReturnUrl: `${TWOC2P_SANDBOX.origin}/payments/2c2p/backend`,
-    recurring: true, invoicePrefix: checkout.invoicePrefix, recurringAmount: 50,
+    recurring: true, invoicePrefix: checkout.invoicePrefix, recurringAmount: checkout.amount,
     allowAccumulate: false, maxAccumulateAmount: 0, recurringCount: 0,
     chargeOnDate: dd + mm, chargeNextDate: dd + mm + String(next.getUTCFullYear()) };
 }
@@ -154,9 +155,9 @@ export function normalizeSandboxNotification(payload, merchantID) {
       typeof payload.respCode !== 'string' || !/^\d{4}$/.test(payload.respCode) ||
       !validProviderDate(payload.transactionDateTime)) fail('Invalid sandbox payment notification', 400);
   const amount = payload.amount;
-  if (!(amount === 50 || (typeof amount === 'string' && /^0*50(?:\.0{1,5})?$/.test(amount) && amount.length <= 18)))
+  if (!Number.isSafeInteger(amount) || amount < 1 || amount > 100000)
     fail('Invalid sandbox payment amount', 400);
-  const result = {merchantID:payload.merchantID,invoiceNo:payload.invoiceNo,amount:50,
+  const result = {merchantID:payload.merchantID,invoiceNo:payload.invoiceNo,amount,
     currencyCode:payload.currencyCode,paymentID:payload.paymentID,referenceNo:payload.referenceNo,
     respCode:payload.respCode,transactionDateTime:payload.transactionDateTime};
   for (const [field, maximum] of [['recurringUniqueID',20],['recurringSequenceNo',10]]) {
@@ -267,7 +268,7 @@ export async function handle2c2pSandbox(request, env) {
       requireCurrentIdentity(identity);
       await internalCall(env,'finish',{uid,invoiceNo:checkout.invoiceNo,succeeded:true});
       requireCurrentIdentity(identity);
-      return reply({ok:true,invoiceNo:checkout.invoiceNo,amount:50,currencyCode:'THB',expiresAt:checkout.expiresAt,
+      return reply({ok:true,invoiceNo:checkout.invoiceNo,amount:checkout.amount,currencyCode:'THB',expiresAt:checkout.expiresAt,
         webPaymentUrl,recurringPreparation:'monthly-initial-only'});
     } catch (error) {
       try { await internalCall(env,'finish',{uid,invoiceNo:checkout.invoiceNo,succeeded:false}); } catch (_) {}
@@ -289,7 +290,8 @@ export async function handle2c2pInternal(request, room) {
       if (!validVipUid(input.uid) || !safeIdentifier(input.requestId,128) || input.requestId.length < 16 ||
           Object.keys(input).some(key => !['uid','requestId'].includes(key))) fail('Invalid sandbox checkout',400);
       const invoicePrefix = 'VXR'+crypto.randomUUID().replace(/-/g,'').slice(0,12);
-      result = store.createCheckout({uid:input.uid,merchantID:config.merchantID,invoicePrefix,requestId:input.requestId});
+      result = store.createCheckout({uid:input.uid,merchantID:config.merchantID,invoicePrefix,requestId:input.requestId},
+        Date.now(),room.price('vip1'));
     } else if (action === 'claim' || action === 'finish' || action === 'status') {
       if (!validVipUid(input.uid) || !safeIdentifier(input.invoiceNo,20)) fail('Invalid sandbox invoice',400);
       const row = store.checkout(input.invoiceNo);
