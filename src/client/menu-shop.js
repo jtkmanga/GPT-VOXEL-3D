@@ -46,7 +46,8 @@
             } else {
                 btnSpeed.disabled = false;
                 btnSpeed.className = "bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-white font-bold py-1.5 px-3 rounded-lg text-xs shadow transition active:scale-95 flex-shrink-0";
-                btnSpeed.innerText = "10 ฿";
+                const price = Number(liveSiteConfig?.pricing?.speed) || 10;
+                btnSpeed.innerText = price + " ฿";
             }
 
             if (state.shop.coinBuffExpires > now) {
@@ -56,7 +57,8 @@
             } else {
                 btnCoin.disabled = false;
                 btnCoin.className = "bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-white font-bold py-1.5 px-3 rounded-lg text-xs shadow transition active:scale-95 flex-shrink-0";
-                btnCoin.innerText = "20 ฿";
+                const price = Number(liveSiteConfig?.pricing?.coin) || 20;
+                btnCoin.innerText = price + " ฿";
             }
         }
 
