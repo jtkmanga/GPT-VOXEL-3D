@@ -68,7 +68,14 @@ const worker = {
     }
 
     if (url.pathname==='/payments/webhook') return handlePaymentWebhook(request,env);
-    if (url.pathname==='/payment-qr') return handlePaymentQr(request,env);
+    if (url.pathname==='/payment-qr') {
+      if (request.method==='OPTIONS')
+        return new Response(null,{
+          status:204,
+          headers:corsHeaders(request,env)
+        });
+      return handlePaymentQr(request,env);
+    }
 
     if (url.pathname==='/health')
       return new Response(staging.enabled ? 'GPT-VOXEL-3D staging online' : 'VOXEL RUN v4 online',
