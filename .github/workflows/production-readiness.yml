@@ -93,14 +93,15 @@ jobs:
         run: |
           set -euo pipefail
           git diff --check
+          git diff --exit-code origin/main -- wrangler.jsonc
           grep -q '"name": "voxel-run-v2-demo"' wrangler.jsonc
           grep -q '"FIREBASE_PROJECT_ID": "lucky-game-6936b"' wrangler.jsonc
           grep -q '"PAYMENT_MODE": "disabled"' wrangler.jsonc
-          grep -q '"0 17 \* \* \*"' wrangler.jsonc
-          grep -q '"ADMIN_OWNER_EMAIL": "jtkmanga@gmail.com"' wrangler.jsonc
           ! grep -q 'gpt-voxel-3d-staging-01' wrangler.jsonc
           ! grep -q 'TWOC2P_SANDBOX_' wrangler.jsonc
-          echo "PASS production config safety guard"
+          grep -q '"0 17 \* \* \*"' work/production/prepared/wrangler.jsonc
+          grep -q '"ADMIN_OWNER_EMAIL": "jtkmanga@gmail.com"' work/production/prepared/wrangler.jsonc
+          echo "PASS production baseline preserved; prepared release config contains cron/admin controls"
       - name: Wrangler production dry run (prepared config only)
         shell: bash
         run: |
