@@ -189,6 +189,7 @@
         };
 
         const SECURE_PAYMENT_ITEMS = catalog.CLIENT_PAYMENT_ITEMS;
+        // VIP payments use server-generated 2C2P PPQR only; no static receiver is embedded in the client.
         const secureBaseClosePaymentModal = typeof closePaymentModal === 'function'
             ? closePaymentModal
             : function() {
