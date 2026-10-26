@@ -17,6 +17,28 @@ export function sandboxCalendarPeriodEnd(start) {
   return date.getTime();
 }
 
+function promptPayPeriodEnd(start) {
+  if (!Number.isSafeInteger(start) || start < 0) throw Error('Invalid PromptPay period');
+  const end = start + 30 * 24 * 60 * 60 * 1000;
+  if (!Number.isSafeInteger(end)) throw Error('Invalid PromptPay period');
+  return end;
+}
+
+function verifiedPromptPayEvent(raw, now = Date.now(), quotedAmount = VIP_PRODUCT.amount) {
+  const keys = ['eventId', 'subscriptionId', 'uid', 'version', 'status', 'product',
+    'amount', 'currency', 'periodStart', 'periodEnd'];
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw) ||
+      Object.keys(raw).length !== keys.length || keys.some(key => !Object.hasOwn(raw, key)) ||
+      typeof raw.eventId !== 'string' || !/^2c2p:promptpay:[a-f0-9]{64}$/.test(raw.eventId) ||
+      typeof raw.subscriptionId !== 'string' || !/^2c2p:promptpay:[A-Za-z0-9]{1,20}$/.test(raw.subscriptionId) ||
+      !validVipUid(raw.uid) || raw.version !== 1 || raw.status !== 'active' ||
+      raw.product !== VIP_PRODUCT.id || !Number.isSafeInteger(quotedAmount) || quotedAmount < 1 || quotedAmount > 100000 ||
+      raw.amount !== quotedAmount || raw.currency !== 'THB' ||
+      raw.periodStart > now || raw.periodEnd !== promptPayPeriodEnd(raw.periodStart) ||
+      raw.periodEnd <= now) throw Error('Invalid verified PromptPay event');
+  return Object.fromEntries(keys.map(key => [key, raw[key]]));
+}
+
 function verifiedSandboxCalendarEvent(raw, now = Date.now(), quotedAmount = VIP_PRODUCT.amount) {
   const keys = ['eventId', 'subscriptionId', 'uid', 'version', 'status', 'product',
     'amount', 'currency', 'periodStart', 'periodEnd'];
@@ -105,6 +127,16 @@ export class VipStore {
   // Only the private verified-invoice adapter calls this method. Browser flags,
   // the generic webhook and client-supplied periods cannot enter this boundary.
   // Legacy applyEvent retains its exact fixed-30-day schema and assertions.
+  applyVerifiedPromptPayEvent({ event: input, fingerprint, quotedAmount = VIP_PRODUCT.amount }) {
+    let event;
+    try { event = verifiedPromptPayEvent(input, Date.now(), quotedAmount); }
+    catch (_) { return denied('Invalid verified PromptPay event', 400); }
+    if (typeof fingerprint !== 'string' || !/^[a-f0-9]{64}$/.test(fingerprint) ||
+        event.eventId !== `2c2p:promptpay:${fingerprint}`)
+      return denied('Invalid provider event fingerprint', 400);
+    return this.#applyNormalizedEvent(event, fingerprint);
+  }
+
   applyVerifiedSandboxCalendarEvent({ event: input, fingerprint, quotedAmount = VIP_PRODUCT.amount }) {
     let event;
     try { event = verifiedSandboxCalendarEvent(input,Date.now(),quotedAmount); }
