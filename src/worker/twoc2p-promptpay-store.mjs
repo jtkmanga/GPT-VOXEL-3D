@@ -53,6 +53,10 @@ export class Twoc2pPromptPayStore {
       transaction_id TEXT NOT NULL, resp_code TEXT NOT NULL,
       notification_json TEXT NOT NULL, response_json TEXT NOT NULL, created_at INTEGER NOT NULL
     )`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS voxel_2c2p_promptpay_transactions (
+      transaction_id TEXT PRIMARY KEY, reference_no TEXT NOT NULL UNIQUE,
+      invoice_no TEXT NOT NULL, created_at INTEGER NOT NULL
+    )`);
   }
 
   expire(now) {
@@ -163,7 +167,7 @@ export class Twoc2pPromptPayStore {
           row.currency_code !== notification.currencyCode)
         return denied('PromptPay payment does not match its checkout', 400);
       const owner = this.sql.exec(`SELECT invoice_no,transaction_id,reference_no
-        FROM voxel_2c2p_promptpay_checkouts WHERE transaction_id=? OR reference_no=?`,
+        FROM voxel_2c2p_promptpay_transactions WHERE transaction_id=? OR reference_no=?`,
       notification.transactionId, notification.referenceNo).toArray()[0];
       if (owner && (owner.invoice_no !== row.invoice_no || owner.transaction_id !== notification.transactionId ||
           owner.reference_no !== notification.referenceNo))
@@ -199,6 +203,9 @@ export class Twoc2pPromptPayStore {
         result = { ok: true, invoiceNo: row.invoice_no, status: category,
           entitlementGranted: false, replayed: false };
       }
+      this.sql.exec(`INSERT OR IGNORE INTO voxel_2c2p_promptpay_transactions
+        (transaction_id,reference_no,invoice_no,created_at) VALUES (?,?,?,?)`,
+      notification.transactionId, notification.referenceNo, row.invoice_no, now);
       this.sql.exec(`INSERT INTO voxel_2c2p_promptpay_notifications
         (fingerprint,invoice_no,transaction_id,resp_code,notification_json,response_json,created_at)
         VALUES (?,?,?,?,?,?,?)`, fingerprint, row.invoice_no, notification.transactionId,
