@@ -22,6 +22,7 @@
     <!-- Firebase SDKs (v10.8.0 - Compat Version for Web) -->
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-check-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
 
     <style>
@@ -698,7 +699,29 @@ setTimeout(() => {
         };
 
         // Initialize Firebase
+        const PRODUCTION_APP_CHECK_SITE_KEY = "__VOXEL_PRODUCTION_APP_CHECK_SITE_KEY__";
         firebase.initializeApp(firebaseConfig);
+        let productionAppCheck = null;
+        if (typeof STAGING_CLIENT_ENABLED === 'undefined' &&
+            PRODUCTION_APP_CHECK_SITE_KEY !== "__VOXEL_PRODUCTION_APP_CHECK_SITE_KEY__") {
+            productionAppCheck = firebase.appCheck();
+            productionAppCheck.activate(
+                new firebase.appCheck.ReCaptchaEnterpriseProvider(PRODUCTION_APP_CHECK_SITE_KEY),
+                true
+            );
+        }
+        async function secureGetAppCheckToken(forceRefresh = false) {
+            if (typeof stagingGetAppCheckToken === 'function') {
+                return stagingGetAppCheckToken(forceRefresh);
+            }
+            if (!productionAppCheck) throw new Error('App Check unavailable');
+            const result = await productionAppCheck.getToken(Boolean(forceRefresh));
+            const token = result?.token;
+            if (typeof token !== 'string' || token.length < 20 || token.length > 8192) {
+                throw new Error('App Check token unavailable');
+            }
+            return token;
+        }
         const auth = firebase.auth();
         const database = firebase.database();
         const googleProvider = new firebase.auth.GoogleAuthProvider();
@@ -2928,8 +2951,8 @@ setTimeout(() => {
                 throw new Error('บัญชีเปลี่ยนระหว่างตรวจสอบสิทธิ์');
             }
             const headers = { 'Authorization': 'Bearer ' + token };
-            if (typeof stagingGetAppCheckToken === 'function') {
-                headers['X-Firebase-AppCheck'] = await stagingGetAppCheckToken(false);
+            if (typeof secureGetAppCheckToken === 'function') {
+                headers['X-Firebase-AppCheck'] = await secureGetAppCheckToken(false);
             }
             const response = await fetch(SECURE_WORKER_HTTP_BASE + '/entitlements', {
                 method: 'GET', headers
@@ -3054,9 +3077,12 @@ setTimeout(() => {
                 formData.append('file', fileInput.files[0]);
                 formData.append('item', item);
 
+                const appCheckToken = typeof secureGetAppCheckToken === 'function'
+                    ? await secureGetAppCheckToken(false) : '';
                 const response = await fetch(SECURE_WORKER_HTTP_BASE + '/verify-slip', {
                     method: 'POST',
-                    headers: { 'Authorization': 'Bearer ' + token },
+                    headers: { 'Authorization': 'Bearer ' + token,
+                        ...(appCheckToken ? { 'X-Firebase-AppCheck': appCheckToken } : {}) },
                     body: formData
                 });
                 const result = await response.json().catch(() => ({}));
