@@ -1,4 +1,5 @@
 name: PromptPay Feature Verification
+# rerun after fail-closed regression update
 
 on:
   push:
