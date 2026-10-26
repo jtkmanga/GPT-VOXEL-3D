@@ -98,7 +98,9 @@ jobs:
         run: |
           import json, os, urllib.error, urllib.request
           origin='https://voxel-run-v2-demo.hjinffv5426.workers.dev'
-          with urllib.request.urlopen(origin+'/health',timeout=20) as r:
+          opener=urllib.request.build_opener()
+          opener.addheaders=[('User-Agent','VOXEL-Slip2Go-Smoke/1.0'),('Accept','application/json,text/plain')]
+          with opener.open(origin+'/health',timeout=20) as r:
               body=r.read(65537).decode().strip()
               assert r.status==200 and body=='VOXEL RUN v4 online',(r.status,body)
           account=os.environ['CLOUDFLARE_ACCOUNT_ID']; token=os.environ['CLOUDFLARE_API_TOKEN']
