@@ -52,8 +52,10 @@ def post_signed(url,payload,secret):
         if final.scheme!="https" or final.hostname!="sandbox-pgw.2c2p.com":
             raise RuntimeError("unexpected-api-origin")
         envelope=json.loads(r.read(100_000).decode())
-    if set(envelope)!={"payload"} or not isinstance(envelope["payload"],str):
-        raise RuntimeError("unexpected-response-envelope")
+    if set(envelope)!={"payload"} or not isinstance(envelope.get("payload"),str):
+        keys=",".join(sorted(str(k) for k in envelope.keys())) if isinstance(envelope,dict) else type(envelope).__name__
+        code=envelope.get("respCode",envelope.get("code","none")) if isinstance(envelope,dict) else "none"
+        raise RuntimeError("unexpected-response-envelope:keys="+keys+";code="+str(code)[:24])
     return jwt_verify(envelope["payload"],secret)
 
 def main():
