@@ -334,7 +334,9 @@ export async function publicSiteConfig(env){
     return json({ok:true,announcement:data.announcement||'',freeName:data.freeName||'Free Server ฟรีไม่จำกัด',
       vipName:data.vipName||'VIP Server 1',maintenanceFree:Boolean(data.maintenanceFree),
       maintenanceVip:Boolean(data.maintenanceVip),paymentPaused:Boolean(data.paymentPaused),
-      vipAdmissionPaused:Boolean(data.vipAdmissionPaused),pricing:data.pricing||{currency:'THB',speed:10,coin:20,vip1:50},
+      vipAdmissionPaused:Boolean(data.vipAdmissionPaused),
+      promptPayEnabled:env.PAYMENT_MODE==='2c2p-promptpay',
+      pricing:data.pricing||{currency:'THB',speed:10,coin:20,vip1:50},
       serverNow:data.serverNow});
   } catch (_) { return json({ok:false,error:'Site config unavailable'},503); }
 }
