@@ -217,7 +217,7 @@
         }
 
         function securePromptPayRequestId() {
-            const nonce = typeof crypto?.randomUUID === 'function'
+            const nonce = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
                 ? crypto.randomUUID().replace(/-/g, '')
                 : (Date.now().toString(36) + Math.random().toString(36).slice(2));
             return ('vip1pp:' + nonce).slice(0, 96);
