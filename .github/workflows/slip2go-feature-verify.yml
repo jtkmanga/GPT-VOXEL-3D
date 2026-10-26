@@ -1,5 +1,5 @@
 name: Slip2Go Feature Verification
-# rerun after staging assertion cleanup
+# rerun after canary gate
 
 on:
   push:
@@ -22,6 +22,7 @@ jobs:
     env:
       PRODUCTION_PAYMENT_MODE: slip2go-production
       PRODUCTION_SLIP2GO_CONFIG_VERIFIED: 'true'
+      PRODUCTION_SLIP2GO_ROLLOUT: canary
     steps:
       - uses: actions/checkout@v4
         with:
@@ -55,6 +56,7 @@ jobs:
           node scripts/rebuild/prepare-production.cjs
           grep -q '"PAYMENT_MODE": "slip2go-production"' work/production/prepared/wrangler.jsonc
           grep -q '"PAYMENT_RECEIVER_TYPE": "phone_number"' work/production/prepared/wrangler.jsonc
+          grep -q '"PAYMENT_ROLLOUT": "canary"' work/production/prepared/wrangler.jsonc
           ! grep -q 'SLIP2GO_API_SECRET' work/production/prepared/wrangler.jsonc
           ! grep -q 'PAYMENT_RECEIVER_ACCOUNT' work/production/prepared/wrangler.jsonc
       - name: Wrangler Slip2Go dry run
