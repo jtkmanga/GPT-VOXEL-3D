@@ -267,7 +267,7 @@
                                     <span id="badge-owned-vip1" class="hidden text-[9px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 px-1.5 py-0.2 rounded">มีสิทธิ์แล้ว</span>
                                 </div>
                                 <div class="text-[10px] text-slate-400 mt-0.5">สมาชิก: <span id="count-vip1" class="text-amber-400 font-bold">0/100</span></div>
-                                <div class="text-[10px] text-slate-400 mt-0.5">50 บาท/เดือน</div>
+                                <div id="live-vip-price" class="text-[10px] text-slate-400 mt-0.5">50 บาท/เดือน</div>
                             </div>
                             <div id="action-vip1" class="flex gap-1"></div>
                         </div>
@@ -635,7 +635,8 @@ let liveSiteConfig = {
     maintenanceFree: false,
     maintenanceVip: false,
     paymentPaused: false,
-    vipAdmissionPaused: false
+    vipAdmissionPaused: false,
+    pricing: { currency:'THB', speed:10, coin:20, vip1:50 }
 };
 
 function liveApplySiteConfig(value = {}) {
@@ -646,7 +647,13 @@ function liveApplySiteConfig(value = {}) {
         maintenanceFree: value.maintenanceFree === true,
         maintenanceVip: value.maintenanceVip === true,
         paymentPaused: value.paymentPaused === true,
-        vipAdmissionPaused: value.vipAdmissionPaused === true
+        vipAdmissionPaused: value.vipAdmissionPaused === true,
+        pricing: {
+            currency: value?.pricing?.currency === 'THB' ? 'THB' : 'THB',
+            speed: Number.isSafeInteger(Number(value?.pricing?.speed)) && Number(value.pricing.speed) > 0 ? Number(value.pricing.speed) : 10,
+            coin: Number.isSafeInteger(Number(value?.pricing?.coin)) && Number(value.pricing.coin) > 0 ? Number(value.pricing.coin) : 20,
+            vip1: Number.isSafeInteger(Number(value?.pricing?.vip1)) && Number(value.pricing.vip1) > 0 ? Number(value.pricing.vip1) : 50
+        }
     };
     const announcement = document.getElementById('live-announcement');
     if (announcement) {
@@ -657,6 +664,9 @@ function liveApplySiteConfig(value = {}) {
     if (free) free.textContent = '🌐 ' + liveSiteConfig.freeName;
     const vip = document.getElementById('live-vip-name');
     if (vip) vip.textContent = '👑 ' + liveSiteConfig.vipName;
+    const vipPrice = document.getElementById('live-vip-price');
+    if (vipPrice) vipPrice.textContent = liveSiteConfig.pricing.vip1 + ' บาท/เดือน';
+    if (typeof updateShopUI === 'function') updateShopUI();
     if (typeof renderServersUI === 'function') renderServersUI();
 }
 
@@ -1482,6 +1492,7 @@ setTimeout(() => {
 
         function updateShopUI() {
             const now = Date.now();
+            const livePricing = typeof liveSiteConfig !== 'undefined' ? liveSiteConfig?.pricing : null;
             const btnSpeed = document.getElementById('btn-buy-speed');
             const btnCoin = document.getElementById('btn-buy-coin');
 
@@ -1500,7 +1511,8 @@ setTimeout(() => {
             } else {
                 btnSpeed.disabled = false;
                 btnSpeed.className = "bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-white font-bold py-1.5 px-3 rounded-lg text-xs shadow transition active:scale-95 flex-shrink-0";
-                btnSpeed.innerText = "10 ฿";
+                const price = Number(livePricing?.speed) || 10;
+                btnSpeed.innerText = price + " ฿";
             }
 
             if (state.shop.coinBuffExpires > now) {
@@ -1510,7 +1522,8 @@ setTimeout(() => {
             } else {
                 btnCoin.disabled = false;
                 btnCoin.className = "bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-white font-bold py-1.5 px-3 rounded-lg text-xs shadow transition active:scale-95 flex-shrink-0";
-                btnCoin.innerText = "20 ฿";
+                const price = Number(livePricing?.coin) || 20;
+                btnCoin.innerText = price + " ฿";
             }
         }
 
@@ -2989,7 +3002,9 @@ setTimeout(() => {
             }
 
             if (type === 'vip1') {
-                alert('การชำระเงิน VIP ยังไม่เปิดใช้งาน: ราคา 50 บาท/เดือน ต้องยืนยันผู้ให้บริการชำระเงินก่อน');
+                const livePricing = typeof liveSiteConfig !== 'undefined' ? liveSiteConfig?.pricing : null;
+                const vipPrice = Number(livePricing?.vip1) || SECURE_PAYMENT_ITEMS.vip1.price;
+                alert('การชำระเงิน VIP ยังไม่เปิดใช้งาน: ราคา ' + vipPrice + ' บาท/เดือน ต้องยืนยันผู้ให้บริการชำระเงินก่อน');
                 return;
             }
 
@@ -2999,10 +3014,13 @@ setTimeout(() => {
                 return;
             }
 
-            state.pendingPayment = { type, price: cfg.price, title: title || cfg.title };
+            const livePricing = typeof liveSiteConfig !== 'undefined' ? liveSiteConfig?.pricing : null;
+            const livePrice = Number(livePricing?.[type]);
+            const price = Number.isSafeInteger(livePrice) && livePrice > 0 ? livePrice : cfg.price;
+            state.pendingPayment = { type, price, title: title || cfg.title };
             document.getElementById('pay-item-title').innerText = state.pendingPayment.title;
-            document.getElementById('pay-item-price').innerText = cfg.price + ' บาท';
-            document.getElementById('promptpay-qr-img').src = `https://promptpay.io/${SECURE_PAYMENT_PROMPTPAY_TARGET}/${cfg.price}.png`;
+            document.getElementById('pay-item-price').innerText = price + ' บาท';
+            document.getElementById('promptpay-qr-img').src = `https://promptpay.io/${SECURE_PAYMENT_PROMPTPAY_TARGET}/${price}.png`;
             document.getElementById('slip-file-input').value = '';
             document.getElementById('payment-modal').classList.remove('hidden');
         };
