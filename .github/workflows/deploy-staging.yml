@@ -7,6 +7,10 @@ on:
       - development/voxel-continuous
     paths:
       - 'src/client/staging-runtime.js'
+      - 'src/client/live-site-config.js'
+      - 'src/client/menu-shop.js'
+      - 'src/client/secure-entitlements-payment.js'
+      - 'src/client/index.template.html'
       - 'src/client/secure-socket-handoff.js'
       - 'scripts/rebuild/build-staging-client.cjs'
       - 'src/shared/staging.mjs'
@@ -24,6 +28,7 @@ on:
       - 'src/worker/http.mjs'
       - 'src/worker/twoc2p-sandbox.mjs'
       - 'src/worker/twoc2p-store.mjs'
+      - 'src/worker/vip-store.mjs'
       - 'scripts/rebuild/staging-options.cjs'
       - 'wrangler.staging.jsonc'
       - '.github/workflows/deploy-staging.yml'
