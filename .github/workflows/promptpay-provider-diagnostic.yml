@@ -10,6 +10,7 @@ on:
       - 'tests/rebuild/gate5-2c2p-promptpay-matrix.py'
       - 'tests/rebuild/gate5-2c2p-promptpay-details.py'
       - 'tests/rebuild/gate5-2c2p-promptpay-pay-matrix.py'
+      - 'tests/rebuild/gate5-2c2p-promptpay-options.py'
 
 permissions:
   contents: read
@@ -35,4 +36,5 @@ jobs:
           python tests/rebuild/gate5-2c2p-promptpay-matrix.py
           python tests/rebuild/gate5-2c2p-promptpay-details.py || true
           python tests/rebuild/gate5-2c2p-promptpay-pay-matrix.py
+          python tests/rebuild/gate5-2c2p-promptpay-options.py
           exit 0
