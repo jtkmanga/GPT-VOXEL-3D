@@ -1,3 +1,4 @@
+# Verification trigger after canonical client sync
 name: PromptPay Feature Gate
 
 on:
