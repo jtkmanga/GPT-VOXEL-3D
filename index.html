@@ -703,7 +703,7 @@ setTimeout(() => {
         firebase.initializeApp(firebaseConfig);
         let productionAppCheck = null;
         if (typeof STAGING_CLIENT_ENABLED === 'undefined' &&
-            PRODUCTION_APP_CHECK_SITE_KEY !== "6LcKvwAuAAAAAIHinTMGJ_FBKuNr83ndyuryhEnF") {
+            !PRODUCTION_APP_CHECK_SITE_KEY.startsWith("__VOXEL_")) {
             productionAppCheck = firebase.appCheck();
             productionAppCheck.activate(
                 new firebase.appCheck.ReCaptchaEnterpriseProvider(PRODUCTION_APP_CHECK_SITE_KEY),
