@@ -27,9 +27,7 @@ function fixture(serverId = 'vip1') {
     if (!elements.has(id)) {
       const classes = new Set();
       elements.set(id, { style: {}, value: '', innerText: '', innerHTML: '', src: '', disabled: false,
-        classList: { add: name => classes.add(name), remove: name => classes.delete(name), contains: name => classes.has(name),
-          toggle: (name, force) => force === undefined ? (classes.has(name) ? (classes.delete(name), false) : (classes.add(name), true))
-            : (force ? classes.add(name) : classes.delete(name), Boolean(force)) } });
+        classList: { add: name => classes.add(name), remove: name => classes.delete(name), contains: name => classes.has(name) } });
     }
     return elements.get(id);
   }
@@ -61,13 +59,8 @@ function fixture(serverId = 'vip1') {
     localStorage: { removeItem() {} }, alert: message => alerts.push(message),
     async fetch(url, options) {
       requests.push({ url, options });
-      assert.equal(options.headers.Authorization, 'Bearer synthetic-p7-sdk-token');
-      if (/\/payments\/promptpay\/checkout$/.test(url)) {
-        assert.equal(options.method, 'POST');
-        return { ok: false, status: 503, async json() { return { ok: false, error: 'PromptPay production payment is disabled' }; } };
-      }
-      assert.match(url, /\/entitlements$/, 'Only entitlement or fail-closed PromptPay requests are allowed');
-      assert.equal(options.method, 'GET');
+      assert.match(url, /\/entitlements$/, 'Only a synthetic entitlement response is allowed');
+      assert.equal(options.method, 'GET'); assert.equal(options.headers.Authorization, 'Bearer synthetic-p7-sdk-token');
       if (fetchError) throw Error('Synthetic entitlement outage');
       return { ok: true, async json() { return { ok: true, entitlements: { vip1Expires: entitlement },
         servers: { vip1: { count: 0, max: 100 } }, serverNow: now }; } };
@@ -228,24 +221,13 @@ test('P7 stale account or overlapping startup cannot close or overwrite a newer 
   }
 });
 
-test('P7 VIP PromptPay checkout ignores forged price and fails closed while production payment is disabled', async () => {
+test('P7 VIP purchase and forged slip/grant entrypoints perform no production payment or entitlement mutation', async () => {
   const f = fixture();
   f.context.openPaymentModal('vip1', 1, 'Forged price');
-  await flush();
-  assert.equal(f.state.pendingPayment.type, 'vip1');
-  assert.equal(f.state.pendingPayment.price, 50);
-  assert.equal(f.element('promptpay-qr-img').src, '');
-  assert.equal(f.requests.length, 1);
-  assert.match(f.requests[0].url, /\/payments\/promptpay\/checkout$/);
-  const checkoutBody = JSON.parse(f.requests[0].options.body);
-  assert.deepEqual(Object.keys(checkoutBody), ['requestId']);
-  assert.equal(Object.hasOwn(checkoutBody, 'price'), false);
-  assert.ok(f.alerts.some(message => /disabled|PromptPay/i.test(message)));
+  assert.equal(f.state.pendingPayment, undefined); assert.equal(f.element('promptpay-qr-img').src, '');
   f.state.pendingPayment = { type: 'vip1', price: 1 };
-  await f.context.verifyAndBuySlip();
-  assert.equal(f.context.grantPurchasedItem(), false);
-  assert.equal(f.requests.length, 1);
-  assert.deepEqual(f.state.userVipSubscriptions, {});
+  await f.context.verifyAndBuySlip(); assert.equal(f.context.grantPurchasedItem(), false);
+  assert.equal(f.requests.length, 0); assert.deepEqual(f.state.userVipSubscriptions, {});
 });
 
 test('P7 server chooser advertises unlimited Free players and VIP 100 seats at 50 THB per month', () => {
