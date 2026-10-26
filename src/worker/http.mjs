@@ -160,18 +160,28 @@ export async function handlePaymentQr(request, env) {
   let result;
   try { result=await slipResponse.json(); }
   catch (_) { return jsonResponse(request,env,{ok:false,error:'Invalid response from QR service'},502); }
+  const providerCode=String(result?.code??'').trim();
+  const providerMessage=typeof result?.message==='string' ? result.message.trim().slice(0,160) : '';
+  if(!slipResponse.ok||providerCode!=='200') {
+    const safeCode=/^\d{3,6}$/.test(providerCode)?providerCode:'unknown';
+    return jsonResponse(request,env,{
+      ok:false,
+      error:'Slip2Go QR error ['+safeCode+']'+(providerMessage?' '+providerMessage:'')
+    },502);
+  }
   const data=result?.data||{};
   let qr;
   try { qr=new URL(String(data.qrImageLink||'')); }
-  catch (_) { return jsonResponse(request,env,{ok:false,error:'Payment QR service returned invalid data'},502); }
+  catch (_) { return jsonResponse(request,env,{ok:false,error:'Slip2Go QR success response is missing a valid image URL'},502); }
   const returnedAmount=Number(data.amount);
   const returnedName=String(data.accountName||'').trim();
-  if(!slipResponse.ok||String(result?.code)!=='200'||qr.protocol!=='https:'||qr.username||qr.password||
-      !Number.isFinite(returnedAmount)||returnedAmount!==price||returnedName!==receiver.accountName) {
-    return jsonResponse(request,env,{ok:false,error:result?.message||'Payment QR generation failed'},502);
+  if(qr.protocol!=='https:'||qr.username||qr.password||
+      !Number.isFinite(returnedAmount)||returnedAmount!==price) {
+    return jsonResponse(request,env,{ok:false,error:'Slip2Go QR success response failed integrity checks'},502);
   }
   return jsonResponse(request,env,{
-    ok:true,item,price,currency:'THB',qrImageUrl:qr.href,accountName:returnedName
+    ok:true,item,price,currency:'THB',qrImageUrl:qr.href,
+    accountName:returnedName||receiver.accountName
   });
 }
 
