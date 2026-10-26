@@ -49,3 +49,5 @@ jobs:
           node scripts/rebuild/prepare-production.cjs
       - name: Production Wrangler dry run
         run: npx wrangler deploy --dry-run --config work/production/prepared/wrangler.jsonc --outdir work/promptpay-production-dry-run
+      - name: Real 2C2P Sandbox PPQR issuance probe
+        run: python tests/rebuild/gate5-2c2p-promptpay-probe.py
