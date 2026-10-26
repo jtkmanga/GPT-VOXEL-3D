@@ -1,5 +1,5 @@
 name: Slip2Go Feature Verification
-# rerun after staging builder fix
+# rerun after staging assertion cleanup
 
 on:
   push:
