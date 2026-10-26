@@ -1,0 +1,60 @@
+name: PromptPay Release Verification
+
+on:
+  push:
+    branches:
+      - feature/promptpay-dynamic-qr
+    paths:
+      - '.github/workflows/promptpay-release-verify.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      PRODUCTION_PAYMENT_MODE: 2c2p-promptpay-production
+      PRODUCTION_TWOC2P_MERCHANT_ID: SYNTHETICMERCHANT01
+      PRODUCTION_TWOC2P_SECRET_KEY: synthetic-secret-for-ci-only-000000000000000000
+      PRODUCTION_TWOC2P_PROMPTPAY_CAPABILITY_VERIFIED: 'true'
+      PRODUCTION_TWOC2P_PROMPTPAY_CHECKOUT_ENABLED: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/promptpay-dynamic-qr
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci
+      - name: Full regression and source checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/rebuild/run-tests.cjs
+          node scripts/rebuild/build-client.cjs --check
+          node scripts/rebuild/check-syntax.cjs
+          node scripts/rebuild/check-static.cjs
+          node scripts/rebuild/check-staging.cjs --allow-unconfigured
+          node scripts/rebuild/check-secrets.cjs
+          git diff --check
+      - name: PromptPay production preparation with synthetic protected values
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/rebuild/check-production-readiness.cjs
+          node scripts/rebuild/prepare-production.cjs
+          grep -q '"PAYMENT_MODE": "2c2p-promptpay-production"' work/production/prepared/wrangler.jsonc
+          grep -q '"TWOC2P_PRODUCTION_MERCHANT_ID": "SYNTHETICMERCHANT01"' work/production/prepared/wrangler.jsonc
+          grep -q '"TWOC2P_PROMPTPAY_CHECKOUT_ENABLED": "false"' work/production/prepared/wrangler.jsonc
+          ! grep -q 'synthetic-secret-for-ci-only' work/production/prepared/wrangler.jsonc
+          ! grep -q 'TWOC2P_PRODUCTION_SECRET_KEY' work/production/prepared/wrangler.jsonc
+      - name: PromptPay Wrangler dry run
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --dry-run --config work/production/prepared/wrangler.jsonc --outdir work/promptpay-dry-run
+          test -d work/promptpay-dry-run
