@@ -12,6 +12,7 @@ const workerBundles = new Map();
 const PROJECT_ID = 'rebuild-synthetic-project';
 const CERTS_URL = 'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com';
 const SLIP_URL = 'https://connect.slip2go.com/api/verify-slip/qr-image/info';
+const SLIP_QR_URL = 'https://connect.slip2go.com/api/qr-payment/generate-qr-image-link';
 const APP_CHECK_JWKS_URL = 'https://firebaseappcheck.googleapis.com/v1/jwks';
 const APP_CHECK_APP_ID = '1:123456789:web:abcdef1234567890';
 const NativeResponse = globalThis.Response;
@@ -153,6 +154,16 @@ function createHarness(options = {}) {
     data: { amount: 50, transRef: 'synthetic-transaction-001', sender: { bank: { id: 'mock-bank' } } }
   };
   let slipStatus = options.slipStatus ?? 200;
+  let slipQrResult = options.slipQrResult ?? {
+    code: '200',
+    message: 'Success',
+    data: {
+      qrImageLink: 'https://cdn.synthetic.invalid/promptpay-qr.jpg',
+      accountName: 'Synthetic Receiver',
+      amount: '50.00'
+    }
+  };
+  let slipQrStatus = options.slipQrStatus ?? 200;
   class FakeDate extends Date {
     constructor(...args) { super(...(args.length ? args : [currentTime])); }
     static now() { return currentTime; }
@@ -220,6 +231,10 @@ function createHarness(options = {}) {
       if (request.headers.get('Authorization') !== 'synthetic-slip-secret') throw Error('Only synthetic payment credentials allowed');
       return NativeResponse.json(slipResult, { status: slipStatus });
     }
+    if (request.url === SLIP_QR_URL) {
+      if (request.headers.get('Authorization') !== 'synthetic-slip-secret') throw Error('Only synthetic payment credentials allowed');
+      return NativeResponse.json(slipQrResult, { status: slipQrStatus });
+    }
     throw Error(`External traffic denied by rebuild harness: ${request.url}`);
   }
   const runtimeCrypto = {
@@ -266,8 +281,12 @@ function createHarness(options = {}) {
     FIREBASE_PROJECT_ID: PROJECT_ID,
     ALLOWED_ORIGIN: options.allowedOrigin ?? 'https://rebuild.invalid',
     PAYMENT_MODE: 'slip2go-production',
+    PAYMENT_ROLLOUT: 'public',
+    ADMIN_OWNER_EMAIL: 'owner@example.invalid',
     SLIP2GO_API_SECRET: ['synthetic','slip','secret'].join('-'),
-    PAYMENT_RECEIVER_ACCOUNT: 'synthetic-test-receiver',
+    PAYMENT_RECEIVER_ACCOUNT: '0999999999',
+    PAYMENT_RECEIVER_NAME: 'Synthetic Receiver',
+    PAYMENT_RECEIVER_TYPE: 'phone_number',
     PAYMENT_WEBHOOK_SECRET: ['synthetic','p7-only','provider-signing-fixture'].join('-'),
     ...options.env
   };
@@ -453,8 +472,9 @@ function createHarness(options = {}) {
     zone: zoneId => env.ZONE.object(`free-zone-${zoneId}`).instance,
     restartRoom,
     setSlipResult(result, status = 200) { slipResult = result; slipStatus = status; },
+    setSlipQrResult(result, status = 200) { slipQrResult = result; slipQrStatus = status; },
     async close() { await settle(); for (const storage of allStores) storage.db.close(); }
   };
 }
 
-module.exports = { createHarness, PROJECT_ID, CERTS_URL, SLIP_URL };
+module.exports = { createHarness, PROJECT_ID, CERTS_URL, SLIP_URL, SLIP_QR_URL };

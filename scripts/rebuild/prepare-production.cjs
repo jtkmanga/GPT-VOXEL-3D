@@ -25,9 +25,20 @@ const config=JSON.parse(fs.readFileSync(basePath,'utf8'));
 if(config.name!=='voxel-run-v2-demo') fail('production worker identity changed');
 if(config.vars?.FIREBASE_PROJECT_ID!=='lucky-game-6936b') fail('production Firebase project changed');
 if(config.vars?.PAYMENT_MODE!=='disabled') fail('base production payment must remain disabled');
-if(process.env.PRODUCTION_PAYMENT_MODE!=='disabled') fail('first production rollout requires PRODUCTION_PAYMENT_MODE=disabled');
+const paymentMode=String(process.env.PRODUCTION_PAYMENT_MODE||'').trim();
+if(!['disabled','slip2go-production'].includes(paymentMode))
+  fail('PRODUCTION_PAYMENT_MODE must be disabled or slip2go-production');
+if(paymentMode==='slip2go-production' && process.env.PRODUCTION_SLIP2GO_CONFIG_VERIFIED!=='true')
+  fail('Slip2Go production configuration has not been verified');
+const paymentRollout=paymentMode==='slip2go-production'
+  ? String(process.env.PRODUCTION_SLIP2GO_ROLLOUT||'').trim() : '';
+if(paymentMode==='slip2go-production' && !['canary','public'].includes(paymentRollout))
+  fail('Slip2Go rollout must be canary or public');
 config.triggers={...(config.triggers||{}),crons:['0 17 * * *']};
-config.vars={...(config.vars||{}),ADMIN_OWNER_EMAIL:'jtkmanga@gmail.com'};
+config.vars={...(config.vars||{}),ADMIN_OWNER_EMAIL:'jtkmanga@gmail.com',PAYMENT_MODE:paymentMode,
+  ...(paymentMode==='slip2go-production'?{
+    PAYMENT_RECEIVER_TYPE:'phone_number',PAYMENT_ROLLOUT:paymentRollout
+  }:{})};
 
 const firebase=productionFirebasePublicConfig();
 if(firebase.projectId!=='lucky-game-6936b'||firebase.authDomain!=='lucky-game-6936b.firebaseapp.com')
@@ -55,4 +66,4 @@ const entryAbsolute=path.resolve(path.dirname(basePath),config.main);
 config.main=path.relative(outDir,entryAbsolute).split(path.sep).join('/');
 fs.mkdirSync(outDir,{recursive:true});
 fs.writeFileSync(outPath,JSON.stringify(config,null,2)+'\n',{mode:0o600});
-console.log('PASS production config prepared: values withheld; payment disabled; cron present');
+console.log('PASS production config prepared: values withheld; payment mode='+paymentMode+'; cron present');

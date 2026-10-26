@@ -1,4 +1,4 @@
-import { corsHeaders, jsonResponse, handleVerifySlip, handleGetEntitlements, handlePaymentWebhook } from './http.mjs';
+import { corsHeaders, jsonResponse, handlePaymentQr, handleVerifySlip, handleGetEntitlements, handlePaymentWebhook } from './http.mjs';
 import { normalizeZoneId } from './spatial.mjs';
 import { stagingContext, stagingError, stagingAsset } from './staging-boundary.mjs';
 import { handle2c2pSandbox } from './twoc2p-sandbox.mjs';
@@ -68,6 +68,7 @@ const worker = {
     }
 
     if (url.pathname==='/payments/webhook') return handlePaymentWebhook(request,env);
+    if (url.pathname==='/payment-qr') return handlePaymentQr(request,env);
 
     if (url.pathname==='/health')
       return new Response(staging.enabled ? 'GPT-VOXEL-3D staging online' : 'VOXEL RUN v4 online',
