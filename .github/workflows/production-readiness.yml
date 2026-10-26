@@ -11,6 +11,7 @@ on:
       - 'package.json'
       - 'package-lock.json'
       - 'wrangler.jsonc'
+      - 'index.html'
       - 'src/**'
       - 'tests/**'
   workflow_dispatch:
@@ -68,10 +69,6 @@ jobs:
               raise SystemExit('forbidden deploy primitive present after self-check: ' + ', '.join(hits))
           print('PASS no production deploy primitive present')
           PY
-      - name: Production configuration preflight
-        run: node scripts/rebuild/check-production-readiness.cjs
-      - name: Prepare production config (no deploy)
-        run: node scripts/rebuild/prepare-production.cjs
       - name: Release verification suite
         shell: bash
         run: |
@@ -87,6 +84,10 @@ jobs:
             node scripts/rebuild/check-staging.cjs --allow-unconfigured
             node scripts/rebuild/check-secrets.cjs
           fi
+      - name: Production configuration preflight
+        run: node scripts/rebuild/check-production-readiness.cjs
+      - name: Prepare production config (no deploy)
+        run: node scripts/rebuild/prepare-production.cjs
       - name: Production config safety guard
         shell: bash
         run: |
