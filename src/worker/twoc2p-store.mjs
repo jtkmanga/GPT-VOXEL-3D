@@ -257,7 +257,9 @@ export class Twoc2pSandboxStore {
           subscriptionId: `2c2p:sandbox:${row.invoice_no}`, uid: row.uid,
           version: 1, status: 'active', product: 'vip1', amount: Number(row.quoted_amount ?? row.amount), currency: 'THB',
           periodStart: Number(row.period_start), periodEnd: Number(row.period_end) };
-        const applied = this.vip.applyVerifiedSandboxCalendarEvent({ event, fingerprint });
+        const applied = this.vip.applyVerifiedSandboxCalendarEvent({
+          event, fingerprint, quotedAmount:Number(row.quoted_amount ?? row.amount)
+        });
         if (!applied.ok) return applied;
         this.sql.exec(`UPDATE voxel_2c2p_sandbox_checkouts SET status='paid',payment_id=?,reference_no=?,
           recurring_unique_id=?,recurring_sequence_no=?,tran_ref=?,transaction_date_time=? WHERE invoice_no=?`,
