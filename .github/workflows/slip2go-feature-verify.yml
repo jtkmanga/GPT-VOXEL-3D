@@ -1,5 +1,5 @@
 name: Slip2Go Feature Verification
-# rerun after canary gate
+# final rerun including permanent Slip2Go workflows
 
 on:
   push:
