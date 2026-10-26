@@ -115,6 +115,51 @@ export class VipStore {
     return this.#applyNormalizedEvent(event, fingerprint);
   }
 
+  applyVerifiedPromptPayPurchase({ uid, invoiceNo, fingerprint, quotedAmount = VIP_PRODUCT.amount }) {
+    if (!validVipUid(uid) || typeof invoiceNo !== 'string' || !/^[A-Za-z0-9]{1,20}$/.test(invoiceNo) ||
+        typeof fingerprint !== 'string' || !/^[a-f0-9]{64}$/.test(fingerprint) ||
+        !Number.isSafeInteger(quotedAmount) || quotedAmount < 1 || quotedAmount > 100000)
+      return denied('Invalid verified PromptPay purchase', 400);
+    const eventId = `2c2p:promptpay:${fingerprint}`;
+    return this.ctx.storage.transactionSync(() => {
+      const now = Date.now();
+      const receipt = this.sql.exec('SELECT fingerprint,response_json FROM voxel_vip_events WHERE event_id=?',
+        eventId).toArray()[0];
+      if (receipt) {
+        if (receipt.fingerprint !== fingerprint) return denied('PromptPay event ID conflict');
+        return { ...JSON.parse(receipt.response_json), replayed: true };
+      }
+      const previous = this.sql.exec(`SELECT subscription_id,version,status,period_start,period_end
+        FROM voxel_vip_subscriptions WHERE uid=?`, uid).toArray()[0];
+      if (previous && !String(previous.subscription_id || '').startsWith('2c2p:promptpay:'))
+        return denied('Identity already owns another subscription');
+      const current = this.entitlement(uid, now);
+      const baseExpiry = Math.max(now, Number(current.expiresAt) || 0);
+      const subscriptionId = previous?.subscription_id || `2c2p:promptpay:${invoiceNo}`;
+      const version = (Number(previous?.version) || 0) + 1;
+      const periodStart = previous?.status === 'active' && Number(previous.period_start) <= now &&
+        Number(previous.period_end) > now ? Number(previous.period_start) : now;
+      const periodEnd = baseExpiry + VIP_PRODUCT.duration;
+      this.sql.exec(`INSERT INTO voxel_vip_subscriptions
+        (uid,subscription_id,version,status,period_start,period_end,fingerprint,updated_at)
+        VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(uid) DO UPDATE SET
+        subscription_id=excluded.subscription_id,version=excluded.version,status=excluded.status,
+        period_start=excluded.period_start,period_end=excluded.period_end,
+        fingerprint=excluded.fingerprint,updated_at=excluded.updated_at`,
+      uid, subscriptionId, version, 'active', periodStart, periodEnd, fingerprint, now);
+      this.sql.exec(`INSERT INTO voxel_entitlements
+        (uid,speed_expires,coin_expires,vip1_expires,updated_at) VALUES (?,0,0,?,?)
+        ON CONFLICT(uid) DO UPDATE SET vip1_expires=excluded.vip1_expires,updated_at=excluded.updated_at`,
+      uid, periodEnd, now);
+      const result = { ok: true, eventId, uid, version, status: 'active',
+        expiresAt: periodEnd, replayed: false };
+      this.sql.exec(`INSERT INTO voxel_vip_events
+        (event_id,subscription_id,uid,version,fingerprint,response_json,created_at) VALUES (?,?,?,?,?,?,?)`,
+      eventId, subscriptionId, uid, version, fingerprint, JSON.stringify(result), now);
+      return result;
+    });
+  }
+
   #applyNormalizedEvent(event, fingerprint) {
     return this.ctx.storage.transactionSync(() => {
       const now = Date.now();
