@@ -31,6 +31,8 @@ else if(appCheckMatch[1].length<10||appCheckMatch[1].length>256||/[\s\u0000-\u00
 if(mode==='slip2go-production'){
   if(process.env.PRODUCTION_SLIP2GO_CONFIG_VERIFIED!=='true')
     fail('PRODUCTION_SLIP2GO_CONFIG_VERIFIED must be true');
+  if(!['canary','public'].includes(String(process.env.PRODUCTION_SLIP2GO_ROLLOUT||'').trim()))
+    fail('PRODUCTION_SLIP2GO_ROLLOUT must be canary or public');
   const httpSource=fs.readFileSync('src/worker/http.mjs','utf8');
   if(!httpSource.includes('https://connect.slip2go.com/api/qr-payment/generate-qr-image-link') ||
       !httpSource.includes('https://connect.slip2go.com/api/verify-slip/qr-image/info'))
