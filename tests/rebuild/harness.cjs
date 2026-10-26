@@ -281,6 +281,8 @@ function createHarness(options = {}) {
     FIREBASE_PROJECT_ID: PROJECT_ID,
     ALLOWED_ORIGIN: options.allowedOrigin ?? 'https://rebuild.invalid',
     PAYMENT_MODE: 'slip2go-production',
+    PAYMENT_ROLLOUT: 'public',
+    ADMIN_OWNER_EMAIL: 'owner@example.invalid',
     SLIP2GO_API_SECRET: ['synthetic','slip','secret'].join('-'),
     PAYMENT_RECEIVER_ACCOUNT: '0999999999',
     PAYMENT_RECEIVER_NAME: 'Synthetic Receiver',
