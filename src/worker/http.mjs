@@ -151,7 +151,7 @@ export async function handlePaymentQr(request, env) {
   try {
     slipResponse=await fetch('https://connect.slip2go.com/api/qr-payment/generate-qr-image-link',{
       method:'POST',
-      headers:{'Authorization':env.SLIP2GO_API_SECRET,'Content-Type':'application/json'},
+      headers:{'Authorization':`Bearer ${env.SLIP2GO_API_SECRET}`,'Content-Type':'application/json'},
       body:JSON.stringify(buildSlip2GoQrPayload({receiver,price}))
     });
   } catch (_) {
@@ -316,7 +316,7 @@ export async function handleVerifySlip(request, env) {
       {
         method: 'POST',
         headers: {
-          'Authorization': env.SLIP2GO_API_SECRET
+          'Authorization': `Bearer ${env.SLIP2GO_API_SECRET}`
         },
         body: slipForm
       }

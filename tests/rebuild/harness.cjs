@@ -228,11 +228,11 @@ function createHarness(options = {}) {
       return NativeResponse.json({ users: [{ localId: claims.sub, disabled: mode === 'disabled', validSince }] });
     }
     if (request.url === SLIP_URL) {
-      if (request.headers.get('Authorization') !== 'synthetic-slip-secret') throw Error('Only synthetic payment credentials allowed');
+      if (request.headers.get('Authorization') !== 'Bearer synthetic-slip-secret') throw Error('Only synthetic payment credentials allowed');
       return NativeResponse.json(slipResult, { status: slipStatus });
     }
     if (request.url === SLIP_QR_URL) {
-      if (request.headers.get('Authorization') !== 'synthetic-slip-secret') throw Error('Only synthetic payment credentials allowed');
+      if (request.headers.get('Authorization') !== 'Bearer synthetic-slip-secret') throw Error('Only synthetic payment credentials allowed');
       return NativeResponse.json(slipQrResult, { status: slipQrStatus });
     }
     throw Error(`External traffic denied by rebuild harness: ${request.url}`);

@@ -1,5 +1,22 @@
 # Current development state
 
+## D075 — Production Slip2Go Bearer hotfix candidate (2026-10-26)
+
+Starting production source 76ea31b961ae1b3bd9d173579ba18ede4354ea0c. Owner approved a narrowly scoped review
+candidate after the live canary returned Slip2Go 401001 Authentication Token
+Mismatch and the provider Authentication page showed the required Bearer scheme.
+
+This hotfix candidate changes only the two Slip2Go provider call sites in the
+production source: PromptPay QR generation and slip-image verification now send
+`Authorization: Bearer <secret>`. The shared synthetic provider harness is
+updated to expect the same scheme, and a regression test requires both provider
+endpoints to use Bearer while rejecting raw-secret Authorization headers.
+
+No secret value is read or written. No production Worker, Cloudflare binding,
+payment, entitlement, account permission or public rollout is changed by this
+commit. This branch is for review and CI only; production deployment remains a
+separate owner-approved action.
+
 ## D070 — reconcile Gate 7 reviewed history baseline (2026-10-23)
 
 Starting source 675d85413af328e3c09446da574a0b6ee0bc6f56. Independently
