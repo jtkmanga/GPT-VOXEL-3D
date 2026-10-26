@@ -189,7 +189,12 @@
         };
 
         const SECURE_PAYMENT_ITEMS = catalog.CLIENT_PAYMENT_ITEMS;
-        const secureBaseClosePaymentModal = closePaymentModal;
+        const secureBaseClosePaymentModal = typeof closePaymentModal === 'function'
+            ? closePaymentModal
+            : function() {
+                const modal = typeof document !== 'undefined' ? document.getElementById('payment-modal') : null;
+                if (modal?.classList) modal.classList.add('hidden');
+            };
         let securePromptPayPollTimer = null;
         let securePromptPayPolling = false;
 
