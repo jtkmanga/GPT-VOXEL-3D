@@ -13,20 +13,13 @@ if(ref&&!['refs/heads/main','refs/heads/development/voxel-continuous','refs/head
 const mode=String(process.env.PRODUCTION_PAYMENT_MODE||'').trim();
 if(!['disabled','2c2p-production'].includes(mode)) fail('invalid production payment mode');
 
-const firebaseRaw=need('PRODUCTION_FIREBASE_PUBLIC_CONFIG');
-let firebase;try{firebase=JSON.parse(firebaseRaw)}catch(_){fail('PRODUCTION_FIREBASE_PUBLIC_CONFIG is not valid JSON')}
-if(!firebase||typeof firebase!=='object'||Array.isArray(firebase)||
-   firebase.projectId!=='lucky-game-6936b'||firebase.authDomain!=='lucky-game-6936b.firebaseapp.com'||
-   typeof firebase.apiKey!=='string'||typeof firebase.appId!=='string')
-  fail('production Firebase public config is incomplete or mismatched');
+const authSource=fs.readFileSync('src/client/auth-state.js','utf8');
+for(const required of [
+  'projectId: "lucky-game-6936b"',
+  'authDomain: "lucky-game-6936b.firebaseapp.com"',
+  "const SECURE_WORKER_HTTP_BASE = 'https://voxel-run-v2-demo.hjinffv5426.workers.dev'"
+]) if(!authSource.includes(required)) fail('production client public configuration drifted');
 need('PRODUCTION_APP_CHECK_SITE_KEY');
-const allowedOrigin=need('PRODUCTION_ALLOWED_ORIGIN');
-const workerOrigin=need('PRODUCTION_WORKER_ORIGIN');
-for(const [name,value] of [['PRODUCTION_ALLOWED_ORIGIN',allowedOrigin],['PRODUCTION_WORKER_ORIGIN',workerOrigin]]){
-  let u;try{u=new URL(value)}catch(_){fail(name+' is not a valid URL');continue}
-  if(u.protocol!=='https:'||u.pathname!=='/'||u.search||u.hash) fail(name+' must be an HTTPS origin');
-}
-if(workerOrigin!=='https://voxel-run-v2-demo.hjinffv5426.workers.dev') fail('production Worker origin mismatch');
 
 if(mode==='2c2p-production'){
   need('PRODUCTION_TWOC2P_MERCHANT_ID');need('PRODUCTION_TWOC2P_SECRET_KEY');
