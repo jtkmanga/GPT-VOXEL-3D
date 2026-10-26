@@ -4,12 +4,14 @@ on:
   push:
     branches:
       - main
+      - release/production-prep
     paths:
       - '.github/workflows/production-readiness.yml'
       - 'scripts/rebuild/**'
       - 'package.json'
       - 'package-lock.json'
       - 'wrangler.jsonc'
+      - 'index.html'
       - 'src/**'
       - 'tests/**'
   workflow_dispatch:
@@ -36,10 +38,6 @@ jobs:
       PRODUCTION_PAYMENT_MODE: ${{ vars.PRODUCTION_PAYMENT_MODE }}
       PRODUCTION_TWOC2P_MERCHANT_ID: ${{ secrets.PRODUCTION_TWOC2P_MERCHANT_ID }}
       PRODUCTION_TWOC2P_SECRET_KEY: ${{ secrets.PRODUCTION_TWOC2P_SECRET_KEY }}
-      PRODUCTION_FIREBASE_PUBLIC_CONFIG: ${{ vars.PRODUCTION_FIREBASE_PUBLIC_CONFIG }}
-      PRODUCTION_APP_CHECK_SITE_KEY: ${{ vars.PRODUCTION_APP_CHECK_SITE_KEY }}
-      PRODUCTION_ALLOWED_ORIGIN: ${{ vars.PRODUCTION_ALLOWED_ORIGIN }}
-      PRODUCTION_WORKER_ORIGIN: ${{ vars.PRODUCTION_WORKER_ORIGIN }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -71,8 +69,6 @@ jobs:
               raise SystemExit('forbidden deploy primitive present after self-check: ' + ', '.join(hits))
           print('PASS no production deploy primitive present')
           PY
-      - name: Production configuration preflight
-        run: node scripts/rebuild/check-production-readiness.cjs
       - name: Release verification suite
         shell: bash
         run: |
@@ -88,14 +84,28 @@ jobs:
             node scripts/rebuild/check-staging.cjs --allow-unconfigured
             node scripts/rebuild/check-secrets.cjs
           fi
+      - name: Production configuration preflight
+        run: node scripts/rebuild/check-production-readiness.cjs
+      - name: Prepare production config (no deploy)
+        run: node scripts/rebuild/prepare-production.cjs
       - name: Production config safety guard
         shell: bash
         run: |
           set -euo pipefail
           git diff --check
+          git diff --exit-code origin/main -- wrangler.jsonc
           grep -q '"name": "voxel-run-v2-demo"' wrangler.jsonc
           grep -q '"FIREBASE_PROJECT_ID": "lucky-game-6936b"' wrangler.jsonc
           grep -q '"PAYMENT_MODE": "disabled"' wrangler.jsonc
           ! grep -q 'gpt-voxel-3d-staging-01' wrangler.jsonc
           ! grep -q 'TWOC2P_SANDBOX_' wrangler.jsonc
-          echo "PASS production config safety guard"
+          grep -q '"0 17 \* \* \*"' work/production/prepared/wrangler.jsonc
+          grep -q '"ADMIN_OWNER_EMAIL": "jtkmanga@gmail.com"' work/production/prepared/wrangler.jsonc
+          echo "PASS production baseline preserved; prepared release config contains cron/admin controls"
+      - name: Wrangler production dry run (prepared config only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --dry-run --config work/production/prepared/wrangler.jsonc --outdir work/production-dry-run
+          test -d work/production-dry-run
+          echo "PASS production dry run; no deployment performed"

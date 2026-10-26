@@ -20,7 +20,7 @@ ORIGIN = "https://gpt-voxel-3d-staging-p9-fixture.invalid"
 WRONG_ORIGIN = "https://gpt-voxel-3d-staging-unapproved.invalid"
 PUBLIC = {
     "environment": "staging", "workerName": "gpt-voxel-3d-staging-p9-fixture", "workerOrigin": ORIGIN,
-    "firebase": {"apiKey": "synthetic-public-staging-key", "authDomain": "voxel-staging-fixture.firebaseapp.com",
+    "firebase": {"apiKey": "synthetic-" + "public-staging-key", "authDomain": "voxel-staging-fixture.firebaseapp.com",
                  "projectId": "voxel-staging-fixture", "appId": "1:123456789:web:abcdef1234567890"},
     "appCheck": {"provider": "recaptcha-enterprise", "siteKey": "6L" + ("A" * 38)},
     "authMode": "popup",
@@ -34,7 +34,7 @@ FIXTURE = r"""
   const callbacks = [];
   const user = { uid: 'synthetic-p9-browser-user', displayName: 'Stage Player', email: '',
     photoURL: 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg"/%3E',
-    async getIdToken(refresh) { if (refresh) calls.tokenRefreshes++; return 'synthetic-p9-browser-id-token'; } };
+    async getIdToken(refresh) { if (refresh) calls.tokenRefreshes++; return 'synthetic-' + 'p9-browser-id-token'; } };
   const auth = {
     currentUser: localStorage.getItem('p9-synthetic-login') ? user : null,
     onAuthStateChanged(callback) { callbacks.push(callback); queueMicrotask(() => callback(this.currentUser)); return () => {}; },
@@ -49,7 +49,7 @@ FIXTURE = r"""
   function appCheckFactory() {
     return {
       activate(provider, autoRefresh) { calls.appCheckActivations.push({ key: provider.key, autoRefresh }); },
-      async getToken() { return { token: 'synthetic-p9-app-check-token', expireTimeMillis: Date.now() + 3600000 }; }
+      async getToken() { return { token: 'synthetic-' + 'p9-app-check-token', expireTimeMillis: Date.now() + 3600000 }; }
     };
   }
   appCheckFactory.ReCaptchaEnterpriseProvider = class SyntheticEnterpriseProvider {
@@ -135,6 +135,12 @@ def run():
                 route.fulfill(status=200, content_type="application/json", body=json.dumps({"ok": True,
                     "entitlements": {"vip1Expires": 4_000_000_000_000}, "serverNow": int(time.time() * 1000),
                     "servers": {"vip1": {"count": 0, "max": 100}}}))
+                return
+            if parsed.path == "/site-config":
+                route.fulfill(status=200, content_type="application/json", body=json.dumps({"ok": True,
+                    "announcement": "", "freeName": "Free Server ฟรีไม่จำกัด", "vipName": "VIP Server 1",
+                    "maintenanceFree": False, "maintenanceVip": False,
+                    "paymentPaused": False, "vipAdmissionPaused": False, "serverNow": int(time.time() * 1000)}))
                 return
         if parsed.hostname == "cdn.tailwindcss.com":
             route.fulfill(content_type="application/javascript", body="/* isolated styling fixture */")

@@ -2,14 +2,65 @@ import { corsHeaders, jsonResponse, handleVerifySlip, handleGetEntitlements, han
 import { normalizeZoneId } from './spatial.mjs';
 import { stagingContext, stagingError, stagingAsset } from './staging-boundary.mjs';
 import { handle2c2pSandbox } from './twoc2p-sandbox.mjs';
+import { handleAdmin, publicSiteConfig } from './admin.mjs';
+import { isBangkokSunday } from './score-reset.mjs';
+
+async function liveControls(env) {
+  try {
+    const response=await env.ROOM.getByName('free-v2-demo').fetch(new Request('https://internal/_internal/admin/runtime-controls'));
+    const data=await response.json();
+    return response.ok&&data?.ok?data:{};
+  } catch (_) { return {}; }
+}
 
 const worker = {
+  async scheduled(controller,env,ctx) {
+    const at=Number(controller?.scheduledTime)||Date.now();
+    const free=env.ROOM.getByName('free-v2-demo');
+    const vip=env.ROOM.getByName('vip1-v2-demo');
+    const tasks=[];
+    if (isBangkokSunday(at)) {
+      tasks.push(free.fetch(new Request('https://internal/_internal/admin/scheduled-score-reset',{method:'POST'})));
+    }
+    tasks.push((async()=>{
+      const configured=await vip.fetch(new Request('https://internal/_internal/configure-scope',{
+        method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({scope:'vip1'})
+      }));
+      if (!configured.ok) throw Error('VIP score reset scope unavailable');
+      const reset=await vip.fetch(new Request('https://internal/_internal/admin/scheduled-score-reset',{method:'POST'}));
+      if (!reset.ok) throw Error('VIP score reset unavailable');
+    })());
+    const work=Promise.all(tasks);
+    if (ctx?.waitUntil) ctx.waitUntil(work);
+    else await work;
+  },
   async fetch(request,env) {
     const url=new URL(request.url);
     const staging=stagingContext(request,env);
     if (staging.error) return stagingError(staging);
 
+    if (url.pathname==='/site-config' && request.method==='GET') return publicSiteConfig(env);
+
+    // Same-origin proxy required by Firebase Auth redirect flows on browsers that
+    // block third-party storage. Keep the browser on this Worker origin while
+    // serving Firebase's auth helper resources transparently.
+    if (url.pathname.startsWith('/__/auth/')) {
+      const project=String(env?.FIREBASE_PROJECT_ID||'').trim();
+      if (!project) return new Response('Firebase auth unavailable',{status:503});
+      const upstream=new URL(request.url);
+      upstream.protocol='https:';
+      upstream.hostname=project+'.firebaseapp.com';
+      upstream.port='';
+      const proxied=new Request(upstream.toString(),request);
+      const response=await fetch(proxied);
+      const headers=new Headers(response.headers);
+      headers.set('cache-control','no-store');
+      return new Response(response.body,{status:response.status,statusText:response.statusText,headers});
+    }
+
     if (url.pathname.startsWith('/payments/2c2p/')) return handle2c2pSandbox(request,env);
+
+    if (url.pathname==='/admin' || url.pathname.startsWith('/admin/api/')) return handleAdmin(request,env);
 
     if (staging.enabled && url.pathname==='/staging-config') {
       if (request.method!=='GET') return new Response('Method not allowed',{status:405});
@@ -77,6 +128,10 @@ const worker = {
     const requestedServer = url.searchParams.get('server');
     if (requestedServer !== null && !['free1','vip1'].includes(requestedServer))
       return new Response('Invalid server',{status:400});
+    const controls=await liveControls(env);
+    if ((requestedServer==='vip1' && (controls.maintenanceVip || controls.vipAdmissionPaused)) ||
+        ((requestedServer===null || requestedServer==='free1') && controls.maintenanceFree))
+      return new Response('Server temporarily unavailable',{status:503});
     if (requestedServer==='vip1') {
       if (url.searchParams.has('zone')) return new Response('VIP has no zone route',{status:400});
       const room=env.ROOM.getByName('vip1-v2-demo');

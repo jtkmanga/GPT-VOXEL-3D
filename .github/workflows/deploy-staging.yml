@@ -1,3 +1,4 @@
+# Validation marker: admin-liveops-final-synced
 name: Deploy Staging Worker
 
 on:
@@ -6,11 +7,17 @@ on:
       - development/voxel-continuous
     paths:
       - 'src/client/staging-runtime.js'
+      - 'src/client/live-site-config.js'
+      - 'src/client/menu-shop.js'
+      - 'src/client/secure-entitlements-payment.js'
+      - 'src/client/index.template.html'
       - 'src/client/secure-socket-handoff.js'
       - 'scripts/rebuild/build-staging-client.cjs'
       - 'src/shared/staging.mjs'
       - 'src/worker/staging-boundary.mjs'
       - 'src/worker/firebase-auth.mjs'
+      - 'src/worker/admin.mjs'
+      - 'src/worker/router.mjs'
       - 'src/worker/game-room.mjs'
       - 'src/worker/zone-room.mjs'
       - 'src/worker/zone-visibility.mjs'
@@ -21,6 +28,7 @@ on:
       - 'src/worker/http.mjs'
       - 'src/worker/twoc2p-sandbox.mjs'
       - 'src/worker/twoc2p-store.mjs'
+      - 'src/worker/vip-store.mjs'
       - 'scripts/rebuild/staging-options.cjs'
       - 'wrangler.staging.jsonc'
       - '.github/workflows/deploy-staging.yml'

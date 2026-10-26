@@ -315,7 +315,7 @@ def run():
                     and modules["versions"] == {"LEGACY_ROOM": 4, "ZONE_ROOM": 6}
                     and modules["vip"] == {"price": 50, "title": "สิทธิ์ VIP Server 1 (30 วัน)"}
                     and modules["rewards"] == [100, 500, 1000, 5000, 9999]
-                    and modules["sourceCount"] == 12,
+                    and modules["sourceCount"] == 13,
                     f"Browser shared ESM contracts changed: {modules}",
                 )
                 passed("browser imports canonical client manifest and shared config/protocol/catalog ESM")
@@ -327,8 +327,8 @@ def run():
                         return {path, status: response.status, length: body.length};
                     }));
                 }""")
-                require(len(sources) == 12 and all(source["status"] == 200 and source["length"] > 0 for source in sources), f"Local canonical sources unavailable: {sources}")
-                passed("all 12 ordered classic source fragments load from loopback with HTTP 200")
+                require(len(sources) == 13 and all(source["status"] == 200 and source["length"] > 0 for source in sources), f"Local canonical sources unavailable: {sources}")
+                passed("all 13 ordered classic source fragments load from loopback with HTTP 200")
 
                 page.locator("#btn-google-login").evaluate("element => element.click()")
                 require(page.evaluate("window.__p1FirebaseCalls.signIns === 1"), "Google-login inline handler did not call isolated auth fixture")

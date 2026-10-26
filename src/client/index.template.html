@@ -22,6 +22,7 @@
     <!-- Firebase SDKs (v10.8.0 - Compat Version for Web) -->
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-check-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
 
     <style>
@@ -201,6 +202,8 @@
                 <p class="text-slate-400 text-xs mt-0.5">3D Sunset Adventure & Servers (Multiplayer)</p>
             </div>
 
+            <div id="live-announcement" class="hidden mb-3 rounded-xl border border-amber-500/50 bg-amber-500/10 text-amber-200 px-3 py-2 text-xs font-semibold"></div>
+
             <!-- Login / Auth Container -->
             <div id="auth-container" class="space-y-3">
                 <!-- State 1: Real Google Login Button -->
@@ -248,7 +251,7 @@
                         <div id="card-free1" class="bg-slate-800/80 border border-slate-700 rounded-xl p-2.5 flex items-center justify-between transition">
                             <div class="text-left">
                                 <div class="text-xs font-bold text-white flex items-center gap-1.5">
-                                    <span>🌐 Free Server ฟรีไม่จำกัด</span>
+                                    <span id="live-free-name">🌐 Free Server ฟรีไม่จำกัด</span>
                                 </div>
                                 <div class="text-[10px] text-slate-400 mt-0.5">ไม่จำกัดผู้เล่น</div>
                             </div>
@@ -261,11 +264,11 @@
                         <div id="card-vip1" class="bg-slate-800/80 border border-slate-700 rounded-xl p-2.5 flex items-center justify-between transition">
                             <div class="text-left">
                                 <div class="text-xs font-bold text-white flex items-center gap-1.5">
-                                    <span>👑 VIP Server 1</span>
+                                    <span id="live-vip-name">👑 VIP Server 1</span>
                                     <span id="badge-owned-vip1" class="hidden text-[9px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 px-1.5 py-0.2 rounded">มีสิทธิ์แล้ว</span>
                                 </div>
                                 <div class="text-[10px] text-slate-400 mt-0.5">สมาชิก: <span id="count-vip1" class="text-amber-400 font-bold">0/100</span></div>
-                                <div class="text-[10px] text-slate-400 mt-0.5">50 บาท/เดือน</div>
+                                <div id="live-vip-price" class="text-[10px] text-slate-400 mt-0.5">50 บาท/เดือน</div>
                             </div>
                             <div id="action-vip1" class="flex gap-1"></div>
                         </div>

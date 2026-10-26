@@ -92,7 +92,8 @@ export async function verifyFirebaseIdToken(token,projectId) {
   const valid=await crypto.subtle.verify('RSASSA-PKCS1-v1_5',publicKey,
     decodeBase64(parts[2]),new TextEncoder().encode(parts[0]+'.'+parts[1]));
   if (!valid) throw Error('Invalid token signature');
-  return {uid:claims.sub,exp:claims.exp,authTime:claims.auth_time};
+  const email=typeof claims.email==='string' && claims.email.length<=320 ? claims.email : '';
+  return {uid:claims.sub,exp:claims.exp,authTime:claims.auth_time,email,emailVerified:claims.email_verified===true};
 }
 
 function firebaseWebApiKey(env) {

@@ -22,6 +22,7 @@
     <!-- Firebase SDKs (v10.8.0 - Compat Version for Web) -->
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-check-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
 
     <style>
@@ -201,6 +202,8 @@
                 <p class="text-slate-400 text-xs mt-0.5">3D Sunset Adventure & Servers (Multiplayer)</p>
             </div>
 
+            <div id="live-announcement" class="hidden mb-3 rounded-xl border border-amber-500/50 bg-amber-500/10 text-amber-200 px-3 py-2 text-xs font-semibold"></div>
+
             <!-- Login / Auth Container -->
             <div id="auth-container" class="space-y-3">
                 <!-- State 1: Real Google Login Button -->
@@ -248,7 +251,7 @@
                         <div id="card-free1" class="bg-slate-800/80 border border-slate-700 rounded-xl p-2.5 flex items-center justify-between transition">
                             <div class="text-left">
                                 <div class="text-xs font-bold text-white flex items-center gap-1.5">
-                                    <span>🌐 Free Server ฟรีไม่จำกัด</span>
+                                    <span id="live-free-name">🌐 Free Server ฟรีไม่จำกัด</span>
                                 </div>
                                 <div class="text-[10px] text-slate-400 mt-0.5">ไม่จำกัดผู้เล่น</div>
                             </div>
@@ -261,11 +264,11 @@
                         <div id="card-vip1" class="bg-slate-800/80 border border-slate-700 rounded-xl p-2.5 flex items-center justify-between transition">
                             <div class="text-left">
                                 <div class="text-xs font-bold text-white flex items-center gap-1.5">
-                                    <span>👑 VIP Server 1</span>
+                                    <span id="live-vip-name">👑 VIP Server 1</span>
                                     <span id="badge-owned-vip1" class="hidden text-[9px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 px-1.5 py-0.2 rounded">มีสิทธิ์แล้ว</span>
                                 </div>
                                 <div class="text-[10px] text-slate-400 mt-0.5">สมาชิก: <span id="count-vip1" class="text-amber-400 font-bold">0/100</span></div>
-                                <div class="text-[10px] text-slate-400 mt-0.5">50 บาท/เดือน</div>
+                                <div id="live-vip-price" class="text-[10px] text-slate-400 mt-0.5">50 บาท/เดือน</div>
                             </div>
                             <div id="action-vip1" class="flex gap-1"></div>
                         </div>
@@ -626,6 +629,62 @@ function integrateMovement(state, input, elapsedSeconds, options = {}) {
 
 return { MOVEMENT, validMovementInput, validMovementFrames, integrateMovement };
 })();
+let liveSiteConfig = {
+    announcement: '',
+    freeName: 'Free Server ฟรีไม่จำกัด',
+    vipName: 'VIP Server 1',
+    maintenanceFree: false,
+    maintenanceVip: false,
+    paymentPaused: false,
+    vipAdmissionPaused: false,
+    pricing: { currency:'THB', speed:10, coin:20, vip1:50 }
+};
+
+function liveApplySiteConfig(value = {}) {
+    liveSiteConfig = {
+        announcement: typeof value.announcement === 'string' ? value.announcement.slice(0, 300) : '',
+        freeName: typeof value.freeName === 'string' && value.freeName ? value.freeName.slice(0, 80) : 'Free Server ฟรีไม่จำกัด',
+        vipName: typeof value.vipName === 'string' && value.vipName ? value.vipName.slice(0, 80) : 'VIP Server 1',
+        maintenanceFree: value.maintenanceFree === true,
+        maintenanceVip: value.maintenanceVip === true,
+        paymentPaused: value.paymentPaused === true,
+        vipAdmissionPaused: value.vipAdmissionPaused === true,
+        pricing: {
+            currency: value?.pricing?.currency === 'THB' ? 'THB' : 'THB',
+            speed: Number.isSafeInteger(Number(value?.pricing?.speed)) && Number(value.pricing.speed) > 0 ? Number(value.pricing.speed) : 10,
+            coin: Number.isSafeInteger(Number(value?.pricing?.coin)) && Number(value.pricing.coin) > 0 ? Number(value.pricing.coin) : 20,
+            vip1: Number.isSafeInteger(Number(value?.pricing?.vip1)) && Number(value.pricing.vip1) > 0 ? Number(value.pricing.vip1) : 50
+        }
+    };
+    const announcement = document.getElementById('live-announcement');
+    if (announcement) {
+        announcement.textContent = liveSiteConfig.announcement;
+        announcement.classList.toggle('hidden', !liveSiteConfig.announcement);
+    }
+    const free = document.getElementById('live-free-name');
+    if (free) free.textContent = '🌐 ' + liveSiteConfig.freeName;
+    const vip = document.getElementById('live-vip-name');
+    if (vip) vip.textContent = '👑 ' + liveSiteConfig.vipName;
+    const vipPrice = document.getElementById('live-vip-price');
+    if (vipPrice) vipPrice.textContent = liveSiteConfig.pricing.vip1 + ' บาท/เดือน';
+    if (typeof updateShopUI === 'function') updateShopUI();
+    if (typeof renderServersUI === 'function') renderServersUI();
+}
+
+async function liveLoadSiteConfig() {
+    try {
+        if (window.location.protocol === 'http:') return;
+        const base = SECURE_WORKER_HTTP_BASE || window.location.origin;
+        const response = await fetch(base + '/site-config', { cache: 'no-store' });
+        const value = await response.json();
+        if (response.ok && value?.ok) liveApplySiteConfig(value);
+    } catch (_) {}
+}
+
+setTimeout(() => {
+    liveLoadSiteConfig();
+    setInterval(liveLoadSiteConfig, 5000);
+}, 0);
 
         // --- FIREBASE REAL GOOGLE AUTHENTICATION & DATABASE CONFIGURATION ---
         const firebaseConfig = {
@@ -640,7 +699,29 @@ return { MOVEMENT, validMovementInput, validMovementFrames, integrateMovement };
         };
 
         // Initialize Firebase
+        const PRODUCTION_APP_CHECK_SITE_KEY = "6LcKvwAuAAAAAIHinTMGJ_FBKuNr83ndyuryhEnF";
         firebase.initializeApp(firebaseConfig);
+        let productionAppCheck = null;
+        if (typeof STAGING_CLIENT_ENABLED === 'undefined' &&
+            PRODUCTION_APP_CHECK_SITE_KEY !== "6LcKvwAuAAAAAIHinTMGJ_FBKuNr83ndyuryhEnF") {
+            productionAppCheck = firebase.appCheck();
+            productionAppCheck.activate(
+                new firebase.appCheck.ReCaptchaEnterpriseProvider(PRODUCTION_APP_CHECK_SITE_KEY),
+                true
+            );
+        }
+        async function secureGetAppCheckToken(forceRefresh = false) {
+            if (typeof stagingGetAppCheckToken === 'function') {
+                return stagingGetAppCheckToken(forceRefresh);
+            }
+            if (!productionAppCheck) throw new Error('App Check unavailable');
+            const result = await productionAppCheck.getToken(Boolean(forceRefresh));
+            const token = result?.token;
+            if (typeof token !== 'string' || token.length < 20 || token.length > 8192) {
+                throw new Error('App Check token unavailable');
+            }
+            return token;
+        }
         const auth = firebase.auth();
         const database = firebase.database();
         const googleProvider = new firebase.auth.GoogleAuthProvider();
@@ -796,6 +877,10 @@ return { MOVEMENT, validMovementInput, validMovementFrames, integrateMovement };
         }
 
         function selectFreeServer(serverId) {
+            if ((typeof liveSiteConfig !== 'undefined' && liveSiteConfig?.maintenanceFree)) {
+                alert('Free Server กำลังปิดปรับปรุงชั่วคราว');
+                return;
+            }
             state.selectedServerId = serverId;
             renderServersUI();
         }
@@ -833,6 +918,10 @@ return { MOVEMENT, validMovementInput, validMovementFrames, integrateMovement };
         }
 
         function selectVipServer(serverId) {
+            if ((typeof liveSiteConfig !== 'undefined' && liveSiteConfig?.maintenanceVip) || (typeof liveSiteConfig !== 'undefined' && liveSiteConfig?.vipAdmissionPaused)) {
+                alert('VIP Server ปิดรับผู้เล่นชั่วคราว');
+                return;
+            }
             const vipSub = state.userVipSubscriptions[serverId];
             const now = Date.now();
             let isVipActive = false;
@@ -868,11 +957,15 @@ return { MOVEMENT, validMovementInput, validMovementFrames, integrateMovement };
             }
 
             if (actionFree1) {
-                actionFree1.innerHTML = `
-                    <button onclick="selectFreeServer('free1')" class="${isSelectedFree1 ? 'bg-blue-500 text-slate-950 font-extrabold text-[11px] px-3 py-1 rounded-lg' : 'bg-slate-700 hover:bg-slate-600 text-blue-400 font-bold text-[11px] px-2.5 py-1 rounded-lg border border-blue-500/30 transition active:scale-95'}">
-                        ${isSelectedFree1 ? 'กำลังเลือก' : 'เลือกเซิร์ฟ'}
-                    </button>
-                `;
+                if ((typeof liveSiteConfig !== 'undefined' && liveSiteConfig?.maintenanceFree)) {
+                    actionFree1.innerHTML = '<button disabled class="bg-slate-700 text-slate-400 font-bold text-[11px] px-3 py-1 rounded-lg cursor-not-allowed">ปิดปรับปรุง</button>';
+                } else {
+                    actionFree1.innerHTML = `
+                        <button onclick="selectFreeServer('free1')" class="${isSelectedFree1 ? 'bg-blue-500 text-slate-950 font-extrabold text-[11px] px-3 py-1 rounded-lg' : 'bg-slate-700 hover:bg-slate-600 text-blue-400 font-bold text-[11px] px-2.5 py-1 rounded-lg border border-blue-500/30 transition active:scale-95'}">
+                            ${isSelectedFree1 ? 'กำลังเลือก' : 'เลือกเซิร์ฟ'}
+                        </button>
+                    `;
+                }
             }
 
             ['vip1'].forEach(sId => {
@@ -928,7 +1021,13 @@ return { MOVEMENT, validMovementInput, validMovementFrames, integrateMovement };
                 if (actionContainer) {
                     actionContainer.innerHTML = '';
 
-                    if (isVipActive) {
+                    if ((typeof liveSiteConfig !== 'undefined' && liveSiteConfig?.maintenanceVip) || (typeof liveSiteConfig !== 'undefined' && liveSiteConfig?.vipAdmissionPaused)) {
+                        const disabled = document.createElement('button');
+                        disabled.disabled = true;
+                        disabled.className = "bg-slate-700 text-slate-400 font-bold text-[11px] px-3 py-1 rounded-lg cursor-not-allowed";
+                        disabled.innerText = (typeof liveSiteConfig !== 'undefined' && liveSiteConfig?.maintenanceVip) ? "ปิดปรับปรุง" : "ปิดรับชั่วคราว";
+                        actionContainer.appendChild(disabled);
+                    } else if (isVipActive) {
                         const btnSelect = document.createElement('button');
                         btnSelect.className = isSelected
                             ? "bg-amber-500 text-slate-950 font-extrabold text-[11px] px-3 py-1 rounded-lg"
@@ -1416,6 +1515,7 @@ return { MOVEMENT, validMovementInput, validMovementFrames, integrateMovement };
 
         function updateShopUI() {
             const now = Date.now();
+            const livePricing = typeof liveSiteConfig !== 'undefined' ? liveSiteConfig?.pricing : null;
             const btnSpeed = document.getElementById('btn-buy-speed');
             const btnCoin = document.getElementById('btn-buy-coin');
 
@@ -1434,7 +1534,8 @@ return { MOVEMENT, validMovementInput, validMovementFrames, integrateMovement };
             } else {
                 btnSpeed.disabled = false;
                 btnSpeed.className = "bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-white font-bold py-1.5 px-3 rounded-lg text-xs shadow transition active:scale-95 flex-shrink-0";
-                btnSpeed.innerText = "10 ฿";
+                const price = Number(livePricing?.speed) || 10;
+                btnSpeed.innerText = price + " ฿";
             }
 
             if (state.shop.coinBuffExpires > now) {
@@ -1444,7 +1545,8 @@ return { MOVEMENT, validMovementInput, validMovementFrames, integrateMovement };
             } else {
                 btnCoin.disabled = false;
                 btnCoin.className = "bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-white font-bold py-1.5 px-3 rounded-lg text-xs shadow transition active:scale-95 flex-shrink-0";
-                btnCoin.innerText = "20 ฿";
+                const price = Number(livePricing?.coin) || 20;
+                btnCoin.innerText = price + " ฿";
             }
         }
 
@@ -2849,8 +2951,8 @@ return { MOVEMENT, validMovementInput, validMovementFrames, integrateMovement };
                 throw new Error('บัญชีเปลี่ยนระหว่างตรวจสอบสิทธิ์');
             }
             const headers = { 'Authorization': 'Bearer ' + token };
-            if (typeof stagingGetAppCheckToken === 'function') {
-                headers['X-Firebase-AppCheck'] = await stagingGetAppCheckToken(false);
+            if (typeof secureGetAppCheckToken === 'function') {
+                headers['X-Firebase-AppCheck'] = await secureGetAppCheckToken(false);
             }
             const response = await fetch(SECURE_WORKER_HTTP_BASE + '/entitlements', {
                 method: 'GET', headers
@@ -2923,7 +3025,9 @@ return { MOVEMENT, validMovementInput, validMovementFrames, integrateMovement };
             }
 
             if (type === 'vip1') {
-                alert('การชำระเงิน VIP ยังไม่เปิดใช้งาน: ราคา 50 บาท/เดือน ต้องยืนยันผู้ให้บริการชำระเงินก่อน');
+                const livePricing = typeof liveSiteConfig !== 'undefined' ? liveSiteConfig?.pricing : null;
+                const vipPrice = Number(livePricing?.vip1) || SECURE_PAYMENT_ITEMS.vip1.price;
+                alert('การชำระเงิน VIP ยังไม่เปิดใช้งาน: ราคา ' + vipPrice + ' บาท/เดือน ต้องยืนยันผู้ให้บริการชำระเงินก่อน');
                 return;
             }
 
@@ -2933,10 +3037,13 @@ return { MOVEMENT, validMovementInput, validMovementFrames, integrateMovement };
                 return;
             }
 
-            state.pendingPayment = { type, price: cfg.price, title: title || cfg.title };
+            const livePricing = typeof liveSiteConfig !== 'undefined' ? liveSiteConfig?.pricing : null;
+            const livePrice = Number(livePricing?.[type]);
+            const price = Number.isSafeInteger(livePrice) && livePrice > 0 ? livePrice : cfg.price;
+            state.pendingPayment = { type, price, title: title || cfg.title };
             document.getElementById('pay-item-title').innerText = state.pendingPayment.title;
-            document.getElementById('pay-item-price').innerText = cfg.price + ' บาท';
-            document.getElementById('promptpay-qr-img').src = `https://promptpay.io/${SECURE_PAYMENT_PROMPTPAY_TARGET}/${cfg.price}.png`;
+            document.getElementById('pay-item-price').innerText = price + ' บาท';
+            document.getElementById('promptpay-qr-img').src = `https://promptpay.io/${SECURE_PAYMENT_PROMPTPAY_TARGET}/${price}.png`;
             document.getElementById('slip-file-input').value = '';
             document.getElementById('payment-modal').classList.remove('hidden');
         };
@@ -2970,9 +3077,12 @@ return { MOVEMENT, validMovementInput, validMovementFrames, integrateMovement };
                 formData.append('file', fileInput.files[0]);
                 formData.append('item', item);
 
+                const appCheckToken = typeof secureGetAppCheckToken === 'function'
+                    ? await secureGetAppCheckToken(false) : '';
                 const response = await fetch(SECURE_WORKER_HTTP_BASE + '/verify-slip', {
                     method: 'POST',
-                    headers: { 'Authorization': 'Bearer ' + token },
+                    headers: { 'Authorization': 'Bearer ' + token,
+                        ...(appCheckToken ? { 'X-Firebase-AppCheck': appCheckToken } : {}) },
                     body: formData
                 });
                 const result = await response.json().catch(() => ({}));
@@ -3680,10 +3790,13 @@ return { MOVEMENT, validMovementInput, validMovementFrames, integrateMovement };
                     if (state.selectedServerId === 'vip1' || secureGameSocket?.secureServerId === 'vip1') break;
                     void secureBeginZoneHandoff(message);
                     break;
-                case "score":
-                    state.score = Math.max(Number(state.score) || 0, Number(message.score) || 0);
+                case "score": {
+                    if (message.uid && String(message.uid) !== String(state.userId || '')) break;
+                    const incoming = Math.max(0, Number(message.score) || 0);
+                    state.score = message.reset === true ? incoming : Math.max(Number(state.score) || 0, incoming);
                     updateScoreDisplay();
                     break;
+                }
                 case "leaderboard":
                     updateLeaderboardUI(secureNormalizeLeaderboard(message.top));
                     break;

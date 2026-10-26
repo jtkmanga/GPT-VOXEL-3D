@@ -450,10 +450,13 @@
                     if (state.selectedServerId === 'vip1' || secureGameSocket?.secureServerId === 'vip1') break;
                     void secureBeginZoneHandoff(message);
                     break;
-                case protocol.WS_MESSAGE.SCORE:
-                    state.score = Math.max(Number(state.score) || 0, Number(message.score) || 0);
+                case protocol.WS_MESSAGE.SCORE: {
+                    if (message.uid && String(message.uid) !== String(state.userId || '')) break;
+                    const incoming = Math.max(0, Number(message.score) || 0);
+                    state.score = message.reset === true ? incoming : Math.max(Number(state.score) || 0, incoming);
                     updateScoreDisplay();
                     break;
+                }
                 case protocol.WS_MESSAGE.LEADERBOARD:
                     updateLeaderboardUI(secureNormalizeLeaderboard(message.top));
                     break;

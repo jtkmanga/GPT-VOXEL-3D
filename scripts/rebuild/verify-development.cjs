@@ -46,7 +46,7 @@ function main() {
     const file = path.join(directory, `${name}.log`);
     let tail = '';
     try {
-      tail = fs.readFileSync(file, 'utf8').slice(-12000)
+      tail = fs.readFileSync(file, 'utf8').slice(-60000)
         .replace(/AIza[A-Za-z0-9_-]{30,}/g, '[redacted-firebase-key]')
         .replace(/(?:ghp_|github_pat_|sk_live_|rk_live_)[A-Za-z0-9_]{16,}/g, '[redacted-token]')
         .replace(/-----BEGIN [^-]*PRIVATE KEY-----[\s\S]*?-----END [^-]*PRIVATE KEY-----/g, '[redacted-private-key]');

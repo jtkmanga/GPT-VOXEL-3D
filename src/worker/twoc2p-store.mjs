@@ -44,7 +44,8 @@ function normalizedNotification(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw) ||
       required.some(key => !Object.hasOwn(raw, key)) ||
       Object.keys(raw).some(key => !required.includes(key) && !optional.includes(key)) ||
-      !merchantId(raw.merchantID) || !invoiceId(raw.invoiceNo) || raw.amount !== 50 ||
+      !merchantId(raw.merchantID) || !invoiceId(raw.invoiceNo) ||
+      !Number.isSafeInteger(raw.amount) || raw.amount < 1 || raw.amount > 100000 ||
       raw.currencyCode !== 'THB' || !recordId(raw.paymentID, 255) || !recordId(raw.referenceNo, 50) ||
       typeof raw.respCode !== 'string' || !/^\d{4}$/.test(raw.respCode) ||
       !providerCivilDate(raw.transactionDateTime) ||
@@ -71,7 +72,7 @@ function invoiceNumber(prefix) {
 function safeCheckout(row) {
   return { ok: true, invoiceNo: row.invoice_no, merchantID: row.merchant_id,
     invoicePrefix: row.invoice_prefix,
-    amount: Number(row.amount), currencyCode: row.currency_code, status: row.status,
+    amount: Number(row.quoted_amount ?? row.amount), currencyCode: row.currency_code, status: row.status,
     createdAt: Number(row.created_at), expiresAt: Number(row.expires_at),
     periodStart: Number(row.period_start), periodEnd: Number(row.period_end),
     tokenState: row.token_state };
@@ -96,6 +97,7 @@ export class Twoc2pSandboxStore {
       recurring_sequence_no TEXT, tran_ref TEXT, transaction_date_time TEXT,
       UNIQUE(uid,request_id)
     )`);
+    try { this.sql.exec('ALTER TABLE voxel_2c2p_sandbox_checkouts ADD COLUMN quoted_amount INTEGER NOT NULL DEFAULT 50 CHECK(quoted_amount>=1 AND quoted_amount<=100000)'); } catch (_) {}
     this.sql.exec(`CREATE INDEX IF NOT EXISTS voxel_2c2p_sandbox_uid_idx
       ON voxel_2c2p_sandbox_checkouts(uid,status,expires_at)`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS voxel_2c2p_sandbox_notifications (
@@ -114,13 +116,14 @@ export class Twoc2pSandboxStore {
       WHERE status='pending' AND expires_at<=?`, now);
   }
 
-  createCheckout(input, now = Date.now()) {
+  createCheckout(input, now = Date.now(), quotedAmount = 50) {
     if (!input || typeof input !== 'object' || Array.isArray(input) ||
         Object.keys(input).length !== 4 ||
         !['uid', 'merchantID', 'invoicePrefix', 'requestId'].every(key => Object.hasOwn(input, key)) ||
         !validVipUid(input.uid) || !merchantId(input.merchantID) || !recordId(input.requestId) ||
         typeof input.invoicePrefix !== 'string' || !/^[A-Za-z0-9]{1,15}$/.test(input.invoicePrefix) ||
-        !integerInstant(now)) return denied('Invalid Sandbox checkout request', 400);
+        !integerInstant(now) || !Number.isSafeInteger(quotedAmount) || quotedAmount < 1 || quotedAmount > 100000)
+      return denied('Invalid Sandbox checkout request', 400);
     return this.ctx.storage.transactionSync(() => {
       this.expire(now);
       const previous = this.sql.exec(`SELECT * FROM voxel_2c2p_sandbox_checkouts
@@ -145,10 +148,10 @@ export class Twoc2pSandboxStore {
         if (this.sql.exec('SELECT invoice_no FROM voxel_2c2p_sandbox_checkouts WHERE invoice_no=?', invoiceNo)
           .toArray()[0]) continue;
         this.sql.exec(`INSERT INTO voxel_2c2p_sandbox_checkouts
-          (invoice_no,uid,request_id,merchant_id,invoice_prefix,amount,currency_code,status,
+          (invoice_no,uid,request_id,merchant_id,invoice_prefix,amount,quoted_amount,currency_code,status,
           created_at,expires_at,period_start,period_end)
-          VALUES (?,?,?,?,?,50,'THB','pending',?,?,?,?)`, invoiceNo, input.uid, input.requestId,
-        input.merchantID, input.invoicePrefix, now, period.expiresAt, period.periodStart, period.periodEnd);
+          VALUES (?,?,?,?,?,50,?,'THB','pending',?,?,?,?)`, invoiceNo, input.uid, input.requestId,
+        input.merchantID, input.invoicePrefix, quotedAmount, now, period.expiresAt, period.periodStart, period.periodEnd);
         return { ...safeCheckout(this.row(invoiceNo)), replayed: false };
       }
       return denied('Sandbox invoice allocation unavailable', 503);
@@ -217,7 +220,7 @@ export class Twoc2pSandboxStore {
       this.expire(now);
       const row = this.row(notification.invoiceNo);
       if (!row) return denied('Sandbox checkout not found', 404);
-      if (row.merchant_id !== notification.merchantID || Number(row.amount) !== notification.amount ||
+      if (row.merchant_id !== notification.merchantID || Number(row.quoted_amount ?? row.amount) !== notification.amount ||
           row.currency_code !== notification.currencyCode)
         return denied('Sandbox payment does not match its checkout', 400);
       const transaction = this.sql.exec(`SELECT invoice_no,payment_id,reference_no
@@ -252,9 +255,11 @@ export class Twoc2pSandboxStore {
           return denied('Sandbox payment token attempt is not confirmed');
         const event = { eventId: `2c2p:sandbox:${fingerprint}`,
           subscriptionId: `2c2p:sandbox:${row.invoice_no}`, uid: row.uid,
-          version: 1, status: 'active', product: 'vip1', amount: 50, currency: 'THB',
+          version: 1, status: 'active', product: 'vip1', amount: Number(row.quoted_amount ?? row.amount), currency: 'THB',
           periodStart: Number(row.period_start), periodEnd: Number(row.period_end) };
-        const applied = this.vip.applyVerifiedSandboxCalendarEvent({ event, fingerprint });
+        const applied = this.vip.applyVerifiedSandboxCalendarEvent({
+          event, fingerprint, quotedAmount:Number(row.quoted_amount ?? row.amount)
+        });
         if (!applied.ok) return applied;
         this.sql.exec(`UPDATE voxel_2c2p_sandbox_checkouts SET status='paid',payment_id=?,reference_no=?,
           recurring_unique_id=?,recurring_sequence_no=?,tran_ref=?,transaction_date_time=? WHERE invoice_no=?`,

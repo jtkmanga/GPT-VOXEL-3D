@@ -3,11 +3,14 @@ import { validateStagingPublicConfig } from '../shared/staging.mjs';
 // Staging selection is an explicit trusted deployment binding. A typo, missing
 // setting or crossover never falls back to the preserved legacy deployment.
 export function stagingContext(request, env) {
-  const selectors = ['STAGING_WORKER_NAME', 'STAGING_WORKER_ORIGIN',
-    'FIREBASE_PUBLIC_CONFIG', 'FIREBASE_APP_CHECK_SITE_KEY', 'STAGING_AUTH_MODE'];
+  const stagingSelectors = ['STAGING_WORKER_NAME', 'STAGING_WORKER_ORIGIN', 'STAGING_AUTH_MODE'];
   const stagingHost = new URL(request.url).hostname.startsWith('gpt-voxel-3d-staging');
-  if (env.APP_ENV === undefined && !stagingHost && selectors.every(key => env[key] === undefined))
-    return { enabled: false };
+  const explicitlyStaging = env.APP_ENV === 'staging' || stagingHost ||
+    stagingSelectors.some(key => env[key] !== undefined);
+  // FIREBASE_PUBLIC_CONFIG and FIREBASE_APP_CHECK_SITE_KEY are shared by both
+  // staging and production Admin/Auth. Their presence alone must never switch a
+  // production Worker into the staging boundary.
+  if (!explicitlyStaging) return { enabled: false };
   try {
     if (env.APP_ENV !== 'staging' || env.PAYMENT_MODE !== 'provider-neutral-test' ||
         typeof env.FIREBASE_PUBLIC_CONFIG !== 'string' || env.FIREBASE_PUBLIC_CONFIG.length > 8192)

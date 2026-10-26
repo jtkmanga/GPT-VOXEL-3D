@@ -12,7 +12,29 @@
         };
 
         // Initialize Firebase
+        const PRODUCTION_APP_CHECK_SITE_KEY = "6LcKvwAuAAAAAIHinTMGJ_FBKuNr83ndyuryhEnF";
         firebase.initializeApp(firebaseConfig);
+        let productionAppCheck = null;
+        if (typeof STAGING_CLIENT_ENABLED === 'undefined' &&
+            PRODUCTION_APP_CHECK_SITE_KEY !== "6LcKvwAuAAAAAIHinTMGJ_FBKuNr83ndyuryhEnF") {
+            productionAppCheck = firebase.appCheck();
+            productionAppCheck.activate(
+                new firebase.appCheck.ReCaptchaEnterpriseProvider(PRODUCTION_APP_CHECK_SITE_KEY),
+                true
+            );
+        }
+        async function secureGetAppCheckToken(forceRefresh = false) {
+            if (typeof stagingGetAppCheckToken === 'function') {
+                return stagingGetAppCheckToken(forceRefresh);
+            }
+            if (!productionAppCheck) throw new Error('App Check unavailable');
+            const result = await productionAppCheck.getToken(Boolean(forceRefresh));
+            const token = result?.token;
+            if (typeof token !== 'string' || token.length < 20 || token.length > 8192) {
+                throw new Error('App Check token unavailable');
+            }
+            return token;
+        }
         const auth = firebase.auth();
         const database = firebase.database();
         const googleProvider = new firebase.auth.GoogleAuthProvider();
@@ -168,6 +190,10 @@
         }
 
         function selectFreeServer(serverId) {
+            if ((typeof liveSiteConfig !== 'undefined' && liveSiteConfig?.maintenanceFree)) {
+                alert('Free Server กำลังปิดปรับปรุงชั่วคราว');
+                return;
+            }
             state.selectedServerId = serverId;
             renderServersUI();
         }
@@ -205,6 +231,10 @@
         }
 
         function selectVipServer(serverId) {
+            if ((typeof liveSiteConfig !== 'undefined' && liveSiteConfig?.maintenanceVip) || (typeof liveSiteConfig !== 'undefined' && liveSiteConfig?.vipAdmissionPaused)) {
+                alert('VIP Server ปิดรับผู้เล่นชั่วคราว');
+                return;
+            }
             const vipSub = state.userVipSubscriptions[serverId];
             const now = Date.now();
             let isVipActive = false;
@@ -240,11 +270,15 @@
             }
 
             if (actionFree1) {
-                actionFree1.innerHTML = `
-                    <button onclick="selectFreeServer('free1')" class="${isSelectedFree1 ? 'bg-blue-500 text-slate-950 font-extrabold text-[11px] px-3 py-1 rounded-lg' : 'bg-slate-700 hover:bg-slate-600 text-blue-400 font-bold text-[11px] px-2.5 py-1 rounded-lg border border-blue-500/30 transition active:scale-95'}">
-                        ${isSelectedFree1 ? 'กำลังเลือก' : 'เลือกเซิร์ฟ'}
-                    </button>
-                `;
+                if ((typeof liveSiteConfig !== 'undefined' && liveSiteConfig?.maintenanceFree)) {
+                    actionFree1.innerHTML = '<button disabled class="bg-slate-700 text-slate-400 font-bold text-[11px] px-3 py-1 rounded-lg cursor-not-allowed">ปิดปรับปรุง</button>';
+                } else {
+                    actionFree1.innerHTML = `
+                        <button onclick="selectFreeServer('free1')" class="${isSelectedFree1 ? 'bg-blue-500 text-slate-950 font-extrabold text-[11px] px-3 py-1 rounded-lg' : 'bg-slate-700 hover:bg-slate-600 text-blue-400 font-bold text-[11px] px-2.5 py-1 rounded-lg border border-blue-500/30 transition active:scale-95'}">
+                            ${isSelectedFree1 ? 'กำลังเลือก' : 'เลือกเซิร์ฟ'}
+                        </button>
+                    `;
+                }
             }
 
             ['vip1'].forEach(sId => {
@@ -300,7 +334,13 @@
                 if (actionContainer) {
                     actionContainer.innerHTML = '';
 
-                    if (isVipActive) {
+                    if ((typeof liveSiteConfig !== 'undefined' && liveSiteConfig?.maintenanceVip) || (typeof liveSiteConfig !== 'undefined' && liveSiteConfig?.vipAdmissionPaused)) {
+                        const disabled = document.createElement('button');
+                        disabled.disabled = true;
+                        disabled.className = "bg-slate-700 text-slate-400 font-bold text-[11px] px-3 py-1 rounded-lg cursor-not-allowed";
+                        disabled.innerText = (typeof liveSiteConfig !== 'undefined' && liveSiteConfig?.maintenanceVip) ? "ปิดปรับปรุง" : "ปิดรับชั่วคราว";
+                        actionContainer.appendChild(disabled);
+                    } else if (isVipActive) {
                         const btnSelect = document.createElement('button');
                         btnSelect.className = isSelected
                             ? "bg-amber-500 text-slate-950 font-extrabold text-[11px] px-3 py-1 rounded-lg"

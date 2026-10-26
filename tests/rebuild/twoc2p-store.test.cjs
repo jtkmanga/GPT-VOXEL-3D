@@ -84,6 +84,25 @@ test('2C2P checkout rejects caller-defined UID alias, amount, period and invalid
   assert.equal(store.createCheckout([]).ok, false);
 });
 
+test('2C2P snapshots a server-owned dynamic VIP price per invoice', async t => {
+  const { store, vip } = await fixture(t);
+  const first = store.createCheckout({ uid:'synthetic-alpha', merchantID:'SYNTHETICMERCHANT',
+    invoicePrefix:'PRICE', requestId:'request:dynamic-alpha' }, BASE_NOW, 75);
+  assert.equal(first.ok,true);
+  assert.equal(first.amount,75);
+  ready(store,first);
+  const paid = notice(first,{ amount:75 });
+  const result=apply(store,paid);
+  assert.equal(result.ok,true);
+  assert.equal(result.entitlementGranted,true);
+  assert.equal(vip.entitlement('synthetic-alpha').expiresAt,first.periodEnd);
+  const replay=store.createCheckout({ uid:'synthetic-alpha', merchantID:'SYNTHETICMERCHANT',
+    invoicePrefix:'PRICE', requestId:'request:dynamic-alpha' }, BASE_NOW, 99);
+  assert.equal(replay.ok,true);
+  assert.equal(replay.replayed,true);
+  assert.equal(replay.amount,75,'existing invoice keeps its original quoted price');
+});
+
 test('2C2P checkout request idempotency and one pending invoice per UID persist through restart', async t => {
   const { store, restart, db } = await fixture(t);
   const first = create(store);

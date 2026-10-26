@@ -88,7 +88,7 @@ async function buildStagingClient(value, { allowTest = false } = {}) {
   const appCheckSdk = '<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-check-compat.js"></script>';
   const authSdk = '<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>';
   if (!html.includes(authSdk)) throw new Error('Staging build could not locate Firebase Auth SDK');
-  html = html.replace(authSdk, authSdk + '\n' + appCheckSdk);
+  if (!html.includes(appCheckSdk)) html = html.replace(authSdk, authSdk + '\n' + appCheckSdk);
   html = html.replace(/(<body[^>]*>)/, '$1\n<div id="staging-status" role="status" style="position:fixed;top:0;left:0;right:0;z-index:10000;background:#5b21b6;color:white;text-align:center;font:12px sans-serif;padding:3px">STAGING · TEST PAYMENTS ONLY</div>');
   html = html.replace('ชำระเงินผ่าน PromptPay', 'Sandbox entitlement fixtures · no payment');
   for (const blocked of ['voxel-run-v2-demo.hjinffv5426.workers.dev', 'lucky-game-6936b',

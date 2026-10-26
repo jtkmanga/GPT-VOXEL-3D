@@ -4,8 +4,12 @@
   "compatibility_date": "2026-09-27",
   "workers_dev": true,
   "preview_urls": false,
+  "triggers": {
+    "crons": ["0 17 * * *"]
+  },
   "vars": {
     "APP_ENV": "staging",
+    "ADMIN_OWNER_EMAIL": "jtkmanga@gmail.com",
     "STAGING_WORKER_NAME": "gpt-voxel-3d-staging-01",
     "STAGING_WORKER_ORIGIN": "",
     "ALLOWED_ORIGIN": "",

@@ -124,8 +124,8 @@
                 throw new Error('บัญชีเปลี่ยนระหว่างตรวจสอบสิทธิ์');
             }
             const headers = { 'Authorization': 'Bearer ' + token };
-            if (typeof stagingGetAppCheckToken === 'function') {
-                headers['X-Firebase-AppCheck'] = await stagingGetAppCheckToken(false);
+            if (typeof secureGetAppCheckToken === 'function') {
+                headers['X-Firebase-AppCheck'] = await secureGetAppCheckToken(false);
             }
             const response = await fetch(SECURE_WORKER_HTTP_BASE + '/entitlements', {
                 method: 'GET', headers
@@ -198,7 +198,9 @@
             }
 
             if (type === 'vip1') {
-                alert('การชำระเงิน VIP ยังไม่เปิดใช้งาน: ราคา 50 บาท/เดือน ต้องยืนยันผู้ให้บริการชำระเงินก่อน');
+                const livePricing = typeof liveSiteConfig !== 'undefined' ? liveSiteConfig?.pricing : null;
+                const vipPrice = Number(livePricing?.vip1) || SECURE_PAYMENT_ITEMS.vip1.price;
+                alert('การชำระเงิน VIP ยังไม่เปิดใช้งาน: ราคา ' + vipPrice + ' บาท/เดือน ต้องยืนยันผู้ให้บริการชำระเงินก่อน');
                 return;
             }
 
@@ -208,10 +210,13 @@
                 return;
             }
 
-            state.pendingPayment = { type, price: cfg.price, title: title || cfg.title };
+            const livePricing = typeof liveSiteConfig !== 'undefined' ? liveSiteConfig?.pricing : null;
+            const livePrice = Number(livePricing?.[type]);
+            const price = Number.isSafeInteger(livePrice) && livePrice > 0 ? livePrice : cfg.price;
+            state.pendingPayment = { type, price, title: title || cfg.title };
             document.getElementById('pay-item-title').innerText = state.pendingPayment.title;
-            document.getElementById('pay-item-price').innerText = cfg.price + ' บาท';
-            document.getElementById('promptpay-qr-img').src = `https://promptpay.io/${SECURE_PAYMENT_PROMPTPAY_TARGET}/${cfg.price}.png`;
+            document.getElementById('pay-item-price').innerText = price + ' บาท';
+            document.getElementById('promptpay-qr-img').src = `https://promptpay.io/${SECURE_PAYMENT_PROMPTPAY_TARGET}/${price}.png`;
             document.getElementById('slip-file-input').value = '';
             document.getElementById('payment-modal').classList.remove('hidden');
         };
@@ -245,9 +250,12 @@
                 formData.append('file', fileInput.files[0]);
                 formData.append('item', item);
 
+                const appCheckToken = typeof secureGetAppCheckToken === 'function'
+                    ? await secureGetAppCheckToken(false) : '';
                 const response = await fetch(SECURE_WORKER_HTTP_BASE + '/verify-slip', {
                     method: 'POST',
-                    headers: { 'Authorization': 'Bearer ' + token },
+                    headers: { 'Authorization': 'Bearer ' + token,
+                        ...(appCheckToken ? { 'X-Firebase-AppCheck': appCheckToken } : {}) },
                     body: formData
                 });
                 const result = await response.json().catch(() => ({}));
