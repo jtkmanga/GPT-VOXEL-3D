@@ -25,7 +25,13 @@ const config=JSON.parse(fs.readFileSync(basePath,'utf8'));
 if(config.name!=='voxel-run-v2-demo') fail('production worker identity changed');
 if(config.vars?.FIREBASE_PROJECT_ID!=='lucky-game-6936b') fail('production Firebase project changed');
 if(config.vars?.PAYMENT_MODE!=='disabled') fail('base production payment must remain disabled');
-if(process.env.PRODUCTION_PAYMENT_MODE!=='disabled') fail('first production rollout requires PRODUCTION_PAYMENT_MODE=disabled');
+const paymentMode=String(process.env.PRODUCTION_PAYMENT_MODE||'').trim();
+if(!['disabled','2c2p-promptpay'].includes(paymentMode)) fail('invalid PRODUCTION_PAYMENT_MODE');
+if(paymentMode==='2c2p-promptpay'){
+  config.vars.PRODUCTION_TWOC2P_MERCHANT_ID=need('PRODUCTION_TWOC2P_MERCHANT_ID');
+  need('PRODUCTION_TWOC2P_SECRET_KEY');
+}
+config.vars.PAYMENT_MODE=paymentMode;
 config.triggers={...(config.triggers||{}),crons:['0 17 * * *']};
 config.vars={...(config.vars||{}),ADMIN_OWNER_EMAIL:'jtkmanga@gmail.com'};
 
@@ -55,4 +61,4 @@ const entryAbsolute=path.resolve(path.dirname(basePath),config.main);
 config.main=path.relative(outDir,entryAbsolute).split(path.sep).join('/');
 fs.mkdirSync(outDir,{recursive:true});
 fs.writeFileSync(outPath,JSON.stringify(config,null,2)+'\n',{mode:0o600});
-console.log('PASS production config prepared: values withheld; payment disabled; cron present');
+console.log('PASS production config prepared: values withheld; payment mode='+paymentMode+'; cron present');
