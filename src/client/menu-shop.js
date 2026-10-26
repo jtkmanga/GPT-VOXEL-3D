@@ -28,6 +28,7 @@
 
         function updateShopUI() {
             const now = Date.now();
+            const livePricing = typeof liveSiteConfig !== 'undefined' ? liveSiteConfig?.pricing : null;
             const btnSpeed = document.getElementById('btn-buy-speed');
             const btnCoin = document.getElementById('btn-buy-coin');
 
@@ -46,7 +47,7 @@
             } else {
                 btnSpeed.disabled = false;
                 btnSpeed.className = "bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-white font-bold py-1.5 px-3 rounded-lg text-xs shadow transition active:scale-95 flex-shrink-0";
-                const price = Number(liveSiteConfig?.pricing?.speed) || 10;
+                const price = Number(livePricing?.speed) || 10;
                 btnSpeed.innerText = price + " ฿";
             }
 
@@ -57,7 +58,7 @@
             } else {
                 btnCoin.disabled = false;
                 btnCoin.className = "bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-white font-bold py-1.5 px-3 rounded-lg text-xs shadow transition active:scale-95 flex-shrink-0";
-                const price = Number(liveSiteConfig?.pricing?.coin) || 20;
+                const price = Number(livePricing?.coin) || 20;
                 btnCoin.innerText = price + " ฿";
             }
         }
