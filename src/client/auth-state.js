@@ -198,30 +198,16 @@
             renderServersUI();
         }
 
-        // เปิด Modal ชำระเงินด้วย PromptPay
-        function openPaymentModal(type, price, title) {
-            if (!state.isLoggedIn) {
-                alert("กรุณาล็อกอินด้วย Google Account ก่อนทำการซื้อไอเทมหรือเซิร์ฟเวอร์ VIP!");
-                return;
-            }
-
-            state.pendingPayment = { type, price, title };
-            document.getElementById('pay-item-title').innerText = title;
-            document.getElementById('pay-item-price').innerText = price + " บาท";
-
-            const promptpayTarget = "0999999999";
-            document.getElementById('promptpay-qr-img').src = `https://promptpay.io/${promptpayTarget}/${price}.png`;
-
-            document.getElementById('slip-file-input').value = "";
-            document.getElementById('payment-modal').classList.remove('hidden');
+        // Payment UI is activated only by the secure Worker override below.
+        // Never embed a PromptPay account/phone/static QR in the public client.
+        function openPaymentModal(_type, _price, _title) {
+            alert('ระบบชำระเงินกำลังเริ่มต้น กรุณาลองอีกครั้ง');
         }
 
         function closePaymentModal() {
             document.getElementById('payment-modal').classList.add('hidden');
         }
 
-        // Legacy client-side Slip2Go verification and client-side entitlement grant
-        // were removed. The secure Worker overrides below own both operations.
         async function verifyAndBuySlip() {
             throw new Error('Secure Worker payment handler not initialized yet');
         }
