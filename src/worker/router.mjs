@@ -2,7 +2,6 @@ import { corsHeaders, jsonResponse, handleVerifySlip, handleGetEntitlements, han
 import { normalizeZoneId } from './spatial.mjs';
 import { stagingContext, stagingError, stagingAsset } from './staging-boundary.mjs';
 import { handle2c2pSandbox } from './twoc2p-sandbox.mjs';
-import { handle2c2pPromptPay } from './twoc2p-promptpay.mjs';
 import { handleAdmin, publicSiteConfig } from './admin.mjs';
 import { isBangkokSunday } from './score-reset.mjs';
 
@@ -60,7 +59,6 @@ const worker = {
     }
 
     if (url.pathname.startsWith('/payments/2c2p/')) return handle2c2pSandbox(request,env);
-    if (url.pathname.startsWith('/payments/promptpay/')) return handle2c2pPromptPay(request,env);
 
     if (url.pathname==='/admin' || url.pathname.startsWith('/admin/api/')) return handleAdmin(request,env);
 
