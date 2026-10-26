@@ -175,7 +175,7 @@ export function buildPromptPayPaymentTokenRequest(checkout, cfg) {
     amount: checkout.amount,
     currencyCode: 'THB',
     paymentChannel: ['QR'],
-    nonceStr: crypto.randomUUID().replace(/-/g, ''),
+    nonceStr: crypto.randomUUID(),
     frontendReturnUrl: cfg.returnUrl,
     backendReturnUrl: cfg.workerOrigin + '/payments/promptpay/backend'
   };
