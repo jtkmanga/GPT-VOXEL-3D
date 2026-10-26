@@ -69,6 +69,99 @@ export function allowedRequestOrigin(request, env) {
     new URL(request.url).origin === env.STAGING_WORKER_ORIGIN;
 }
 
+const PROMPTPAY_TYPES = Object.freeze({
+  phone_number: { accountType: '02001', pattern: /^0\d{9}$/ },
+  citizen_id: { accountType: '02003', pattern: /^\d{13}$/ },
+  e_wallet: { accountType: '02004', pattern: /^\d{1,32}$/ }
+});
+
+export function slip2goReceiverConfig(env) {
+  const promptPayType=String(env.PAYMENT_RECEIVER_TYPE||'phone_number').trim();
+  const rule=PROMPTPAY_TYPES[promptPayType];
+  const account=String(env.PAYMENT_RECEIVER_ACCOUNT||'').replace(/\s+/g,'');
+  const accountName=String(env.PAYMENT_RECEIVER_NAME||'').trim();
+  if(!rule||!rule.pattern.test(account)||accountName.length<2||accountName.length>160)
+    throw Error('Payment receiver is not configured');
+  return {promptPayType,accountType:rule.accountType,account,accountName};
+}
+
+export function buildSlip2GoQrPayload({receiver,price}) {
+  if(!receiver||!Number.isSafeInteger(price)||price<1||price>100000)
+    throw Error('Invalid payment QR request');
+  return {
+    promptPayCode:receiver.account,
+    promptPayType:receiver.promptPayType,
+    accountName:receiver.accountName,
+    amount:price.toFixed(2)
+  };
+}
+
+export async function handlePaymentQr(request, env) {
+  if (env.PAYMENT_MODE !== 'slip2go-production') {
+    return jsonResponse(request, env, {ok:false,error:'Production payment is disabled'}, 503);
+  }
+  if (request.method !== 'POST') {
+    return jsonResponse(request, env, {ok:false,error:'Method not allowed'}, 405);
+  }
+  if (await paymentsPaused(env)) {
+    return jsonResponse(request, env, {ok:false,error:'Payments are temporarily paused'}, 503);
+  }
+  if (env.ALLOWED_ORIGIN && request.headers.get('Origin') !== env.ALLOWED_ORIGIN) {
+    return jsonResponse(request, env, {ok:false,error:'Origin not allowed'}, 403);
+  }
+  const match=/^Bearer\s+(.+)$/i.exec(request.headers.get('Authorization')||'');
+  if(!match) return jsonResponse(request, env, {ok:false,error:'Sign in required'}, 401);
+  try {
+    await verifyFirebaseRequestTokens(match[1],request.headers.get('X-Firebase-AppCheck'),env);
+  } catch (_) {
+    return jsonResponse(request, env, {ok:false,error:'Invalid Firebase token'}, 401);
+  }
+  let input;
+  try { input=await request.json(); }
+  catch (_) { return jsonResponse(request,env,{ok:false,error:'Invalid JSON'},400); }
+  if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).length!==1||
+      !Object.hasOwn(input,'item')) {
+    return jsonResponse(request,env,{ok:false,error:'Invalid payment QR request'},400);
+  }
+  const item=String(input.item||'');
+  let price;
+  try { price=await currentPrice(env,item); }
+  catch (_) { return jsonResponse(request,env,{ok:false,error:'Pricing authority unavailable'},503); }
+  if(!env.SLIP2GO_API_SECRET) {
+    return jsonResponse(request,env,{ok:false,error:'Payment server is not configured'},503);
+  }
+  let receiver;
+  try { receiver=slip2goReceiverConfig(env); }
+  catch (_) { return jsonResponse(request,env,{ok:false,error:'Payment server is not configured'},503); }
+
+  let slipResponse;
+  try {
+    slipResponse=await fetch('https://connect.slip2go.com/api/qr-payment/generate-qr-image-link',{
+      method:'POST',
+      headers:{'Authorization':env.SLIP2GO_API_SECRET,'Content-Type':'application/json'},
+      body:JSON.stringify(buildSlip2GoQrPayload({receiver,price}))
+    });
+  } catch (_) {
+    return jsonResponse(request,env,{ok:false,error:'Payment QR service unavailable'},502);
+  }
+  let result;
+  try { result=await slipResponse.json(); }
+  catch (_) { return jsonResponse(request,env,{ok:false,error:'Invalid response from QR service'},502); }
+  const data=result?.data||{};
+  let qr;
+  try { qr=new URL(String(data.qrImageLink||'')); }
+  catch (_) { return jsonResponse(request,env,{ok:false,error:'Payment QR service returned invalid data'},502); }
+  const returnedAmount=Number(data.amount);
+  const returnedName=String(data.accountName||'').trim();
+  if(!slipResponse.ok||String(result?.code)!=='200'||qr.protocol!=='https:'||qr.username||qr.password||
+      !Number.isFinite(returnedAmount)||returnedAmount!==price||returnedName!==receiver.accountName) {
+    return jsonResponse(request,env,{ok:false,error:result?.message||'Payment QR generation failed'},502);
+  }
+  return jsonResponse(request,env,{
+    ok:true,item,price,currency:'THB',qrImageUrl:qr.href,accountName:returnedName
+  });
+}
+
 export async function handleVerifySlip(request, env) {
   if (env.PAYMENT_MODE !== 'slip2go-production') {
     return jsonResponse(request, env, {
@@ -156,18 +249,24 @@ export async function handleVerifySlip(request, env) {
     }, 400);
   }
 
-  if (!env.SLIP2GO_API_SECRET || !env.PAYMENT_RECEIVER_ACCOUNT) {
+  if (!env.SLIP2GO_API_SECRET || !env.PAYMENT_RECEIVER_ACCOUNT || !env.PAYMENT_RECEIVER_NAME) {
     return jsonResponse(request, env, {
       ok: false,
       error: 'Payment server is not configured'
     }, 500);
   }
 
+  let receiver;
+  try { receiver=slip2goReceiverConfig(env); }
+  catch (_) {
+    return jsonResponse(request,env,{ok:false,error:'Payment server is not configured'},503);
+  }
+
   const payload = {
     checkDuplicate: true,
     checkReceiver: [{
-      accountType: '02001',
-      accountNumber: env.PAYMENT_RECEIVER_ACCOUNT
+      accountType: receiver.accountType,
+      accountNumber: receiver.account
     }],
     checkAmount: {
       type: 'eq',
