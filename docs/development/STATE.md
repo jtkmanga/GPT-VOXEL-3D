@@ -1,5 +1,25 @@
 # Current development state
 
+## D074 — align synthetic Slip2Go harness with Bearer auth (2026-10-26)
+
+Starting source d8e2ba508afcb6b71be20679637500cb66b709a3. Gate 7 on D073 reached the new Slip2Go Bearer
+regression successfully, then three pre-existing payment-dependent tests failed
+with HTTP 502 because the shared synthetic harness still accepted only the old
+raw-secret Authorization value. This is fixture drift caused by the D073 auth
+correction, not a provider or entitlement regression.
+
+Updated only the local synthetic Slip2Go fetch guard to require
+`Bearer synthetic-slip-secret`. No application runtime, Cloudflare binding,
+secret, production configuration or payment behavior changed in this follow-up.
+The failed tests were P0 synthetic VIP payment, P2 entitlement refresh and P3
+authoritative speed entitlement; all three depend on the same harness provider
+stub. GitHub CI must re-run before promotion.
+
+Production main remains unchanged and still requires a separate narrow hotfix for
+both PR #7 Slip2Go provider call sites. The earlier automatic staging workflow
+completed successfully, but staging remained `PAYMENT_MODE=provider-neutral-test`;
+production was read-only verified unchanged.
+
 ## D073 — Slip2Go Bearer authentication guard (2026-10-26)
 
 Starting source ac99cf30be1d97cbad13998546ceeeec2aa20aea. Owner-approved correction after the live production
