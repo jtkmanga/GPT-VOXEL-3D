@@ -21,7 +21,7 @@ test('PromptPay adapter scopes Payment Token to QR and Do Payment pins exact PPQ
     workerOrigin: 'https://worker.example.invalid'
   });
   assert.deepEqual(request.paymentChannel, ['QR']);
-  assert.match(request.nonceStr, /^[a-f0-9]{32}$/);
+  assert.match(request.nonceStr, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
   assert.equal(request.currencyCode, 'THB');
   assert.equal(request.amount, 50);
   assert.equal(request.backendReturnUrl, 'https://worker.example.invalid/payments/promptpay/backend');
