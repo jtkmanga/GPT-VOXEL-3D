@@ -27,7 +27,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-          fetch-depth: 2
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -36,11 +36,11 @@ jobs:
         run: |
           set -euo pipefail
           test "$GITHUB_REF" = "refs/heads/main"
-          test "$(git rev-parse HEAD^)" = "4a282660519ebbe1fda79f72418ec1a47925e733"
+          git merge-base --is-ancestor "4a282660519ebbe1fda79f72418ec1a47925e733" HEAD
           test "$PRODUCTION_PAYMENT_MODE" = "disabled"
           test -n "$CLOUDFLARE_API_TOKEN"
           test -n "$CLOUDFLARE_ACCOUNT_ID"
-          changed="$(git diff-tree --no-commit-id --name-only -r HEAD)"
+          changed="$(git diff --name-only 4a282660519ebbe1fda79f72418ec1a47925e733..HEAD)"
           test "$changed" = ".github/workflows/one-shot-production-deploy-20261026.yml"
           grep -q '"name": "voxel-run-v2-demo"' wrangler.jsonc
           grep -q '"PAYMENT_MODE": "disabled"' wrangler.jsonc
