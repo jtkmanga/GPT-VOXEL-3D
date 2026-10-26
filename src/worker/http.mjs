@@ -79,7 +79,7 @@ export function slip2goReceiverConfig(env) {
   const promptPayType=String(env.PAYMENT_RECEIVER_TYPE||'phone_number').trim();
   const rule=PROMPTPAY_TYPES[promptPayType];
   const account=String(env.PAYMENT_RECEIVER_ACCOUNT||'').replace(/\s+/g,'');
-  const accountName=String(env.PAYMENT_RECEIVER_NAME||'').trim();
+  const accountName=String(env.PAYMENT_RECEIVER_NAME||'Lucky Game').trim();
   if(!rule||!rule.pattern.test(account)||accountName.length<2||accountName.length>160)
     throw Error('Payment receiver is not configured');
   return {promptPayType,accountType:rule.accountType,account,accountName};
@@ -249,7 +249,7 @@ export async function handleVerifySlip(request, env) {
     }, 400);
   }
 
-  if (!env.SLIP2GO_API_SECRET || !env.PAYMENT_RECEIVER_ACCOUNT || !env.PAYMENT_RECEIVER_NAME) {
+  if (!env.SLIP2GO_API_SECRET || !env.PAYMENT_RECEIVER_ACCOUNT) {
     return jsonResponse(request, env, {
       ok: false,
       error: 'Payment server is not configured'
