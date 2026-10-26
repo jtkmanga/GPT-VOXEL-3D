@@ -96,6 +96,16 @@ table{width:100%;border-collapse:separate;border-spacing:0;font-size:12px;min-wi
 </section>
 
 <section class="section">
+<div class="section-head"><h2>Pricing</h2><span>ราคาจริงจาก Server · หน่วยบาทไทย (THB)</span></div>
+<div class="grid">
+  <div class="card control-card"><b>Speed ×2 (24 ช.ม.)</b><input id="price_speed" type="number" min="1" max="100000" step="1"><div class="row"><button class="primary" data-price="speed">บันทึกราคา Speed</button></div></div>
+  <div class="card control-card"><b>Coin ×2 (24 ช.ม.)</b><input id="price_coin" type="number" min="1" max="100000" step="1"><div class="row"><button class="primary" data-price="coin">บันทึกราคา Coin</button></div></div>
+  <div class="card control-card"><b>VIP Server (30 วัน)</b><input id="price_vip1" type="number" min="1" max="100000" step="1"><div class="row"><button class="primary" data-price="vip1">บันทึกราคา VIP</button></div></div>
+  <div class="card control-card"><b>ข้อกำหนด</b><p class="muted">รองรับจำนวนเต็ม 1–100,000 บาท · การแก้ราคาถูกบันทึกใน Audit Log · checkout ใหม่ใช้ราคาใหม่ ส่วนรายการที่เริ่มชำระแล้วใช้ราคาที่ snapshot ไว้</p></div>
+</div>
+</section>
+
+<section class="section">
 <div class="section-head"><h2>Live Site / Server Controls</h2><span>การเปลี่ยนแปลงมีผลกับ staging ทันที</span></div>
 <div class="grid">
 <div class="card control-card"><b>ประกาศ</b><textarea id="announcement" maxlength="300" placeholder="ข้อความประกาศในเกม"></textarea><div class="row"><button class="primary" data-control="announcement">บันทึกประกาศ</button></div></div>
@@ -141,7 +151,7 @@ function fmt(t){return t?new Date(Number(t)).toLocaleString('th-TH',{timeZone:'A
 function syncToggleButtons(){document.querySelectorAll('[data-toggle]').forEach(b=>b.classList.toggle('active',Boolean(lastControls[b.dataset.toggle])))}
 function resetWinnerText(status){const latest=status?.history?.[0];if(!latest)return 'ยังไม่มีประวัติการรีเซ็ต';const winners=latest.winners||[];if(!winners.length)return 'รีเซ็ตล่าสุด '+fmt(latest.resetAt)+' · ไม่มีผู้เล่น';const label=winners.map(w=>(w.email||'(no email)')+' · '+w.score+' คะแนน').join(' / ');return 'แชมป์ล่าสุด: '+label+' · '+fmt(latest.resetAt)}
 function renderResetStatus(data){const free=data?.free||{},vip=data?.vip||{};$('freeResetNext').textContent='ครั้งถัดไป '+fmt(free.nextResetAt);$('vipResetNext').textContent='ครั้งถัดไป '+fmt(vip.nextResetAt);$('freeResetWinner').textContent=resetWinnerText(free);$('vipResetWinner').textContent=resetWinnerText(vip);const rows=[];for(const status of [free,vip])for(const reset of status.history||[]){if(reset.winners?.length){for(const w of reset.winners)rows.push({reset,w})}else rows.push({reset,w:{email:'-',nickname:'-',score:0}})}rows.sort((a,b)=>Number(b.reset.resetAt)-Number(a.reset.resetAt));const body=$('resetHistory');body.innerHTML='';for(const item of rows.slice(0,60)){const tr=document.createElement('tr');for(const v of [fmt(item.reset.resetAt),item.reset.server==='vip1'?'VIP':'Free',item.reset.resetType,item.w.email||'(no email)',item.w.nickname||'-',item.w.score]){const td=document.createElement('td');td.textContent=String(v);tr.appendChild(td)}body.appendChild(tr)}}
-async function loadAll(){try{const s=$('server').value;const [o,p,a,pm,rs]=await Promise.all([api('/admin/api/overview?server='+s),api('/admin/api/players?server='+s),api('/admin/api/audit?server='+s),api('/admin/api/payments'),api('/admin/api/reset-status')]);$('online').textContent=o.online;$('playersCount').textContent=o.players;$('bannedCount').textContent=o.banned;$('mutedCount').textContent=o.muted;lastControls=o.controls||{};for(const k of ['announcement','free_name','vip_name'])$(k).value=lastControls[k]||'';syncToggleButtons();renderPlayers(p.players||[]);renderAudit(a.rows||[]);renderPayments(pm.rows||[]);renderResetStatus(rs);clearDiag();$('status').className='status ok';$('status').textContent='ออนไลน์ · อัปเดต '+fmt(o.serverNow)}catch(e){$('status').className='status err';$('status').textContent=e.message;diag('Admin data error: '+(e?.message||e),true)}}
+async function loadAll(){try{const s=$('server').value;const [o,p,a,pm,rs,pricing]=await Promise.all([api('/admin/api/overview?server='+s),api('/admin/api/players?server='+s),api('/admin/api/audit?server='+s),api('/admin/api/payments'),api('/admin/api/reset-status'),api('/admin/api/pricing')]);$('online').textContent=o.online;$('playersCount').textContent=o.players;$('bannedCount').textContent=o.banned;$('mutedCount').textContent=o.muted;lastControls=o.controls||{};for(const k of ['announcement','free_name','vip_name'])$(k).value=lastControls[k]||'';for(const item of ['speed','coin','vip1'])$('price_'+item).value=pricing.pricing?.[item]??'';syncToggleButtons();renderPlayers(p.players||[]);renderAudit(a.rows||[]);renderPayments(pm.rows||[]);renderResetStatus(rs);clearDiag();$('status').className='status ok';$('status').textContent='ออนไลน์ · อัปเดต '+fmt(o.serverNow)}catch(e){$('status').className='status err';$('status').textContent=e.message;diag('Admin data error: '+(e?.message||e),true)}}
 function renderPlayers(rows){const b=$('players');b.innerHTML='';for(const p of rows){const tr=document.createElement('tr');const ident=document.createElement('td');ident.textContent=(p.email||'(no email)')+'\\n'+p.uid;ident.style.whiteSpace='pre-line';const name=document.createElement('td');name.textContent=p.nickname;const score=document.createElement('td');const i=document.createElement('input');i.type='number';i.min='0';i.value=p.score;const save=document.createElement('button');save.textContent='Set';save.onclick=()=>setScore(p.uid,i.value);const reward=document.createElement('button');reward.textContent='+100';reward.className='good';reward.onclick=()=>rewardScore(p.uid,100);score.append(i,save,reward);const state=document.createElement('td');state.textContent=(p.online?'🟢 Online':'⚪ Offline')+'\\nVIP: '+fmt(p.vipExpiresAt);state.style.whiteSpace='pre-line';const mod=document.createElement('td');for(const [label,action] of [['Kick','kick'],['Ban 7d','ban'],['Unban','unban'],['Mute 24h','mute'],['Unmute','unmute']]){const bt=document.createElement('button');bt.textContent=label;bt.onclick=()=>moderate(p.uid,action);mod.appendChild(bt)}tr.append(ident,name,score,state,mod);b.appendChild(tr)}}
 function renderAudit(rows){const b=$('audit');b.innerHTML='';for(const x of rows){const tr=document.createElement('tr');for(const v of [fmt(x.created_at),x.actor,x.action,x.target_uid||'',x.metadata||'']){const td=document.createElement('td');td.textContent=String(v);tr.appendChild(td)}b.appendChild(tr)}}
 function renderPayments(rows){const b=$('payments');b.innerHTML='';for(const x of rows){const tr=document.createElement('tr');for(const v of [x.uid,x.item,x.amount,fmt(x.createdAt),x.transactionRef]){const td=document.createElement('td');td.textContent=String(v??'');tr.appendChild(td)}b.appendChild(tr)}}
@@ -149,6 +159,8 @@ async function setScore(uid,score){await api('/admin/api/score',{method:'POST',b
 async function rewardScore(uid,delta){await api('/admin/api/reward',{method:'POST',body:JSON.stringify({server:$('server').value,uid,delta:Number(delta),reason:'Admin reward'})});await loadAll()}
 async function moderate(uid,action){const durationMs=action==='ban'?7*86400000:action==='mute'?86400000:0;await api('/admin/api/moderate',{method:'POST',body:JSON.stringify({uid,action,durationMs,reason:'Admin panel'})});await loadAll()}
 async function setControl(key,value){await api('/admin/api/control',{method:'POST',body:JSON.stringify({key,value})});await loadAll()}
+async function setPrice(item){const input=$('price_'+item);const price=Number(input.value);if(!Number.isSafeInteger(price)||price<1||price>100000){alert('กรุณาใส่ราคาเป็นจำนวนเต็ม 1–100,000 บาท');return}if(!confirm('ยืนยันเปลี่ยนราคา '+item+' เป็น '+price+' บาท?'))return;await api('/admin/api/pricing',{method:'POST',body:JSON.stringify({item,price})});await loadAll()}
+document.querySelectorAll('[data-price]').forEach(b=>b.onclick=()=>setPrice(b.dataset.price));
 document.querySelectorAll('[data-control]').forEach(b=>b.onclick=()=>setControl(b.dataset.control,$(b.dataset.control).value));
 document.querySelectorAll('[data-toggle]').forEach(b=>b.onclick=()=>setControl(b.dataset.toggle,!Boolean(lastControls[b.dataset.toggle])));
 $('setRole').onclick=async()=>{await api('/admin/api/role',{method:'POST',body:JSON.stringify({email:$('roleEmail').value,role:$('roleValue').value})});await loadAll()};
@@ -195,6 +207,12 @@ export async function handleAdmin(request,env){
     const [freeData,vipData]=await Promise.all([freeResponse.json(),vipResponse.json()]);
     if(!freeResponse.ok||!vipResponse.ok)return json({ok:false,error:'Reset status unavailable'},503);
     return json({ok:true,free:freeData,vip:vipData,serverNow:Date.now()});
+  }
+
+  if(url.pathname==='/admin/api/pricing'&&request.method==='GET'){
+    if(!requireRole(admin,'admin'))return json({ok:false,error:'Insufficient role'},403);
+    const {response,data}=await internalJson(freeRoom(env),'/_internal/admin/pricing');
+    return json(data,response.status);
   }
 
   if(url.pathname==='/admin/api/overview'&&request.method==='GET'){
@@ -253,6 +271,15 @@ export async function handleAdmin(request,env){
     return json(data,response.status);
   }
 
+  if(url.pathname==='/admin/api/pricing'&&request.method==='POST'){
+    if(!requireRole(admin,'admin'))return json({ok:false,error:'Insufficient role'},403);
+    const item=String(body?.item||''),price=Number(body?.price);
+    const {response,data}=await internalJson(freeRoom(env),'/_internal/admin/price-set',{
+      method:'POST',body:{item,price,actor:admin.identity.email}
+    });
+    return json(data,response.status);
+  }
+
   if(url.pathname==='/admin/api/score'&&request.method==='POST'){
     if(!requireRole(admin,'admin'))return json({ok:false,error:'Insufficient role'},403);
     const target=roomFor(env,body?.server);if(!target)return json({ok:false,error:'Invalid server'},400);
@@ -292,6 +319,7 @@ export async function publicSiteConfig(env){
     return json({ok:true,announcement:data.announcement||'',freeName:data.freeName||'Free Server ฟรีไม่จำกัด',
       vipName:data.vipName||'VIP Server 1',maintenanceFree:Boolean(data.maintenanceFree),
       maintenanceVip:Boolean(data.maintenanceVip),paymentPaused:Boolean(data.paymentPaused),
-      vipAdmissionPaused:Boolean(data.vipAdmissionPaused),serverNow:data.serverNow});
+      vipAdmissionPaused:Boolean(data.vipAdmissionPaused),pricing:data.pricing||{currency:'THB',speed:10,coin:20,vip1:50},
+      serverNow:data.serverNow});
   } catch (_) { return json({ok:false,error:'Site config unavailable'},503); }
 }
