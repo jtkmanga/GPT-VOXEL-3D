@@ -9,6 +9,7 @@ on:
       - 'tests/rebuild/gate5-2c2p-promptpay-probe.py'
       - 'tests/rebuild/gate5-2c2p-promptpay-matrix.py'
       - 'tests/rebuild/gate5-2c2p-promptpay-details.py'
+      - 'tests/rebuild/gate5-2c2p-promptpay-pay-matrix.py'
 
 permissions:
   contents: read
@@ -32,5 +33,6 @@ jobs:
           echo "LEGACY_PROBE_EXIT=$legacy"
           echo "PROMPTPAY_PROBE_EXIT=$promptpay"
           python tests/rebuild/gate5-2c2p-promptpay-matrix.py
-          python tests/rebuild/gate5-2c2p-promptpay-details.py
+          python tests/rebuild/gate5-2c2p-promptpay-details.py || true
+          python tests/rebuild/gate5-2c2p-promptpay-pay-matrix.py
           exit 0
