@@ -12,11 +12,11 @@
         };
 
         // Initialize Firebase
-        const PRODUCTION_APP_CHECK_SITE_KEY = "__VOXEL_PRODUCTION_APP_CHECK_SITE_KEY__";
+        const PRODUCTION_APP_CHECK_SITE_KEY = "6LcKvwAuAAAAAIHinTMGJ_FBKuNr83ndyuryhEnF";
         firebase.initializeApp(firebaseConfig);
         let productionAppCheck = null;
         if (typeof STAGING_CLIENT_ENABLED === 'undefined' &&
-            PRODUCTION_APP_CHECK_SITE_KEY !== "__VOXEL_PRODUCTION_APP_CHECK_SITE_KEY__") {
+            PRODUCTION_APP_CHECK_SITE_KEY !== "6LcKvwAuAAAAAIHinTMGJ_FBKuNr83ndyuryhEnF") {
             productionAppCheck = firebase.appCheck();
             productionAppCheck.activate(
                 new firebase.appCheck.ReCaptchaEnterpriseProvider(PRODUCTION_APP_CHECK_SITE_KEY),
