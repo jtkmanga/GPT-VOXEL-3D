@@ -1,0 +1,50 @@
+name: PromptPay Feature Gate
+
+on:
+  push:
+    branches:
+      - development/promptpay-dynamic-qr
+
+permissions:
+  contents: read
+
+concurrency:
+  group: promptpay-feature-gate
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      PRODUCTION_PAYMENT_MODE: disabled
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci
+      - name: Full regression
+        run: node scripts/rebuild/run-tests.cjs
+      - name: Generated client
+        run: node scripts/rebuild/build-client.cjs --check
+      - name: Syntax and static checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/rebuild/check-syntax.cjs
+          node scripts/rebuild/check-static.cjs
+          node scripts/rebuild/check-staging.cjs --allow-unconfigured
+          node scripts/rebuild/check-secrets.cjs
+          git diff --check
+      - name: Production disabled readiness
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/rebuild/check-production-readiness.cjs
+          node scripts/rebuild/prepare-production.cjs
+      - name: Production Wrangler dry run
+        run: npx wrangler deploy --dry-run --config work/production/prepared/wrangler.jsonc --outdir work/promptpay-production-dry-run
