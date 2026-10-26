@@ -4,7 +4,8 @@
   "compatibility_date": "2026-09-27",
   "vars": {
     "FIREBASE_PROJECT_ID": "lucky-game-6936b",
-    "PAYMENT_MODE": "disabled"
+    "PAYMENT_MODE": "disabled",
+    "ADMIN_OWNER_EMAIL": "jtkmanga@gmail.com"
   },
   "durable_objects": {
     "bindings": [
@@ -31,5 +32,10 @@
         "ZoneRoom"
       ]
     }
-  ]
+  ],
+  "triggers": {
+    "crons": [
+      "0 17 * * *"
+    ]
+  }
 }
