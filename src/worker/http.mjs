@@ -1,13 +1,22 @@
-import { PAYMENT_PRICES } from '../shared/catalog.mjs';
 import { verifyFirebaseRequestTokens } from './firebase-auth.mjs';
 import { verifyPaymentEvent, PaymentBoundaryError } from './payment-events.mjs';
 
+async function runtimeControls(env) {
+  const response=await env.ROOM.getByName('free-v2-demo').fetch(new Request('https://internal/_internal/admin/runtime-controls'));
+  const data=await response.json();
+  if (!response.ok || !data?.ok) throw Error('Runtime controls unavailable');
+  return data;
+}
 async function paymentsPaused(env) {
-  try {
-    const response=await env.ROOM.getByName('free-v2-demo').fetch(new Request('https://internal/_internal/admin/runtime-controls'));
-    const data=await response.json();
-    return response.ok && data?.paymentPaused===true;
-  } catch (_) { return false; }
+  try { return (await runtimeControls(env))?.paymentPaused===true; }
+  catch (_) { return false; }
+}
+async function currentPrice(env,item) {
+  const data=await runtimeControls(env);
+  const price=Number(data?.pricing?.[item]);
+  if (!['speed','coin','vip1'].includes(item) || !Number.isSafeInteger(price) || price<1 || price>100000)
+    throw Error('Pricing authority unavailable');
+  return price;
 }
 
 // Server-to-server provider adapter. A Firebase login or browser payment flag
@@ -117,15 +126,13 @@ export async function handleVerifySlip(request, env) {
   const file = input.get('file');
   const item = String(input.get('item') || '');
 
-  const prices = PAYMENT_PRICES;
-
-  const price = prices[item];
-
-  if (!price) {
+  let price;
+  try { price=await currentPrice(env,item); }
+  catch (_) {
     return jsonResponse(request, env, {
       ok: false,
-      error: 'Invalid item'
-    }, 400);
+      error: 'Pricing authority unavailable'
+    }, 503);
   }
 
   if (!(file instanceof File) || file.size <= 0) {
