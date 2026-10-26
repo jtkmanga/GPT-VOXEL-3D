@@ -7,6 +7,7 @@ on:
     paths:
       - '.github/workflows/promptpay-provider-diagnostic.yml'
       - 'tests/rebuild/gate5-2c2p-promptpay-probe.py'
+      - 'tests/rebuild/gate5-2c2p-promptpay-matrix.py'
 
 permissions:
   contents: read
@@ -29,4 +30,5 @@ jobs:
           promptpay=$?
           echo "LEGACY_PROBE_EXIT=$legacy"
           echo "PROMPTPAY_PROBE_EXIT=$promptpay"
+          python tests/rebuild/gate5-2c2p-promptpay-matrix.py
           exit 0
