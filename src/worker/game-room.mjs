@@ -170,6 +170,26 @@ export class GameRoom {
     return row ? String(row.value) : fallback;
   }
   controlBool(key) { return this.control(key,'false')==='true'; }
+  price(item) {
+    const fallback=Number(PAYMENT_CONFIG[item]?.price);
+    if (!Number.isSafeInteger(fallback) || fallback<=0) return 0;
+    const raw=Number(this.control('price_'+item,String(fallback)));
+    return Number.isSafeInteger(raw) && raw>=1 && raw<=100000 ? raw : fallback;
+  }
+  pricingSnapshot() {
+    return {currency:'THB',speed:this.price('speed'),coin:this.price('coin'),vip1:this.price('vip1')};
+  }
+  setPrice(item,value,actor) {
+    if (!['speed','coin','vip1'].includes(item)) return {ok:false,error:'Invalid price item'};
+    const price=Number(value);
+    if (!Number.isSafeInteger(price) || price<1 || price>100000) return {ok:false,error:'Price must be an integer from 1 to 100000 THB'};
+    const previous=this.price(item), now=Date.now();
+    this.sql.exec(`INSERT INTO voxel_admin_controls(key,value,updated_by,updated_at) VALUES (?,?,?,?)
+      ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_by=excluded.updated_by,updated_at=excluded.updated_at`,
+      'price_'+item,String(price),String(actor||''),now);
+    this.audit(actor,'set-price',null,previous,price,{item,currency:'THB'});
+    return {ok:true,item,price,previous,pricing:this.pricingSnapshot()};
+  }
   setControl(key,value,actor) {
     const now=Date.now(), next=String(value ?? '');
     const previous=this.control(key,'');
@@ -613,8 +633,9 @@ export class GameRoom {
     const config = PAYMENT_CONFIG;
 
     const cfg = config[item];
+    const price=this.price(item);
 
-    if (!cfg || Number(amount) !== cfg.price) {
+    if (!cfg || !price || Number(amount) !== price) {
       return { ok:false, error:'Invalid item or amount' };
     }
 
@@ -681,7 +702,7 @@ export class GameRoom {
         `INSERT INTO voxel_payments
           (transaction_id, uid, item, amount, created_at)
          VALUES (?, ?, ?, ?, ?)`,
-        transactionId, uid, item, cfg.price, now
+        transactionId, uid, item, price, now
       );
 
       const entitlements = this.sql.exec(
@@ -733,6 +754,7 @@ export class GameRoom {
         maintenanceVip:this.controlBool('maintenance_vip'),
         paymentPaused:this.controlBool('payment_emergency'),
         vipAdmissionPaused:this.controlBool('vip_admission_emergency'),
+        pricing:this.pricingSnapshot(),
         serverNow:Date.now()});
     }
 
@@ -780,6 +802,18 @@ export class GameRoom {
         email,role,actor,Date.now());
       this.audit(actor,'set-role',null,null,null,{email,role});
       return Response.json({ok:true,email,role});
+    }
+
+    if (url.pathname==='/_internal/admin/pricing' && request.method==='GET') {
+      return Response.json({ok:true,pricing:this.pricingSnapshot(),serverNow:Date.now()});
+    }
+
+    if (url.pathname==='/_internal/admin/price-set' && request.method==='POST') {
+      let body; try { body=await request.json(); } catch (_) { return Response.json({ok:false,error:'Invalid JSON'},{status:400}); }
+      const actor=String(body?.actor||'').trim(), item=String(body?.item||''), price=Number(body?.price);
+      if (!actor) return Response.json({ok:false,error:'Invalid pricing actor'},{status:400});
+      const result=this.setPrice(item,price,actor);
+      return Response.json(result,{status:result.ok?200:400});
     }
 
     if (url.pathname==='/_internal/admin/control-set' && request.method==='POST') {
@@ -1086,6 +1120,7 @@ export class GameRoom {
             max:VIP_ENTITLEMENT_CAP
           }
         },
+        pricing:this.pricingSnapshot(),
         active:{
           speed:speedExpires > now,
           coin:coinExpires > now,
