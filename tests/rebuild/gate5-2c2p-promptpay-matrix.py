@@ -36,16 +36,19 @@ def main():
     merchant,secret=creds()
     base="https://gpt-voxel-3d-staging-01.hjinffv5426.workers.dev"
     variants=[
-      ("docs-qr",["QR"],False),
-      ("qr-return",["QR"],True),
-      ("thqr-return",["THQR"],True),
-      ("ppqr-return",["PPQR"],True)
+      ("docs-qr",["QR"],False,10.0,"VOXEL QR sandbox matrix","VM"),
+      ("qr-return",["QR"],True,10.0,"VOXEL QR sandbox matrix","VM"),
+      ("qr-50",["QR"],True,50.0,"VOXEL QR sandbox matrix","VM"),
+      ("qr-50-vip",["QR"],True,50.0,"VOXEL VIP PromptPay sandbox probe","VM"),
+      ("qr-50-vqp",["QR"],True,50.0,"VOXEL VIP PromptPay sandbox probe","VQP"),
+      ("thqr-return",["THQR"],True,10.0,"VOXEL QR sandbox matrix","VM"),
+      ("ppqr-return",["PPQR"],True,10.0,"VOXEL QR sandbox matrix","VM")
     ]
     out=[]
-    for i,(name,channels,with_return) in enumerate(variants):
+    for i,(name,channels,with_return,amount,description,prefix) in enumerate(variants):
         payload={"merchantID":merchant,
-          "invoiceNo":("VM"+str(int(time.time()))+str(i)+uuid.uuid4().hex[:4].upper())[:20],
-          "description":"VOXEL QR sandbox matrix","amount":10.0,"currencyCode":"THB",
+          "invoiceNo":(prefix+str(int(time.time()))+str(i)+uuid.uuid4().hex[:4].upper())[:20],
+          "description":description,"amount":amount,"currencyCode":"THB",
           "nonceStr":str(uuid.uuid4()),"paymentChannel":channels}
         if with_return:
             payload.update({"frontendReturnUrl":base+"/?payment=promptpay-return",
