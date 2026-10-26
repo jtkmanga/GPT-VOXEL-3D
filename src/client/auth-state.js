@@ -12,7 +12,29 @@
         };
 
         // Initialize Firebase
+        const PRODUCTION_APP_CHECK_SITE_KEY = "__VOXEL_PRODUCTION_APP_CHECK_SITE_KEY__";
         firebase.initializeApp(firebaseConfig);
+        let productionAppCheck = null;
+        if (typeof STAGING_CLIENT_ENABLED === 'undefined' &&
+            PRODUCTION_APP_CHECK_SITE_KEY !== "__VOXEL_PRODUCTION_APP_CHECK_SITE_KEY__") {
+            productionAppCheck = firebase.appCheck();
+            productionAppCheck.activate(
+                new firebase.appCheck.ReCaptchaEnterpriseProvider(PRODUCTION_APP_CHECK_SITE_KEY),
+                true
+            );
+        }
+        async function secureGetAppCheckToken(forceRefresh = false) {
+            if (typeof stagingGetAppCheckToken === 'function') {
+                return stagingGetAppCheckToken(forceRefresh);
+            }
+            if (!productionAppCheck) throw new Error('App Check unavailable');
+            const result = await productionAppCheck.getToken(Boolean(forceRefresh));
+            const token = result?.token;
+            if (typeof token !== 'string' || token.length < 20 || token.length > 8192) {
+                throw new Error('App Check token unavailable');
+            }
+            return token;
+        }
         const auth = firebase.auth();
         const database = firebase.database();
         const googleProvider = new firebase.auth.GoogleAuthProvider();
