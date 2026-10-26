@@ -237,6 +237,11 @@
             if (securePromptPayPolling) return null;
             const user = auth.currentUser;
             const invoiceNo = state.pendingPayment?.invoiceNo;
+            if (typeof liveSiteConfig === 'undefined' || liveSiteConfig?.promptPayEnabled !== true) {
+                secureStopPromptPayPolling();
+                if (manual) alert('PromptPay ยังไม่เปิดรับเงินจริงในขณะนี้');
+                return null;
+            }
             if (!user || state.pendingPayment?.type !== 'vip1' || typeof invoiceNo !== 'string') {
                 if (manual) alert('ไม่พบรายการ PromptPay ที่กำลังรอชำระ');
                 return null;
@@ -288,7 +293,9 @@
         async function secureBeginPromptPayVipCheckout(title) {
             const user = auth.currentUser;
             if (!user) throw new Error('กรุณาล็อกอินด้วย Google Account ก่อนทำรายการ');
-            if (typeof liveSiteConfig !== 'undefined' && liveSiteConfig?.paymentPaused) {
+            if (typeof liveSiteConfig === 'undefined' || liveSiteConfig?.promptPayEnabled !== true)
+                throw new Error('PromptPay ยังไม่เปิดรับเงินจริงในขณะนี้');
+            if (liveSiteConfig?.paymentPaused) {
                 throw new Error('ระบบชำระเงินถูกพักชั่วคราว');
             }
             const livePricing = typeof liveSiteConfig !== 'undefined' ? liveSiteConfig?.pricing : null;
@@ -352,6 +359,10 @@
             }
             if (type !== 'vip1') {
                 alert('รายการนี้ยังไม่เปิดรับชำระเงินจริง ระบบ PromptPay เปิดสำหรับ VIP เท่านั้น');
+                return;
+            }
+            if (typeof liveSiteConfig === 'undefined' || liveSiteConfig?.promptPayEnabled !== true) {
+                alert('PromptPay ยังไม่เปิดรับเงินจริงในขณะนี้');
                 return;
             }
             secureBeginPromptPayVipCheckout(title).catch(error => {
