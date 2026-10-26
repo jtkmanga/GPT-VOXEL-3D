@@ -124,8 +124,8 @@
                 throw new Error('บัญชีเปลี่ยนระหว่างตรวจสอบสิทธิ์');
             }
             const headers = { 'Authorization': 'Bearer ' + token };
-            if (typeof stagingGetAppCheckToken === 'function') {
-                headers['X-Firebase-AppCheck'] = await stagingGetAppCheckToken(false);
+            if (typeof secureGetAppCheckToken === 'function') {
+                headers['X-Firebase-AppCheck'] = await secureGetAppCheckToken(false);
             }
             const response = await fetch(SECURE_WORKER_HTTP_BASE + '/entitlements', {
                 method: 'GET', headers
@@ -250,9 +250,12 @@
                 formData.append('file', fileInput.files[0]);
                 formData.append('item', item);
 
+                const appCheckToken = typeof secureGetAppCheckToken === 'function'
+                    ? await secureGetAppCheckToken(false) : '';
                 const response = await fetch(SECURE_WORKER_HTTP_BASE + '/verify-slip', {
                     method: 'POST',
-                    headers: { 'Authorization': 'Bearer ' + token },
+                    headers: { 'Authorization': 'Bearer ' + token,
+                        ...(appCheckToken ? { 'X-Firebase-AppCheck': appCheckToken } : {}) },
                     body: formData
                 });
                 const result = await response.json().catch(() => ({}));
