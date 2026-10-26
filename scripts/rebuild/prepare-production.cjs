@@ -25,9 +25,11 @@ const config=JSON.parse(fs.readFileSync(basePath,'utf8'));
 if(config.name!=='voxel-run-v2-demo') fail('production worker identity changed');
 if(config.vars?.FIREBASE_PROJECT_ID!=='lucky-game-6936b') fail('production Firebase project changed');
 if(config.vars?.PAYMENT_MODE!=='disabled') fail('base production payment must remain disabled');
-if(process.env.PRODUCTION_PAYMENT_MODE!=='disabled') fail('first production rollout requires PRODUCTION_PAYMENT_MODE=disabled');
+const paymentMode=String(process.env.PRODUCTION_PAYMENT_MODE||'').trim();
+if(!['disabled','2c2p-promptpay-production'].includes(paymentMode))
+  fail('PRODUCTION_PAYMENT_MODE must be disabled or 2c2p-promptpay-production');
 config.triggers={...(config.triggers||{}),crons:['0 17 * * *']};
-config.vars={...(config.vars||{}),ADMIN_OWNER_EMAIL:'jtkmanga@gmail.com'};
+config.vars={...(config.vars||{}),ADMIN_OWNER_EMAIL:'jtkmanga@gmail.com',PAYMENT_MODE:paymentMode};
 
 const firebase=productionFirebasePublicConfig();
 if(firebase.projectId!=='lucky-game-6936b'||firebase.authDomain!=='lucky-game-6936b.firebaseapp.com')
@@ -50,9 +52,23 @@ config.vars={
   FIREBASE_PUBLIC_CONFIG:JSON.stringify(firebase),
   FIREBASE_APP_CHECK_SITE_KEY:siteKey
 };
+if(paymentMode==='2c2p-promptpay-production'){
+  const merchantID=need('PRODUCTION_TWOC2P_MERCHANT_ID');
+  if(process.env.PRODUCTION_TWOC2P_PROMPTPAY_CAPABILITY_VERIFIED!=='true')
+    fail('PromptPay merchant capability has not been verified');
+  if(!/^[A-Za-z0-9._:-]{1,64}$/.test(merchantID)) fail('production 2C2P merchant ID format invalid');
+  config.vars={
+    ...config.vars,
+    TWOC2P_PRODUCTION_MERCHANT_ID:merchantID,
+    TWOC2P_PROMPTPAY_ENABLED:'true',
+    TWOC2P_PROMPTPAY_MERCHANT_CAPABILITIES_VERIFIED:'true',
+    TWOC2P_PROMPTPAY_CHECKOUT_ENABLED:String(process.env.PRODUCTION_TWOC2P_PROMPTPAY_CHECKOUT_ENABLED||'false')==='true'?'true':'false',
+    TWOC2P_PROMPTPAY_BACKEND_ENABLED:'true'
+  };
+}
 if (typeof config.main!=='string' || !config.main.trim()) fail('production Worker entrypoint is missing');
 const entryAbsolute=path.resolve(path.dirname(basePath),config.main);
 config.main=path.relative(outDir,entryAbsolute).split(path.sep).join('/');
 fs.mkdirSync(outDir,{recursive:true});
 fs.writeFileSync(outPath,JSON.stringify(config,null,2)+'\n',{mode:0o600});
-console.log('PASS production config prepared: values withheld; payment disabled; cron present');
+console.log('PASS production config prepared: values withheld; payment mode='+paymentMode+'; cron present');
