@@ -35,7 +35,8 @@ function requireRole(admin,minimum){
   return admin.ok && (RANK[admin.role]||0)>=(RANK[minimum]||99);
 }
 
-function adminHtml(){
+function adminHtml(env){
+const environment=env?.APP_ENV==='staging'?'staging':'production';
 return `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>VOXEL RUN Admin</title><style>
 :root{color-scheme:dark;--bg:#07111f;--panel:#0d1828;--panel2:#101d30;--line:#213149;--line2:#2d405d;--text:#edf4ff;--muted:#91a3bc;--accent:#60a5fa;--accent2:#1d4ed8;--good:#4ade80;--goodbg:#102b1e;--warn:#fbbf24;--danger:#f87171;--dangerbg:#38151b;--shadow:0 14px 35px rgba(0,0,0,.22)}
@@ -57,7 +58,7 @@ table{width:100%;border-collapse:separate;border-spacing:0;font-size:12px;min-wi
 @media(max-width:430px){.grid{grid-template-columns:1fr 1fr}.metric{padding:12px}.metric-value{font-size:23px}.section-head span{display:none}}
 </style></head><body><main>
 <header class="topbar">
-  <div class="brand"><div class="brand-mark">VR</div><div><h1>VOXEL RUN Admin</h1><small>Live operations · staging</small></div></div>
+  <div class="brand"><div class="brand-mark">VR</div><div><h1>VOXEL RUN Admin</h1><small>Live operations · ${environment}</small></div></div>
   <div class="top-actions"><span id="role" class="pill">signed out</span><button id="login" class="primary">Google Login</button><button id="logout" class="ghost">Logout</button></div>
 </header>
 <p id="status" class="status muted">ยังไม่ได้เข้าสู่ระบบ</p>
@@ -106,7 +107,7 @@ table{width:100%;border-collapse:separate;border-spacing:0;font-size:12px;min-wi
 </section>
 
 <section class="section">
-<div class="section-head"><h2>Live Site / Server Controls</h2><span>การเปลี่ยนแปลงมีผลกับ staging ทันที</span></div>
+<div class="section-head"><h2>Live Site / Server Controls</h2><span>การเปลี่ยนแปลงมีผลกับ ${environment} ทันที</span></div>
 <div class="grid">
 <div class="card control-card"><b>ประกาศ</b><textarea id="announcement" maxlength="300" placeholder="ข้อความประกาศในเกม"></textarea><div class="row"><button class="primary" data-control="announcement">บันทึกประกาศ</button></div></div>
 <div class="card control-card"><b>ชื่อเซิร์ฟเวอร์</b><input id="free_name" maxlength="80" placeholder="Free Server"><input id="vip_name" maxlength="80" placeholder="VIP Server"><div class="row"><button class="ghost" data-control="free_name">บันทึก Free</button><button class="ghost" data-control="vip_name">บันทึก VIP</button></div></div>
@@ -142,7 +143,7 @@ function diag(msg,important=false){const el=$('authDiag');if(!el)return;const t=
 function clearDiag(){const el=$('authDiag');if(el){el.hidden=true;el.textContent=''}}
 window.addEventListener('error',e=>diag('JS error: '+(e?.message||'unknown'),true));
 window.addEventListener('unhandledrejection',e=>diag('Promise error: '+(e?.reason?.code||'')+' '+(e?.reason?.message||e?.reason||'unknown'),true));
-function authError(e){const code=String(e?.code||'');if(code==='auth/unauthorized-domain')return 'โดเมน staging ยังไม่ได้รับอนุญาตใน Firebase Authentication';if(code==='auth/popup-blocked'||code==='auth/popup-closed-by-user'||code==='auth/cancelled-popup-request')return 'เบราว์เซอร์ปิดหน้าต่างเข้าสู่ระบบ กรุณาลองใหม่';return e?.message||'เข้าสู่ระบบไม่สำเร็จ'}
+function authError(e){const code=String(e?.code||'');if(code==='auth/unauthorized-domain')return 'โดเมนนี้ยังไม่ได้รับอนุญาตใน Firebase Authentication';if(code==='auth/popup-blocked'||code==='auth/popup-closed-by-user'||code==='auth/cancelled-popup-request')return 'เบราว์เซอร์ปิดหน้าต่างเข้าสู่ระบบ กรุณาลองใหม่';return e?.message||'เข้าสู่ระบบไม่สำเร็จ'}
 async function ensureAuth(){if(auth)return auth;diag('Loading Firebase config...');const r=await fetch('/admin/api/public-config',{cache:'no-store'}),j=await r.json();if(!r.ok)throw Error(j.error||'Firebase config unavailable');diag('Firebase config OK · authDomain='+j.firebase.authDomain);firebase.initializeApp(j.firebase);if(!j.appCheck?.siteKey)throw Error('Firebase App Check config unavailable');appCheck=firebase.appCheck();appCheck.activate(new firebase.appCheck.ReCaptchaEnterpriseProvider(j.appCheck.siteKey),true);diag('Firebase App Check initialized');try{const token=await appCheck.getToken(false);if(!token?.token)throw Error('App Check token missing');diag('Firebase App Check token ready')}catch(e){diag('App Check error: '+(e?.code||'')+' '+(e?.message||''),true);throw Error('Firebase App Check token unavailable')}auth=firebase.auth();provider=new firebase.auth.GoogleAuthProvider();diag('Firebase Auth initialized');try{await auth.getRedirectResult()}catch(e){diag('Redirect result error: '+(e?.code||'')+' '+(e?.message||''),true);$('status').className='status err';$('status').textContent=authError(e)}auth.onAuthStateChanged(async u=>{diag('Auth state: '+(u?'SIGNED IN':'signed out'));if(u){await loadMe();await loadAll();}else{me=null;$('role').textContent='signed out';if(!$('status').classList.contains('err'))$('status').textContent='ยังไม่ได้เข้าสู่ระบบ';}});return auth}
 async function headers(){const a=await ensureAuth(),u=a.currentUser;if(!u)throw Error('กรุณาเข้าสู่ระบบ');return {'Authorization':'Bearer '+await u.getIdToken(),'Content-Type':'application/json'}}
 async function api(path,opt={}){const r=await fetch(path,{...opt,headers:{...(opt.headers||{}),...(await headers())}});const type=r.headers.get('content-type')||'';const j=type.includes('json')?await r.json():await r.text();if(!r.ok)throw Error(j?.error||j||'Request failed');return j}
@@ -173,17 +174,31 @@ setInterval(()=>{if(auth?.currentUser)loadAll()},5000);ensureAuth().catch(e=>{di
 </script></main></body></html>`;
 }
 
+function adminPublicConfig(env){
+  let firebase;try{firebase=JSON.parse(String(env?.FIREBASE_PUBLIC_CONFIG||''))}catch(_){}
+  const safe=firebase&&typeof firebase==='object'&&!Array.isArray(firebase)?{
+    apiKey:String(firebase.apiKey||''),authDomain:String(firebase.authDomain||''),projectId:String(firebase.projectId||''),
+    appId:String(firebase.appId||''),messagingSenderId:String(firebase.messagingSenderId||'')
+  }:null;
+  const siteKey=String(env?.FIREBASE_APP_CHECK_SITE_KEY||'').trim();
+  if(!safe||!safe.apiKey||!/^[a-z0-9.-]+\.firebaseapp\.com$/i.test(safe.authDomain)||
+     safe.projectId!==env?.FIREBASE_PROJECT_ID||!safe.appId||!siteKey) return null;
+  return {firebase:safe,siteKey};
+}
 export async function handleAdmin(request,env){
   const url=new URL(request.url);
-  if(url.pathname==='/admin'&&request.method==='GET') return new Response(adminHtml(),{headers:{
-    'content-type':'text/html; charset=utf-8','cache-control':'no-store',
-    'content-security-policy':"default-src 'self'; script-src 'self' https://www.gstatic.com https://apis.google.com https://www.google.com https://www.recaptcha.net 'unsafe-inline'; connect-src 'self' https://*.googleapis.com https://securetoken.googleapis.com https://accounts.google.com https://gpt-voxel-3d-staging.firebaseapp.com https://www.google.com https://www.recaptcha.net; frame-src 'self' https://accounts.google.com https://gpt-voxel-3d-staging.firebaseapp.com https://www.google.com https://www.recaptcha.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:;" }});
+  if(url.pathname==='/admin'&&request.method==='GET'){
+    const publicConfig=adminPublicConfig(env);
+    const authOrigin=publicConfig?'https://'+publicConfig.firebase.authDomain:'';
+    const csp="default-src 'self'; script-src 'self' https://www.gstatic.com https://apis.google.com https://www.google.com https://www.recaptcha.net 'unsafe-inline'; connect-src 'self' https://*.googleapis.com https://securetoken.googleapis.com https://accounts.google.com "+authOrigin+" https://www.google.com https://www.recaptcha.net; frame-src 'self' https://accounts.google.com "+authOrigin+" https://www.google.com https://www.recaptcha.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:;";
+    return new Response(adminHtml(env),{headers:{
+      'content-type':'text/html; charset=utf-8','cache-control':'no-store','content-security-policy':csp
+    }});
+  }
   if(url.pathname==='/admin/api/public-config'&&request.method==='GET'){
-    let firebase;try{firebase=JSON.parse(String(env?.FIREBASE_PUBLIC_CONFIG||''))}catch(_){}
-    const safe=firebase&&typeof firebase==='object'&&!Array.isArray(firebase)?{apiKey:String(firebase.apiKey||''),authDomain:String(firebase.authDomain||''),projectId:String(firebase.projectId||''),appId:String(firebase.appId||''),messagingSenderId:String(firebase.messagingSenderId||'')}:null;
-    const siteKey=String(env?.FIREBASE_APP_CHECK_SITE_KEY||'').trim();
-    if(!safe||!safe.apiKey||!safe.authDomain||safe.projectId!==env?.FIREBASE_PROJECT_ID||!siteKey)return json({ok:false,error:'Admin Firebase config unavailable'},503);
-    return json({ok:true,firebase:safe,appCheck:{siteKey}});
+    const publicConfig=adminPublicConfig(env);
+    if(!publicConfig)return json({ok:false,error:'Admin Firebase config unavailable'},503);
+    return json({ok:true,firebase:publicConfig.firebase,appCheck:{siteKey:publicConfig.siteKey}});
   }
 
   const admin=await adminIdentity(request,env); if(!admin.ok)return json({ok:false,error:admin.error},admin.status);
