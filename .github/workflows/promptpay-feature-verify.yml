@@ -1,5 +1,5 @@
 name: PromptPay Feature Verification
-# rerun after fail-closed regression update
+# rerun after randomUUID compatibility fix
 
 on:
   push:
