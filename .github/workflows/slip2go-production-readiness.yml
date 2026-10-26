@@ -1,0 +1,83 @@
+name: Slip2Go Production Readiness
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type CHECK-SLIP2GO-PRODUCTION'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: slip2go-production-readiness
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    if: github.ref == 'refs/heads/main' && inputs.confirm == 'CHECK-SLIP2GO-PRODUCTION'
+    runs-on: ubuntu-24.04
+    environment: production
+    timeout-minutes: 12
+    env:
+      PRODUCTION_PAYMENT_MODE: slip2go-production
+      PRODUCTION_SLIP2GO_ROLLOUT: canary
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Confirm protected Slip2Go bindings exist without reading values
+        shell: python
+        run: |
+          import json, os, urllib.request
+          token=os.environ.get('CLOUDFLARE_API_TOKEN','')
+          account=os.environ.get('CLOUDFLARE_ACCOUNT_ID','')
+          if not token or not account:
+              raise SystemExit('Cloudflare production credentials unavailable')
+          url=f'https://api.cloudflare.com/client/v4/accounts/{account}/workers/scripts/voxel-run-v2-demo/settings'
+          req=urllib.request.Request(url,headers={'Authorization':'Bearer '+token,'Accept':'application/json'})
+          with urllib.request.urlopen(req,timeout=20) as r:
+              data=json.load(r)
+          bindings=data.get('result',{}).get('bindings',[])
+          secret_names={x.get('name') for x in bindings if x.get('type')=='secret_text'}
+          required={'SLIP2GO_API_SECRET','PAYMENT_RECEIVER_ACCOUNT'}
+          missing=required-secret_names
+          if missing:
+              raise SystemExit('Missing protected Slip2Go binding(s): '+', '.join(sorted(missing)))
+          with open(os.environ['GITHUB_ENV'],'a',encoding='utf-8') as f:
+              f.write('PRODUCTION_SLIP2GO_CONFIG_VERIFIED=true\n')
+          print('PASS protected Slip2Go binding names present; values not read')
+      - name: Full production preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ inputs.confirm }}" = "CHECK-SLIP2GO-PRODUCTION"
+          npm ci
+          node scripts/rebuild/check-production-readiness.cjs
+          node scripts/rebuild/prepare-production.cjs
+          node scripts/rebuild/run-tests.cjs
+          node scripts/rebuild/build-client.cjs --check
+          node scripts/rebuild/check-syntax.cjs
+          node scripts/rebuild/check-static.cjs
+          node scripts/rebuild/check-staging.cjs --allow-unconfigured
+          node scripts/rebuild/check-secrets.cjs
+          git diff --check
+          grep -q '"PAYMENT_MODE": "slip2go-production"' work/production/prepared/wrangler.jsonc
+          grep -q '"PAYMENT_ROLLOUT": "canary"' work/production/prepared/wrangler.jsonc
+          ! grep -q 'SLIP2GO_API_SECRET' work/production/prepared/wrangler.jsonc
+          ! grep -q 'PAYMENT_RECEIVER_ACCOUNT' work/production/prepared/wrangler.jsonc
+      - name: Wrangler Slip2Go dry run only
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --dry-run --config work/production/prepared/wrangler.jsonc --outdir work/slip2go-production-dry-run
+          test -d work/slip2go-production-dry-run
+          echo "PASS Slip2Go production dry run; no deployment performed"
