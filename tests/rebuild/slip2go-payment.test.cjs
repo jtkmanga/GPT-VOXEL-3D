@@ -73,6 +73,41 @@ test('VIP QR uses authoritative 50 THB server price and Slip2Go secret only on W
   assert.equal(h.records.fetches.filter(record=>record.url===SLIP_QR_URL).length,1);
 });
 
+test('Slip2Go QR provider errors are surfaced safely before QR parsing',async t=>{
+  const h=createHarness();
+  t.after(()=>h.close());
+  h.setSlipQrResult({code:'401007',message:'IP Address not Allowed'},401);
+  const response=await h.request('/payment-qr',{
+    method:'POST',
+    headers:{Authorization:'Bearer '+h.token('qr-provider-error'),'Content-Type':'application/json'},
+    body:JSON.stringify({item:'vip1'})
+  });
+  assert.equal(response.status,502);
+  const result=await response.json();
+  assert.equal(result.ok,false);
+  assert.equal(result.error,'Slip2Go QR error [401007] IP Address not Allowed');
+});
+
+test('Slip2Go QR accepts provider display-name normalization but still pins amount and HTTPS',async t=>{
+  const h=createHarness();
+  t.after(()=>h.close());
+  h.setSlipQrResult({code:'200',message:'Success',data:{
+    qrImageLink:'https://cdn.synthetic.invalid/promptpay-qr.jpg',
+    accountName:'Normalized Receiver Name',
+    amount:'50.00'
+  }});
+  const response=await h.request('/payment-qr',{
+    method:'POST',
+    headers:{Authorization:'Bearer '+h.token('qr-name-normalized'),'Content-Type':'application/json'},
+    body:JSON.stringify({item:'vip1'})
+  });
+  assert.equal(response.status,200);
+  const result=await response.json();
+  assert.equal(result.ok,true);
+  assert.equal(result.price,50);
+  assert.equal(result.accountName,'Normalized Receiver Name');
+});
+
 test('Slip2Go canary allows only the configured owner account',async t=>{
   const h=createHarness({env:{PAYMENT_ROLLOUT:'canary',ADMIN_OWNER_EMAIL:'owner@example.invalid'}});
   t.after(()=>h.close());
