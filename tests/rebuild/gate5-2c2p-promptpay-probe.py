@@ -72,7 +72,7 @@ def main():
         token=post_signed(TOKEN_URL,{
           "merchantID":merchant,"invoiceNo":invoice,"description":"VOXEL VIP PromptPay sandbox probe",
           "amount":50.00,"currencyCode":"THB","paymentChannel":["QR"],
-          "nonceStr":uuid.uuid4().hex,
+          "nonceStr":str(uuid.uuid4()),
           "frontendReturnUrl":base+"/?payment=promptpay-return",
           "backendReturnUrl":base+"/payments/promptpay/backend"
         },secret)
