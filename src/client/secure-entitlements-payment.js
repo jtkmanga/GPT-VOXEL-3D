@@ -198,8 +198,8 @@
             const slip = document.getElementById('payment-slip-section');
             const verify = document.getElementById('btn-verify-slip');
             const account = document.getElementById('payment-account-info');
-            if (slip) slip.classList.toggle('hidden', active);
-            if (verify) verify.classList.toggle('hidden', active);
+            if (slip?.classList) active ? slip.classList.add('hidden') : slip.classList.remove('hidden');
+            if (verify?.classList) active ? verify.classList.add('hidden') : verify.classList.remove('hidden');
             if (account) account.innerText = active
                 ? 'Dynamic QR · สร้างใหม่ต่อรายการ · ไม่ต้องอัปโหลดสลิป'
                 : 'ชำระเงินตาม QR และอัปโหลดสลิปเพื่อตรวจสอบ';
