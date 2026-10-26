@@ -12,7 +12,7 @@ test.before(async () => {
   adapter = await import(pathToFileURL(path.join(ROOT, 'src/worker/twoc2p-promptpay.mjs')).href);
 });
 
-test('PromptPay adapter requests the exact Thai PPQR channel without recurring card fields', () => {
+test('PromptPay adapter scopes Payment Token to QR and Do Payment pins exact PPQR', () => {
   const request = adapter.buildPromptPayPaymentTokenRequest({
     ok: true, invoiceNo: 'VQP12345678901234567', amount: 50, currencyCode: 'THB'
   }, {
@@ -20,7 +20,8 @@ test('PromptPay adapter requests the exact Thai PPQR channel without recurring c
     returnUrl: 'https://example.invalid/return',
     workerOrigin: 'https://worker.example.invalid'
   });
-  assert.deepEqual(request.paymentChannel, ['PPQR']);
+  assert.deepEqual(request.paymentChannel, ['QR']);
+  assert.match(request.nonceStr, /^[a-f0-9]{32}$/);
   assert.equal(request.currencyCode, 'THB');
   assert.equal(request.amount, 50);
   assert.equal(request.backendReturnUrl, 'https://worker.example.invalid/payments/promptpay/backend');
