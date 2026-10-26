@@ -78,8 +78,7 @@ async function buildStagingClient(value, { allowTest = false } = {}) {
         const node = initializers[0]; source = source.slice(0, node.start) + source.slice(node.end);
       }
       if (file === './secure-entitlements-payment.js') source = replaceInitializers(source, {
-        SECURE_WORKER_HTTP_BASE: "STAGING_CLIENT_ENABLED ? STAGING_PUBLIC_CONFIG.workerOrigin : ''",
-        SECURE_PAYMENT_PROMPTPAY_TARGET: "''"
+        SECURE_WORKER_HTTP_BASE: "STAGING_CLIENT_ENABLED ? STAGING_PUBLIC_CONFIG.workerOrigin : ''"
       });
       return sanitizeTokenRequests(source);
     },
@@ -90,12 +89,9 @@ async function buildStagingClient(value, { allowTest = false } = {}) {
   if (!html.includes(authSdk)) throw new Error('Staging build could not locate Firebase Auth SDK');
   if (!html.includes(appCheckSdk)) html = html.replace(authSdk, authSdk + '\n' + appCheckSdk);
   html = html.replace(/(<body[^>]*>)/, '$1\n<div id="staging-status" role="status" style="position:fixed;top:0;left:0;right:0;z-index:10000;background:#5b21b6;color:white;text-align:center;font:12px sans-serif;padding:3px">STAGING · TEST PAYMENTS ONLY</div>');
-  html = html.replace('ชำระเงินผ่าน PromptPay', 'Sandbox entitlement fixtures · no payment');
+  html = html.replace('PromptPay Dynamic QR', 'Sandbox entitlement fixtures · no payment');
   for (const blocked of ['voxel-run-v2-demo.hjinffv5426.workers.dev', 'lucky-game-6936b',
-    'AIzaSyCwn4rJ48I_bsVI2Ez59szQJubShvhO1SE', '0999999999', 'http://localhost', '127.0.0.1']) {
-    // The obsolete payment function contains a dummy receiver. Its UI remains disabled;
-    // remove the receiver literal from the isolated artifact as well.
-    if (blocked === '0999999999') html = html.replaceAll(blocked, '');
+    'AIzaSyCwn4rJ48I_bsVI2Ez59szQJubShvhO1SE', 'http://localhost', '127.0.0.1']) {
     if (html.includes(blocked)) throw new Error('Staging bundle contains a forbidden production/default reference');
   }
   validateStagingHtml(html, { manifest: config });
