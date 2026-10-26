@@ -37,7 +37,11 @@ if(firebase.projectId!=='lucky-game-6936b'||firebase.authDomain!=='lucky-game-69
 if(!/^AIza[A-Za-z0-9_-]{35}$/.test(firebase.apiKey)) fail('Firebase public API key format invalid');
 if(!/^1:\d+:web:[A-Za-z0-9]+$/.test(firebase.appId)) fail('Firebase appId format invalid');
 
-const siteKey=need('PRODUCTION_APP_CHECK_SITE_KEY');
+const authSource=fs.readFileSync(path.resolve('src/client/auth-state.js'),'utf8');
+const siteMatch=/PRODUCTION_APP_CHECK_SITE_KEY\s*=\s*"([^"]+)"/.exec(authSource);
+if(!siteMatch) fail('Production App Check site key declaration missing');
+const siteKey=siteMatch[1];
+if(siteKey==="__VOXEL_PRODUCTION_APP_CHECK_SITE_KEY__") fail('Production App Check site key is still a placeholder');
 if(siteKey.length<10||siteKey.length>256||/[\s\u0000-\u001f\u007f]/.test(siteKey)) fail('Production App Check site key format invalid');
 const allowedOrigin='https://jtkmanga.github.io';
 const workerOrigin='https://voxel-run-v2-demo.hjinffv5426.workers.dev';
