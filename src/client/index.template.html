@@ -404,13 +404,13 @@
         </div>
     </div>
 
-    <!-- PROMPTPAY PAYMENT & SLIP VERIFICATION MODAL -->
+    <!-- 2C2P THAI PROMPTPAY DYNAMIC QR MODAL -->
     <div id="payment-modal" class="hidden fixed inset-0 z-[60] bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-3">
         <div class="bg-slate-900 border-2 border-amber-500 rounded-2xl p-4 max-w-sm w-full max-h-[95vh] flex flex-col shadow-2xl relative overflow-y-auto">
             <div class="flex items-center justify-between border-b border-slate-800 pb-2 mb-3">
                 <div class="flex items-center gap-2 text-amber-400 font-bold text-base">
                     <i class="fa-solid fa-qrcode"></i>
-                    <span>ชำระเงินผ่าน PromptPay</span>
+                    <span>PromptPay Dynamic QR</span>
                 </div>
                 <button onclick="closePaymentModal()" class="text-slate-400 hover:text-white p-1 rounded-lg bg-slate-800/80 w-7 h-7 flex items-center justify-center active:scale-90 transition">
                     <i class="fa-solid fa-xmark text-base"></i>
@@ -420,27 +420,22 @@
             <div class="text-center space-y-3">
                 <div class="bg-slate-800/80 p-3 rounded-xl border border-slate-700">
                     <div id="pay-item-title" class="text-xs text-slate-300 font-bold">รายการสินค้า</div>
-                    <div id="pay-item-price" class="text-xl font-extrabold text-amber-400 mt-0.5">0.00 บาท</div>
+                    <div id="pay-item-price" class="text-xl font-extrabold text-amber-400 mt-0.5">0 บาท</div>
                 </div>
 
-                <!-- QR Code Display (PromptPay QR) -->
-                <div class="bg-white p-3 rounded-xl inline-block shadow-lg mx-auto">
-                    <img id="promptpay-qr-img" src="" alt="PromptPay QR" class="w-48 h-48 object-contain mx-auto">
+                <div id="promptpay-qr-wrap" class="hidden bg-white p-3 rounded-xl inline-block shadow-lg mx-auto">
+                    <img id="promptpay-qr-img" src="" alt="2C2P PromptPay Dynamic QR" class="w-48 h-48 object-contain mx-auto">
+                </div>
+                <div id="promptpay-payment-status" class="text-xs text-slate-300 bg-slate-800/70 border border-slate-700 rounded-xl px-3 py-2">
+                    กำลังเตรียมรายการชำระเงิน...
                 </div>
                 <div class="text-[11px] text-slate-400">
-                    ชื่อบัญชี: <span class="text-white font-bold">นาย จิตกร</span><br>
-                    เลขที่อ้างอิง: <span class="text-amber-400 font-bold">004999086038089</span>
-                </div>
-
-                <!-- Slip Upload & Check Section -->
-                <div class="text-left space-y-1.5 pt-2 border-t border-slate-800">
-                    <label class="block text-xs font-bold text-amber-400">อัปโหลดสลิปโอนเงินเพื่อตรวจสอบอัตโนมัติ:</label>
-                    <input type="file" id="slip-file-input" accept="image/*" class="w-full text-xs text-slate-300 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-amber-500 file:text-slate-950 hover:file:bg-amber-400 cursor-pointer bg-slate-800 rounded-xl border border-slate-700">
+                    QR นี้สร้างเฉพาะรายการและจำนวนเงินนี้ผ่าน 2C2P ระบบจะให้สิทธิ์ VIP หลัง Server ยืนยันการชำระเงินสำเร็จเท่านั้น
                 </div>
 
                 <button id="btn-verify-slip" onclick="verifyAndBuySlip()" class="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold py-2.5 px-4 rounded-xl shadow-lg shadow-emerald-600/30 text-xs transition active:scale-95 flex items-center justify-center gap-2">
-                    <i class="fa-solid fa-shield-check"></i>
-                    <span>ตรวจสอบสลิปและรับสิทธิ์</span>
+                    <i class="fa-solid fa-rotate"></i>
+                    <span>ตรวจสอบสถานะการชำระเงิน</span>
                 </button>
             </div>
         </div>
