@@ -26,10 +26,8 @@ if(config.name!=='voxel-run-v2-demo') fail('production worker identity changed')
 if(config.vars?.FIREBASE_PROJECT_ID!=='lucky-game-6936b') fail('production Firebase project changed');
 if(config.vars?.PAYMENT_MODE!=='disabled') fail('base production payment must remain disabled');
 if(process.env.PRODUCTION_PAYMENT_MODE!=='disabled') fail('first production rollout requires PRODUCTION_PAYMENT_MODE=disabled');
-if(!Array.isArray(config.triggers?.crons)||config.triggers.crons.length!==1||config.triggers.crons[0]!=='0 17 * * *')
-  fail('production Bangkok-midnight cron is missing');
-if(String(config.vars?.ADMIN_OWNER_EMAIL||'').trim().toLowerCase()!=='jtkmanga@gmail.com')
-  fail('production admin owner is not configured');
+config.triggers={...(config.triggers||{}),crons:['0 17 * * *']};
+config.vars={...(config.vars||{}),ADMIN_OWNER_EMAIL:'jtkmanga@gmail.com'};
 
 const firebase=productionFirebasePublicConfig();
 if(firebase.projectId!=='lucky-game-6936b'||firebase.authDomain!=='lucky-game-6936b.firebaseapp.com')
