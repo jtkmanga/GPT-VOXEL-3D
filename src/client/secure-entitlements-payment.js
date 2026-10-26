@@ -198,7 +198,8 @@
             }
 
             if (type === 'vip1') {
-                alert('การชำระเงิน VIP ยังไม่เปิดใช้งาน: ราคา 50 บาท/เดือน ต้องยืนยันผู้ให้บริการชำระเงินก่อน');
+                const vipPrice = Number(liveSiteConfig?.pricing?.vip1) || SECURE_PAYMENT_ITEMS.vip1.price;
+                alert('การชำระเงิน VIP ยังไม่เปิดใช้งาน: ราคา ' + vipPrice + ' บาท/เดือน ต้องยืนยันผู้ให้บริการชำระเงินก่อน');
                 return;
             }
 
@@ -208,10 +209,12 @@
                 return;
             }
 
-            state.pendingPayment = { type, price: cfg.price, title: title || cfg.title };
+            const livePrice = Number(liveSiteConfig?.pricing?.[type]);
+            const price = Number.isSafeInteger(livePrice) && livePrice > 0 ? livePrice : cfg.price;
+            state.pendingPayment = { type, price, title: title || cfg.title };
             document.getElementById('pay-item-title').innerText = state.pendingPayment.title;
-            document.getElementById('pay-item-price').innerText = cfg.price + ' บาท';
-            document.getElementById('promptpay-qr-img').src = `https://promptpay.io/${SECURE_PAYMENT_PROMPTPAY_TARGET}/${cfg.price}.png`;
+            document.getElementById('pay-item-price').innerText = price + ' บาท';
+            document.getElementById('promptpay-qr-img').src = `https://promptpay.io/${SECURE_PAYMENT_PROMPTPAY_TARGET}/${price}.png`;
             document.getElementById('slip-file-input').value = '';
             document.getElementById('payment-modal').classList.remove('hidden');
         };
