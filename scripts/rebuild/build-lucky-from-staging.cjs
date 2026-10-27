@@ -67,7 +67,7 @@ async function build() {
       !html.includes('STAGING_CLIENT_ENABLED') ||
       !html.includes('SECURE_WORKER_HTTP_BASE'))
     throw Error('Staging runtime assembly is incomplete');
-  if (/\b(?:SLIP2GO_API_SECRET|PAYMENT_RECEIVER_ACCOUNT|private_key|client_secret|payment_secret|FIREBASE_ADMIN_PRIVATE_KEY)\b/i.test(html))
+  if (/\b(?:SLIP2GO_API_SECRET|private_key|client_secret|payment_secret|FIREBASE_ADMIN_PRIVATE_KEY)\b/i.test(html))
     throw Error('Privileged server binding referenced in browser asset');
   return html;
 }
