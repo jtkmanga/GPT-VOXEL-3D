@@ -30,10 +30,8 @@ jobs:
           set -uo pipefail
           : > /tmp/tail.log
           : > /tmp/tail.err
-          npx wrangler tail voxel-run-v2-demo --format json > /tmp/tail.log 2> /tmp/tail.err &
+          timeout --signal=INT --kill-after=3s 24s npx wrangler tail voxel-run-v2-demo --format json > /tmp/tail.log 2> /tmp/tail.err &
           TAIL_PID=$!
-          cleanup() { kill "$TAIL_PID" 2>/dev/null || true; }
-          trap cleanup EXIT
           sleep 8
           node <<'NODE'
           const WebSocket = require('ws');
@@ -53,7 +51,7 @@ jobs:
           (async()=>{ for(const z of zones) await probe(z); })();
           NODE
           sleep 5
-          cleanup
+          wait "$TAIL_PID" || true
           sleep 1
           echo '--- TAIL STDERR ---'
           sed -E 's/(Bearer|token|authorization)[^ ]*/[REDACTED]/Ig' /tmp/tail.err | tail -80
