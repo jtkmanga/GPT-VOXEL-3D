@@ -1,0 +1,33 @@
+name: Prepare Exact Staging Replacement History
+
+on:
+  push:
+    branches:
+      - restore/lucky-game-from-staging-20261028
+    paths:
+      - .github/workflows/temp-stage-baseline-sync.yml
+
+permissions:
+  contents: write
+
+jobs:
+  resolve:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Record Production history while retaining exact Staging tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/restore/lucky-game-from-staging-20261028"
+          git fetch origin main
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git merge -s ours --no-edit origin/main -m "chore: retain exact Staging tree while recording Production history"
+          git diff --quiet HEAD^1 HEAD -- src/worker src/client src/shared || {
+            echo "FAIL source tree changed"; exit 1;
+          }
+          git push origin "HEAD:restore/lucky-game-from-staging-20261028"
