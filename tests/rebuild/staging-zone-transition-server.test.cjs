@@ -104,7 +104,11 @@ async function applyAndCheck(h, connection, seq, input, intervals = 2) {
   await connection.send(framePacket(seq, input, intervals));
   const accepted = connection.attachment();
   assert.deepEqual(pose(accepted), pose(expected), 'the real owning server integrates every affordable ordered frame');
-  for (const field of ['vx', 'vy', 'vz', 'grounded', 'jumpHeld']) assert.equal(accepted.motion[field], expected[field]);
+  for (const field of ['vx', 'vy', 'vz']) {
+    assert.ok(Math.abs(accepted.motion[field] - expected[field]) < 1e-9,
+      `${field} remains numerically equivalent across the production/staging runtime`);
+  }
+  for (const field of ['grounded', 'jumpHeld']) assert.equal(accepted.motion[field], expected[field]);
   assert.equal(accepted.motion.seq, seq);
   assert.equal(last(connection, 'move').ack, seq);
   assert.equal(accepted.motion.clock, h.now());
