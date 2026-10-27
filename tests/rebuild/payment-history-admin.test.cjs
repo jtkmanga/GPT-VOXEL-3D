@@ -56,7 +56,8 @@ test('rendered admin inline script parses without syntax errors',async()=>{
   const response=await handleAdmin(new Request('https://admin.invalid/admin'),{});
   assert.equal(response.status,200);
   const html=await response.text();
-  const match=html.match(/<script>([\\s\\S]*?)<\\/script>/);
-  assert.ok(match,'inline admin script missing');
-  assert.doesNotThrow(()=>new Function(match[1]));
+  const start=html.indexOf('<script>'),end=html.indexOf('</script>',start);
+  assert.ok(start>=0&&end>start,'inline admin script missing');
+  const script=html.slice(start+'<script>'.length,end);
+  assert.doesNotThrow(()=>new Function(script));
 });
