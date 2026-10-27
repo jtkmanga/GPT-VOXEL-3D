@@ -1,0 +1,30 @@
+name: Temporary Movement Fix CI
+
+on:
+  push:
+    branches:
+      - fix/smooth-authoritative-reconciliation-20261028
+
+permissions:
+  contents: read
+
+jobs:
+  movement-regression:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci
+      - name: Movement and production parity tests
+        run: |
+          node --test             tests/rebuild/production-staging-gameplay-parity.test.cjs             tests/rebuild/production-exact-staging-runtime.test.cjs             tests/rebuild/production-zone-handoff.test.cjs             tests/rebuild/staging-movement-regression.test.cjs
+      - name: Client build checks
+        run: |
+          node scripts/rebuild/build-client.cjs --check
+          node scripts/rebuild/check-syntax.cjs
+          git diff --check
