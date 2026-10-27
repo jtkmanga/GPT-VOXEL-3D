@@ -90,12 +90,12 @@ async function prepare() {
 }
 
 async function cleanup() {
-  const key = apiKey();
   const file = workPath(process.env.TOKEN_FILE);
   if (!fs.existsSync(file)) {
     console.log('No anonymous token manifest exists');
     return;
   }
+  const key = apiKey();
   const manifest = JSON.parse(fs.readFileSync(file, 'utf8'));
   const users = manifest.users || [];
   let failures = 0;
