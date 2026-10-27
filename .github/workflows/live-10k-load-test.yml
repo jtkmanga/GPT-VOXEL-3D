@@ -35,6 +35,7 @@ on:
   push:
     branches:
       - main
+      - development/voxel-continuous
     paths:
       - '.github/workflows/live-10k-load-test.yml'
       - 'scripts/load/firebase-load-users.cjs'
@@ -73,7 +74,7 @@ jobs:
           node scripts/load/live-10k-load.cjs --self-test
 
   staging-live-smoke-100:
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/development/voxel-continuous'
     needs: validate-harness
     runs-on: ubuntu-24.04
     timeout-minutes: 20
