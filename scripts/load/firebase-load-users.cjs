@@ -60,6 +60,12 @@ async function mapLimit(items, limit, fn) {
   return results;
 }
 
+function allowedReferer() {
+  const origin = String(process.env.ORIGIN || '').trim().replace(/\/$/, '');
+  if (!/^https:\/\//.test(origin)) throw new Error('ORIGIN must be an https:// URL');
+  return origin + '/';
+}
+
 async function exchangeCustomToken(apiKey, token) {
   const url = 'https://identitytoolkit.googleapis.com/v1/accounts:signInWithCustomToken?key=' +
     encodeURIComponent(apiKey);
@@ -68,7 +74,10 @@ async function exchangeCustomToken(apiKey, token) {
     try {
       response = await fetch(url, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: {
+          'content-type': 'application/json',
+          'referer': allowedReferer()
+        },
         body: JSON.stringify({ token, returnSecureToken: true })
       });
     } catch (error) {
