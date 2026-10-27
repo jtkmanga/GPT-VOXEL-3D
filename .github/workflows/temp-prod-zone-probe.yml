@@ -11,6 +11,7 @@ permissions:
 jobs:
   tail-and-probe:
     runs-on: ubuntu-24.04
+    environment: production
     timeout-minutes: 4
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
