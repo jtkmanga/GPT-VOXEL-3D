@@ -35,12 +35,27 @@ function zoneFor(globalIndex) {
   return `${slot % 10},${Math.floor(slot / 10)}`;
 }
 
-function movementPacket(index, seq, hz, elapsedMs) {
+function movementInput(index, seq, motionState = {}) {
+  const home = motionState.home;
+  const current = motionState.current;
+  if (home && current && [home.x, home.z, current.x, current.z].every(Number.isFinite)) {
+    const dx = current.x - home.x;
+    const dz = current.z - home.z;
+    // Keep the steady-state capacity test well inside the assigned Zone.
+    // Authority ACKs, not client prediction, choose when to steer home.
+    if (Math.abs(dx) >= 12) return { x: dx > 0 ? -1 : 1, z: 0, jump: false };
+    if (Math.abs(dz) >= 12) return { x: 0, z: dz > 0 ? -1 : 1, jump: false };
+  }
+  const phase = (Math.floor(seq / 4) + index) % 4;
+  if (phase === 0) return { x: 1, z: 0, jump: false };
+  if (phase === 1) return { x: 0, z: 1, jump: false };
+  if (phase === 2) return { x: -1, z: 0, jump: false };
+  return { x: 0, z: -1, jump: false };
+}
+
+function movementPacket(index, seq, hz, elapsedMs, motionState = {}) {
   const periodSeconds = 1 / hz;
-  const phase = (Math.floor(elapsedMs / 750) + Math.floor(index / 2)) % 2 ? 1 : -1;
-  const input = index % 2 === 0
-    ? { x: phase, z: 0, jump: false }
-    : { x: 0, z: phase, jump: false };
+  const input = movementInput(index, seq, motionState);
   const frameCount = Math.ceil(periodSeconds / 0.05);
   const delta = periodSeconds / frameCount;
   const frames = Array.from({ length: frameCount }, () => ({ input: { ...input }, delta }));
@@ -53,14 +68,22 @@ function selfTest() {
   if (seen.size !== 100 || [...seen.values()].some(value => value !== 100))
     throw new Error('10K zone distribution self-test failed');
   for (const hz of [2, 5]) {
-    const packet = movementPacket(17, 3, hz, 1000);
+    const packet = movementPacket(17, 3, hz, 1000, {
+      home: { x: 0, z: 0 }, current: { x: 0, z: 0 }
+    });
     const total = packet.frames.reduce((sum, frame) => sum + frame.delta, 0);
     if (packet.frames.length < 1 || packet.frames.length > 64 || total > 0.500000001 ||
         packet.frames.some(frame => frame.delta < 0 || frame.delta > 0.1))
       throw new Error('Movement frame self-test failed');
   }
+  const correction = movementPacket(0, 10, 5, 0, {
+    home: { x: 0, z: 0 }, current: { x: 20, z: 0 }
+  });
+  if (correction.input.x !== -1 || correction.input.z !== 0)
+    throw new Error('Bounded movement steering self-test failed');
   console.log('PASS 10K zone distribution: 100 zones x 100 players');
   console.log('PASS current movement packet shape: input + frames + seq');
+  console.log('PASS bounded authoritative steering keeps capacity traffic inside its assigned Zone');
 }
 
 async function run() {
@@ -118,7 +141,7 @@ async function run() {
     moveTimers.delete(ws);
   }
 
-  function startMovement(ws, index, initialSeq) {
+  function startMovement(ws, index, initialSeq, motionState) {
     let seq = initialSeq;
     const periodMs = Math.round(1000 / moveHz);
     const timer = setInterval(() => {
@@ -127,7 +150,7 @@ async function run() {
         stats.generatorBackpressure++;
         return;
       }
-      const packet = movementPacket(index, seq++, moveHz, Date.now() - testStart);
+      const packet = movementPacket(index, seq++, moveHz, Date.now() - testStart, motionState);
       try {
         ws.send(JSON.stringify(packet));
         stats.movesSent++;
@@ -147,6 +170,7 @@ async function run() {
       let welcomed = false;
       let settled = false;
       let open = false;
+      const motionState = { home: null, current: null };
 
       const ws = new WebSocket(url, {
         origin,
@@ -201,7 +225,11 @@ async function run() {
           stats.welcomed++;
           welcomeLatencyMs.push(Date.now() - startedAt);
           const lastSeq = Number(message?.movement?.lastSeq ?? message?.motion?.lastSeq);
-          startMovement(ws, index, Number.isSafeInteger(lastSeq) ? lastSeq + 1 : 0);
+          if (Number.isFinite(message?.spawn?.x) && Number.isFinite(message?.spawn?.z)) {
+            motionState.home = { x: Number(message.spawn.x), z: Number(message.spawn.z) };
+            motionState.current = { ...motionState.home };
+          }
+          startMovement(ws, index, Number.isSafeInteger(lastSeq) ? lastSeq + 1 : 0, motionState);
           settle();
         } else if (type === 'auth_error') {
           stats.authErrors++;
@@ -210,8 +238,11 @@ async function run() {
         } else if (type === 'server_error') {
           stats.serverErrors++;
         } else if (type === 'move') {
-          if (Number.isSafeInteger(Number(message?.ack))) stats.moveAcks++;
-          else stats.remoteMoves++;
+          if (Number.isSafeInteger(Number(message?.ack))) {
+            stats.moveAcks++;
+            if (Number.isFinite(message?.player?.x) && Number.isFinite(message?.player?.z))
+              motionState.current = { x: Number(message.player.x), z: Number(message.player.z) };
+          } else stats.remoteMoves++;
         } else if (type === 'join') stats.joins++;
         else if (type === 'leave') stats.leaves++;
         else if (type === 'ghost_snapshot') stats.ghostSnapshots++;
