@@ -91,6 +91,7 @@ jobs:
       PROJECT_ID: gpt-voxel-3d-staging
       WS_URL: wss://gpt-voxel-3d-staging-01.hjinffv5426.workers.dev/play
       ORIGIN: https://gpt-voxel-3d-staging-01.hjinffv5426.workers.dev
+      FIREBASE_APPCHECK_DEBUG_TOKEN: ${{ secrets.FIREBASE_APPCHECK_DEBUG_TOKEN }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -119,7 +120,11 @@ jobs:
             const apiKey = manifest?.firebase?.apiKey;
             if (!/^AIza[A-Za-z0-9_-]{35}$/.test(apiKey || ''))
               throw new Error('Staging Firebase public API key unavailable');
-            fs.appendFileSync(process.env.GITHUB_ENV, 'FIREBASE_API_KEY=' + apiKey + '\n');
+            const appId = manifest?.firebase?.appId;
+            if (!/^1:\\d+:web:[a-f0-9]+$/i.test(appId || ''))
+              throw new Error('Staging Firebase app ID unavailable');
+            fs.appendFileSync(process.env.GITHUB_ENV,
+              'FIREBASE_API_KEY=' + apiKey + '\nFIREBASE_APP_ID=' + appId + '\n');
             console.log('PASS staging public Firebase config resolved; value withheld');
           })().catch(error => {
             console.error(error);
@@ -165,6 +170,7 @@ jobs:
       LOAD_REPORT_FILE: work/load/live-${{ inputs.target }}-${{ inputs.players }}.json
       STAGING_PUBLIC_MANIFEST: ${{ vars.STAGING_PUBLIC_MANIFEST }}
       FIREBASE_SERVICE_ACCOUNT_JSON: ${{ inputs.target == 'production' && secrets.FIREBASE_LOADTEST_SERVICE_ACCOUNT_JSON_PRODUCTION || secrets.FIREBASE_LOADTEST_SERVICE_ACCOUNT_JSON_STAGING }}
+      FIREBASE_APPCHECK_DEBUG_TOKEN: ${{ inputs.target == 'production' && secrets.FIREBASE_APPCHECK_DEBUG_TOKEN_PRODUCTION || secrets.FIREBASE_APPCHECK_DEBUG_TOKEN }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -183,6 +189,7 @@ jobs:
           expected="RUN-$(echo "$TARGET" | tr '[:lower:]' '[:upper:]')-$BOT_COUNT"
           test "${{ inputs.confirm }}" = "$expected"
           test -n "$FIREBASE_SERVICE_ACCOUNT_JSON"
+          test -n "$FIREBASE_APPCHECK_DEBUG_TOKEN"
           test "$BOT_COUNT" = "100" -o "$BOT_COUNT" = "1000" -o "$BOT_COUNT" = "5000" -o "$BOT_COUNT" = "10000"
           echo "PASS explicit $TARGET $BOT_COUNT-player approval"
 
@@ -201,6 +208,7 @@ jobs:
             config = {
               PROJECT_ID: 'gpt-voxel-3d-staging',
               FIREBASE_API_KEY: publicManifest?.firebase?.apiKey,
+              FIREBASE_APP_ID: publicManifest?.firebase?.appId,
               WS_URL: 'wss://gpt-voxel-3d-staging-01.hjinffv5426.workers.dev/play',
               ORIGIN: 'https://gpt-voxel-3d-staging-01.hjinffv5426.workers.dev'
             };
@@ -209,12 +217,15 @@ jobs:
             config = {
               PROJECT_ID: 'lucky-game-6936b',
               FIREBASE_API_KEY: html.match(/apiKey:\s*"(AIza[A-Za-z0-9_-]{35})"/)?.[1],
+              FIREBASE_APP_ID: html.match(/appId:\s*"(1:\\d+:web:[a-f0-9]+)"/i)?.[1],
               WS_URL: 'wss://voxel-run-v2-demo.hjinffv5426.workers.dev/play',
               ORIGIN: 'https://jtkmanga.github.io'
             };
           } else throw new Error('Invalid target');
           if (!/^AIza[A-Za-z0-9_-]{35}$/.test(config.FIREBASE_API_KEY || ''))
             throw new Error('Firebase public API key unavailable');
+          if (!/^1:\\d+:web:[a-f0-9]+$/i.test(config.FIREBASE_APP_ID || ''))
+            throw new Error('Firebase app ID unavailable');
           const out = process.env.GITHUB_ENV;
           fs.appendFileSync(out, Object.entries(config).map(([k,v]) => k + '=' + v).join('\n') + '\n');
           console.log('PASS target configuration resolved; credential values withheld');
