@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - release/production-prep
+      - validation/promote-staging-gameplay-v2
     paths:
       - '.github/workflows/production-readiness.yml'
       - 'scripts/rebuild/**'
