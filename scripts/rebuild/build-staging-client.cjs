@@ -65,6 +65,10 @@ async function buildStagingClient(value, { allowTest = false } = {}) {
   })()`;
   let html = await buildClient({ prependScript,
     transformSource(file, source) {
+      // Production appends the staging-proven gameplay override as a normal
+      // client fragment. Staging appends its own full runtime below, so exclude
+      // the production-only copy here to preserve one runtime declaration set.
+      if (file === './production-staging-gameplay.js') return '';
       if (file === './auth-state.js') {
         source = replaceInitializers(source, { firebaseConfig: 'STAGING_PUBLIC_CONFIG.firebase || {}',
           auth: authInitializer, database: "({ ref() { throw new Error('Direct Firebase game-data access is disabled in staging'); } })",
