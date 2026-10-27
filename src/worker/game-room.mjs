@@ -119,6 +119,23 @@ export class GameRoom {
       amount INTEGER NOT NULL,
       created_at INTEGER NOT NULL
     )`);
+    // Safe admin-facing audit trail for slip verification attempts.
+    // Never store slip images or sender/receiver account numbers here.
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS voxel_payment_history (
+      id TEXT PRIMARY KEY,
+      uid TEXT NOT NULL,
+      email TEXT NOT NULL DEFAULT '',
+      item TEXT NOT NULL,
+      amount INTEGER NOT NULL,
+      status TEXT NOT NULL,
+      provider_code TEXT NOT NULL DEFAULT '',
+      message TEXT NOT NULL DEFAULT '',
+      transaction_id TEXT NOT NULL DEFAULT '',
+      expires_at INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL
+    )`);
+    this.sql.exec('CREATE INDEX IF NOT EXISTS voxel_payment_history_time_idx ON voxel_payment_history(created_at DESC)');
+    this.sql.exec('CREATE INDEX IF NOT EXISTS voxel_payment_history_uid_idx ON voxel_payment_history(uid,created_at DESC)');
     // Reuse provider-generated PromptPay QR image links without storing the
     // receiver account itself in this cache. cache_key is a SHA-256 digest
     // derived by the HTTP adapter from receiver identity + amount.
@@ -821,6 +838,27 @@ export class GameRoom {
       return Response.json({ok:true});
     }
 
+    if (url.pathname==='/_internal/payment-history/record' && request.method==='POST') {
+      let body; try { body=await request.json(); }
+      catch (_) { return Response.json({ok:false,error:'Invalid JSON'},{status:400}); }
+      const uid=String(body?.uid||'').trim(), email=String(body?.email||'').trim().toLowerCase(),
+        item=String(body?.item||''), amount=Number(body?.amount),
+        status=String(body?.status||''), providerCode=String(body?.providerCode||'').trim(),
+        message=String(body?.message||'').trim(), transactionId=String(body?.transactionId||'').trim(),
+        expiresAt=Number(body?.expiresAt||0), createdAt=Date.now();
+      const allowedStatus=new Set(['granted','duplicate','rejected','amount_mismatch','reference_missing','grant_failed','service_error']);
+      if (!uid || uid.length>128 || email.length>320 || !['speed','coin','vip1'].includes(item) ||
+          !Number.isSafeInteger(amount) || amount<1 || amount>100000 || !allowedStatus.has(status) ||
+          providerCode.length>32 || message.length>160 || transactionId.length>256 ||
+          !Number.isSafeInteger(expiresAt) || expiresAt<0)
+        return Response.json({ok:false,error:'Invalid payment history event'},{status:400});
+      this.sql.exec(`INSERT INTO voxel_payment_history
+        (id,uid,email,item,amount,status,provider_code,message,transaction_id,expires_at,created_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+        crypto.randomUUID(),uid,email,item,amount,status,providerCode,message,transactionId,expiresAt,createdAt);
+      return Response.json({ok:true,createdAt});
+    }
+
     if (url.pathname==='/_internal/admin/role-check' && request.method==='GET') {
       const email=String(url.searchParams.get('email')||'').trim().toLowerCase();
       const owner=String(this.env.ADMIN_OWNER_EMAIL||'').trim().toLowerCase();
@@ -868,9 +906,29 @@ export class GameRoom {
     }
 
     if (url.pathname==='/_internal/admin/payments' && request.method==='GET') {
-      const rows=this.sql.exec('SELECT uid,item,amount,created_at,transaction_id FROM voxel_payments ORDER BY created_at DESC LIMIT 500').toArray()
-        .map(r=>({uid:r.uid,item:r.item,amount:Number(r.amount)||0,createdAt:Number(r.created_at)||0,
-          transactionRef:String(r.transaction_id||'').slice(-8)}));
+      const rows=this.sql.exec(`SELECT * FROM (
+        SELECT h.uid AS uid,COALESCE(NULLIF(h.email,''),s.email,'') AS email,
+          COALESCE(s.nickname,'') AS nickname,h.item AS item,h.amount AS amount,
+          h.status AS status,h.provider_code AS provider_code,h.message AS message,
+          h.transaction_id AS transaction_id,h.expires_at AS expires_at,h.created_at AS created_at
+        FROM voxel_payment_history h LEFT JOIN voxel_scores s ON s.uid=h.uid
+        UNION ALL
+        SELECT p.uid AS uid,COALESCE(s.email,'') AS email,COALESCE(s.nickname,'') AS nickname,
+          p.item AS item,p.amount AS amount,'granted' AS status,'' AS provider_code,
+          'Successful payment before detailed history' AS message,p.transaction_id AS transaction_id,
+          0 AS expires_at,p.created_at AS created_at
+        FROM voxel_payments p LEFT JOIN voxel_scores s ON s.uid=p.uid
+        WHERE NOT EXISTS (
+          SELECT 1 FROM voxel_payment_history h
+          WHERE h.transaction_id=p.transaction_id AND h.status='granted'
+        )
+      ) ORDER BY created_at DESC LIMIT 500`).toArray().map(r=>({
+        uid:String(r.uid||''),email:String(r.email||''),nickname:String(r.nickname||''),
+        item:String(r.item||''),amount:Number(r.amount)||0,status:String(r.status||''),
+        providerCode:String(r.provider_code||''),message:String(r.message||''),
+        createdAt:Number(r.created_at)||0,expiresAt:Number(r.expires_at)||0,
+        transactionRef:String(r.transaction_id||'').slice(-12)
+      }));
       return Response.json({ok:true,rows});
     }
 
