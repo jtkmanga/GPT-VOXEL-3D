@@ -21,5 +21,6 @@ export const CLIENT_SOURCES = [
   "./secure-snapshots.js",
   "./secure-socket-handoff.js",
   "./secure-menu-economy.js",
-  "./secure-wheel-startup.js"
+  "./secure-wheel-startup.js",
+  "./production-staging-gameplay.js"
 ];
