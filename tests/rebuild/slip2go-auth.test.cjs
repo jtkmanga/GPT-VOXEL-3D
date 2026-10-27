@@ -15,6 +15,11 @@ test('Slip2Go QR and slip verification both use Bearer API authentication',()=>{
   assert.doesNotMatch(httpSource,/'Authorization':env\.SLIP2GO_API_SECRET/);
 });
 
+test('Slip verification accepts documented Slip2Go success codes only',()=>{
+  assert.match(httpSource,/\['200000', '200200'\]\.includes\(String\(result\?\.code \|\| ''\)\)/);
+  assert.doesNotMatch(httpSource,/String\(result\?\.code[^\n]*startsWith\(['"]2/);
+});
+
 test('Slip verification keeps receiver and amount checks without provider-global duplicate state',()=>{
   assert.match(httpSource,/checkReceiver\s*:/);
   assert.match(httpSource,/checkAmount\s*:/);
