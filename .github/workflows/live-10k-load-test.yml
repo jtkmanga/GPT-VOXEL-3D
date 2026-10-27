@@ -102,8 +102,10 @@ jobs:
       - name: Install pinned WebSocket dependency
         run: npm install --no-save --ignore-scripts ws@8.18.3
       - name: Resolve staging Firebase public API key
-        shell: node
+        shell: bash
         run: |
+          set -euo pipefail
+          node <<'NODE'
           const fs = require('node:fs');
           const origin = 'https://gpt-voxel-3d-staging-01.hjinffv5426.workers.dev';
           const response = await fetch(origin + '/staging-config', {
@@ -118,6 +120,7 @@ jobs:
             throw new Error('Staging Firebase public API key unavailable');
           fs.appendFileSync(process.env.GITHUB_ENV, 'FIREBASE_API_KEY=' + apiKey + '\n');
           console.log('PASS staging public Firebase config resolved; value withheld');
+          NODE
       - name: Prepare 100 temporary anonymous staging identities
         run: node scripts/load/firebase-anonymous-smoke.cjs prepare
       - name: Run live 100-player authenticated staging smoke
@@ -179,8 +182,10 @@ jobs:
           echo "PASS explicit $TARGET $BOT_COUNT-player approval"
 
       - name: Resolve public Firebase and Worker configuration
-        shell: node
+        shell: bash
         run: |
+          set -euo pipefail
+          node <<'NODE'
           const fs = require('node:fs');
           const target = process.env.TARGET;
           let config;
@@ -208,6 +213,7 @@ jobs:
           const out = process.env.GITHUB_ENV;
           fs.appendFileSync(out, Object.entries(config).map(([k,v]) => k + '=' + v).join('\n') + '\n');
           console.log('PASS target configuration resolved; credential values withheld');
+          NODE
 
       - name: Prepare unique Firebase load identities
         run: node scripts/load/firebase-load-users.cjs prepare
