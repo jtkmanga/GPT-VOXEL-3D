@@ -11,7 +11,7 @@ permissions:
 jobs:
   tail-and-probe:
     runs-on: ubuntu-24.04
-    timeout-minutes: 6
+    timeout-minutes: 4
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -28,12 +28,9 @@ jobs:
         shell: bash
         run: |
           set -uo pipefail
-          : > /tmp/tail.log
-          : > /tmp/tail.err
-          timeout --signal=INT --kill-after=3s 24s npx wrangler tail voxel-run-v2-demo --format json > /tmp/tail.log 2> /tmp/tail.err &
-          TAIL_PID=$!
-          sleep 8
-          node <<'NODE'
+          (
+            sleep 8
+            node <<'NODE'
           const WebSocket = require('ws');
           const origin='https://jtkmanga.github.io';
           const zones=['0,0','5,5','9,9'];
@@ -41,40 +38,18 @@ jobs:
             return new Promise(resolve=>{
               const url='wss://voxel-run-v2-demo.hjinffv5426.workers.dev/play?zone='+encodeURIComponent(zone);
               const ws=new WebSocket(url,[],{origin});
-              const timer=setTimeout(()=>{ console.log('TIMEOUT',zone); try{ws.terminate()}catch{} resolve(); },5000);
-              ws.on('open',()=>{ console.log('OPEN',zone); ws.send(JSON.stringify({type:'move',input:{x:0,z:0,jump:false},seq:0})); });
-              ws.on('unexpected-response',(_req,res)=>{ clearTimeout(timer); console.log('HTTP',zone,res.statusCode); resolve(); });
-              ws.on('close',(code,reason)=>{ clearTimeout(timer); console.log('CLOSE',zone,code,String(reason)); resolve(); });
-              ws.on('error',err=>console.log('ERROR',zone,err.message));
+              const timer=setTimeout(()=>{ console.log('PROBE TIMEOUT',zone); try{ws.terminate()}catch{} resolve(); },5000);
+              ws.on('open',()=>{ console.log('PROBE OPEN',zone); ws.send(JSON.stringify({type:'move',input:{x:0,z:0,jump:false},seq:0})); });
+              ws.on('unexpected-response',(_req,res)=>{ clearTimeout(timer); console.log('PROBE HTTP',zone,res.statusCode); resolve(); });
+              ws.on('close',(code,reason)=>{ clearTimeout(timer); console.log('PROBE CLOSE',zone,code,String(reason)); resolve(); });
+              ws.on('error',err=>console.log('PROBE ERROR',zone,err.message));
             });
           }
           (async()=>{ for(const z of zones) await probe(z); })();
           NODE
-          sleep 5
-          wait "$TAIL_PID" || true
-          sleep 1
-          echo '--- TAIL STDERR ---'
-          sed -E 's/(Bearer|token|authorization)[^ ]*/[REDACTED]/Ig' /tmp/tail.err | tail -80
-          echo '--- TAIL EVENTS ---'
-          python - <<'PY'
-          import json
-          from pathlib import Path
-          p=Path('/tmp/tail.log')
-          for raw in p.read_text(errors='replace').splitlines()[-200:]:
-              try:
-                  x=json.loads(raw)
-              except Exception:
-                  if raw.strip(): print(raw[:1200])
-                  continue
-              # Only print diagnostic fields; avoid request headers/auth data.
-              out={}
-              for k in ('outcome','scriptName','exceptions','logs','eventTimestamp','event'):
-                  if k in x: out[k]=x[k]
-              if isinstance(out.get('event'),dict):
-                  e=out['event']
-                  out['event']={k:e.get(k) for k in ('request','response') if k in e}
-                  if isinstance(out['event'].get('request'),dict):
-                      r=out['event']['request']
-                      out['event']['request']={k:r.get(k) for k in ('method','url') if k in r}
-              print(json.dumps(out,ensure_ascii=False)[:6000])
-          PY
+          ) &
+          PROBE_PID=$!
+          echo '--- WRANGLER TAIL START ---'
+          timeout --signal=TERM --kill-after=3s 28s npx wrangler tail voxel-run-v2-demo --format json || true
+          echo '--- WRANGLER TAIL END ---'
+          wait "$PROBE_PID" || true
