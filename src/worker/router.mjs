@@ -151,7 +151,21 @@ const worker = {
         `https://zone.internal/play-zone/${zoneX}/${zoneZ}`,
         request
       );
-      return env.ZONE.getByName(`free-zone-${zoneId}`).fetch(zoneRequest);
+      try {
+        return await env.ZONE.getByName(`free-zone-${zoneId}`).fetch(zoneRequest);
+      } catch (error) {
+        // Staging diagnostic only: expose the runtime exception type/message
+        // without request headers, tokens, bindings or stack data.
+        if (env.APP_ENV === 'staging') {
+          const name = String(error?.name || 'Error').slice(0, 80);
+          const message = String(error?.message || 'Zone runtime failure').slice(0, 300);
+          return new Response(`ZONE_RUNTIME_ERROR ${name}: ${message}`, {
+            status: 500,
+            headers: { 'content-type': 'text/plain; charset=utf-8' }
+          });
+        }
+        throw error;
+      }
     }
 
     // Backward-compatible path: current game remains on the tested Phase 1 room.
