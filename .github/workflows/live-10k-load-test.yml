@@ -121,7 +121,7 @@ jobs:
             if (!/^AIza[A-Za-z0-9_-]{35}$/.test(apiKey || ''))
               throw new Error('Staging Firebase public API key unavailable');
             const appId = manifest?.firebase?.appId;
-            if (!/^1:\\d+:web:[a-f0-9]+$/i.test(appId || ''))
+            if (!/^1:[0-9]+:web:[a-f0-9]+$/i.test(appId || ''))
               throw new Error('Staging Firebase app ID unavailable');
             fs.appendFileSync(process.env.GITHUB_ENV,
               'FIREBASE_API_KEY=' + apiKey + '\nFIREBASE_APP_ID=' + appId + '\n');
@@ -217,14 +217,14 @@ jobs:
             config = {
               PROJECT_ID: 'lucky-game-6936b',
               FIREBASE_API_KEY: html.match(/apiKey:\s*"(AIza[A-Za-z0-9_-]{35})"/)?.[1],
-              FIREBASE_APP_ID: html.match(/appId:\s*"(1:\\d+:web:[a-f0-9]+)"/i)?.[1],
+              FIREBASE_APP_ID: html.match(/appId:\s*"(1:[0-9]+:web:[a-f0-9]+)"/i)?.[1],
               WS_URL: 'wss://voxel-run-v2-demo.hjinffv5426.workers.dev/play',
               ORIGIN: 'https://jtkmanga.github.io'
             };
           } else throw new Error('Invalid target');
           if (!/^AIza[A-Za-z0-9_-]{35}$/.test(config.FIREBASE_API_KEY || ''))
             throw new Error('Firebase public API key unavailable');
-          if (!/^1:\\d+:web:[a-f0-9]+$/i.test(config.FIREBASE_APP_ID || ''))
+          if (!/^1:[0-9]+:web:[a-f0-9]+$/i.test(config.FIREBASE_APP_ID || ''))
             throw new Error('Firebase app ID unavailable');
           const out = process.env.GITHUB_ENV;
           fs.appendFileSync(out, Object.entries(config).map(([k,v]) => k + '=' + v).join('\n') + '\n');
