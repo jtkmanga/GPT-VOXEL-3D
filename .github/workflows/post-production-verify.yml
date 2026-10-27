@@ -27,6 +27,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+      - name: Install WebSocket probe client
+        run: npm install --no-save --ignore-scripts ws@8.18.3
       - name: Verify public production HTTP surface
         shell: python
         run: |
@@ -81,6 +83,8 @@ jobs:
         run: |
           set -euo pipefail
           node <<'NODE'
+          const WebSocket = require('ws');
+          const allowedOrigin = 'https://jtkmanga.github.io';
           const targets = [
             'wss://voxel-run-v2-demo.hjinffv5426.workers.dev/play?server=free1',
             'wss://voxel-run-v2-demo.hjinffv5426.workers.dev/play?server=free1&zone=0,0'
@@ -88,7 +92,7 @@ jobs:
 
           async function probe(url) {
             await new Promise((resolve, reject) => {
-              const ws = new WebSocket(url);
+              const ws = new WebSocket(url, [], { origin: allowedOrigin });
               const timer = setTimeout(() => {
                 try { ws.close(); } catch {}
                 reject(new Error('timeout waiting for auth-gate close: ' + url));
