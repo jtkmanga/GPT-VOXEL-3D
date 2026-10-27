@@ -19,6 +19,17 @@ async function currentPrice(env,item) {
   return price;
 }
 
+async function recordPaymentHistory(env,event) {
+  try {
+    await env.ROOM.getByName('free-v2-demo').fetch(new Request(
+      'https://internal/_internal/payment-history/record',{
+        method:'POST',
+        headers:{'content-type':'application/json'},
+        body:JSON.stringify(event)
+      }));
+  } catch (_) {}
+}
+
 // Server-to-server provider adapter. A Firebase login or browser payment flag
 // cannot authorize this route; only a fresh signature over the exact bytes can.
 export async function handlePaymentWebhook(request, env) {
@@ -163,6 +174,8 @@ export async function handleVerifySlip(request, env) {
     }, 500);
   }
 
+  const historyBase={uid:verified.uid,email:String(verified.email||''),item,amount:price};
+
   const payload = {
     checkReceiver: [{
       accountType: '02001',
@@ -192,6 +205,7 @@ export async function handleVerifySlip(request, env) {
       }
     );
   } catch {
+    await recordPaymentHistory(env,{...historyBase,status:'service_error',message:'Slip verification service unavailable'});
     return jsonResponse(request, env, {
       ok: false,
       error: 'Slip verification service unavailable'
@@ -203,6 +217,7 @@ export async function handleVerifySlip(request, env) {
   try {
     result = await slipResponse.json();
   } catch {
+    await recordPaymentHistory(env,{...historyBase,status:'service_error',message:'Invalid response from slip service'});
     return jsonResponse(request, env, {
       ok: false,
       error: 'Invalid response from slip service'
@@ -210,6 +225,8 @@ export async function handleVerifySlip(request, env) {
   }
 
   if (!slipResponse.ok || !['200000', '200200'].includes(String(result?.code || ''))) {
+    await recordPaymentHistory(env,{...historyBase,status:'rejected',
+      providerCode:String(result?.code||''),message:String(result?.message||'Slip verification failed').slice(0,160)});
     return jsonResponse(request, env, {
       ok: false,
       error: result?.message || 'Slip verification failed',
@@ -219,30 +236,26 @@ export async function handleVerifySlip(request, env) {
 
   const slipData = result?.data || {};
   const actualAmount = Number(slipData.amount);
+  const transRef = String(slipData.transRef || '').trim();
+  const referenceId = String(slipData.referenceId || '').trim();
+  const senderBankId = String(slipData?.sender?.bank?.id || '').trim();
+  let transactionId = '';
+  if (transRef) transactionId = `${senderBankId || 'bank'}:${transRef}`;
+  else if (referenceId) transactionId = `ref:${referenceId}`;
 
   // ตรวจยอดจากผลตอบกลับอีกครั้ง แม้เราจะส่ง checkAmount ให้ Slip2Go แล้ว
   if (!Number.isFinite(actualAmount) || actualAmount !== price) {
+    await recordPaymentHistory(env,{...historyBase,status:'amount_mismatch',
+      providerCode:String(result?.code||''),message:'Slip amount does not match item price',transactionId});
     return jsonResponse(request, env, {
       ok: false,
       error: 'Slip amount does not match item price'
     }, 400);
   }
 
-  const transRef = String(slipData.transRef || '').trim();
-  const referenceId = String(slipData.referenceId || '').trim();
-  const senderBankId = String(
-    slipData?.sender?.bank?.id || ''
-  ).trim();
-
-  let transactionId = '';
-
-  if (transRef) {
-    transactionId = `${senderBankId || 'bank'}:${transRef}`;
-  } else if (referenceId) {
-    transactionId = `ref:${referenceId}`;
-  }
-
   if (!transactionId) {
+    await recordPaymentHistory(env,{...historyBase,status:'reference_missing',
+      providerCode:String(result?.code||''),message:'Slip transaction reference missing'});
     return jsonResponse(request, env, {
       ok: false,
       error: 'Slip transaction reference missing'
@@ -273,6 +286,8 @@ export async function handleVerifySlip(request, env) {
         )
       );
   } catch {
+    await recordPaymentHistory(env,{...historyBase,status:'service_error',
+      providerCode:String(result?.code||''),message:'Could not grant purchased item',transactionId});
     return jsonResponse(request, env, {
       ok: false,
       error: 'Could not grant purchased item'
@@ -284,6 +299,8 @@ export async function handleVerifySlip(request, env) {
   try {
     grantResult = await grantResponse.json();
   } catch {
+    await recordPaymentHistory(env,{...historyBase,status:'service_error',
+      providerCode:String(result?.code||''),message:'Invalid payment storage response',transactionId});
     return jsonResponse(request, env, {
       ok: false,
       error: 'Invalid payment storage response'
@@ -291,12 +308,20 @@ export async function handleVerifySlip(request, env) {
   }
 
   if (!grantResponse.ok || !grantResult?.ok) {
+    const duplicate=grantResult?.duplicate===true;
+    await recordPaymentHistory(env,{...historyBase,status:duplicate?'duplicate':'grant_failed',
+      providerCode:String(result?.code||''),message:String(grantResult?.error||'Could not grant purchased item').slice(0,160),
+      transactionId});
     return jsonResponse(request, env, {
       ok: false,
       error: grantResult?.error || 'Could not grant purchased item',
-      duplicate: grantResult?.duplicate === true
-    }, grantResult?.duplicate ? 409 : 400);
+      duplicate
+    }, duplicate ? 409 : 400);
   }
+
+  await recordPaymentHistory(env,{...historyBase,status:'granted',
+    providerCode:String(result?.code||''),message:'Payment verified and entitlement granted',
+    transactionId,expiresAt:Number(grantResult.expiresAt)||0});
 
   return jsonResponse(request, env, {
     ok: true,
