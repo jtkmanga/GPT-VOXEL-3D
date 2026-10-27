@@ -127,8 +127,9 @@ test('P7 VIP socket uses separate server routing and protocol four without trust
   assert.deepEqual(socket.sent[0], { type: 'auth', token: 'synthetic-p7-sdk-token', protocol: 4, name: 'P7 Player' });
   socket.receive(f.welcome()); await operation;
   assert.equal(f.evaluate('secureGameReady'), true); assert.equal(f.evaluate('secureGameSocket'), socket);
+  f.context.securePredictMovement(0);
   f.context.securePredictMovement(.05);
-  assert.ok(f.context.playerPos.z < 0, 'VIP reuses the actual authoritative-intent prediction kernel');
+  assert.ok(f.context.playerPos.z < 0, 'VIP reuses the actual authoritative-intent prediction kernel after the reset timeline opens');
 });
 
 test('P7 VIP rejects wrong room/protocol/handoff welcomes and never follows saved-Zone redirects', async () => {

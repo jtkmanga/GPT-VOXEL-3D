@@ -352,23 +352,24 @@ test('staging clients without ordered frame opt-in retain the legacy frozen-anch
   assertIsolated(h);
 });
 
-test('ordered movement in the production runtime cannot opt into staging continuous ownership', async t => {
-  const h = fixture(t, false), uid = 'synthetic-production-legacy-transition';
+test('ordered movement in the production runtime uses the proven staging continuous ownership contract', async t => {
+  const h = fixture(t, false), uid = 'synthetic-production-continuous-transition';
   const source = await admitted(h, uid, '4,4', { continuousHandoff: true });
-  assert.notEqual(last(source, 'welcome').continuousHandoff, true);
   h.place(source, { x: -.1, y: 0, z: -75, r: 0 });
   await h.advance(200);
   await source.send(framePacket(0, right));
   const ticket = last(source, 'zone_change');
   assert.ok(ticket?.handoffToken);
+  assert.equal(ticket.continuousHandoff, true);
   const anchor = pose(source.attachment());
-  await h.advance(2200);
-  await source.send(framePacket(1, { ...forward, jump: true }));
-  assert.deepEqual(pose(source.attachment()), anchor, 'staging batching cannot activate continuous handoff in production');
-  const target = await admitted(h, uid, '5,4', { handoffToken: ticket.handoffToken });
-  await target.send({ type: 'handoff_resume', seq: 2 });
-  assert.deepEqual(pose(target.attachment()), plain(ticket.position));
-  assert.notEqual(last(target, 'handoff_resumed').continuousHandoff, true);
+  await h.advance(200);
+  await source.send(framePacket(1, forward));
+  assert.notDeepEqual(pose(source.attachment()), anchor, 'source authority must keep accepting ordered movement during target warmup');
+  const target = await admitted(h, uid, '5,4', { handoffToken: ticket.handoffToken, continuousHandoff: true });
+  assert.equal(last(target, 'welcome').continuousHandoff, true);
+  await target.send({ type: 'handoff_resume' });
+  const resumed = last(target, 'handoff_resumed');
+  assert.equal(resumed?.continuousHandoff, true);
   assertOneOwner(h, uid, '5,4');
   assertIsolated(h);
 });

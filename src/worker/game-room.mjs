@@ -347,7 +347,7 @@ export class GameRoom {
     });
   }
   completeStagingHandoff(payload) {
-    if (this.env.APP_ENV!=='staging' || this.serverScope!=='free1' ||
+    if (!(this.env.APP_ENV===undefined || this.env.APP_ENV==='staging') || this.serverScope!=='free1' ||
         !String(payload?.handoffToken||'').startsWith('continuous:') ||
         !Number.isSafeInteger(payload?.exp) || payload.exp<=Math.floor(Date.now()/1000))
       return {ok:false,error:'Staging handoff unavailable'};
@@ -382,7 +382,7 @@ export class GameRoom {
     if (typeof uid!=='string' || !uid || uid.length>128 || typeof sessionId!=='string' ||
         !sessionId || sessionId.length>256 || (owner!=='room' && (!zone || owner!==`zone:${zone}`)))
       return {ok:false,error:'Invalid session revocation'};
-    if (handoffToken!==undefined && (this.env.APP_ENV!=='staging' || !zone ||
+    if (handoffToken!==undefined && (!(this.env.APP_ENV===undefined || this.env.APP_ENV==='staging') || !zone ||
         typeof handoffToken!=='string' || !handoffToken.startsWith('continuous:') || handoffToken.length>128))
       return {ok:false,error:'Invalid staging session revocation'};
     const revocationOwner=handoffToken ? `sealed:${zone}|${handoffToken}` : owner;
@@ -414,7 +414,7 @@ export class GameRoom {
         typeof sessionId!=='string' || !sessionId || sessionId.length>256)
       return {ok:false,error:'Invalid session revocation'};
     if (owner==='room') return this.revokeSession({uid,sessionId});
-    const sealed=this.env.APP_ENV==='staging' && typeof owner==='string' && /^sealed:([0-9],[0-9])\|(continuous:[a-f0-9-]{36})$/.exec(owner);
+    const sealed=(this.env.APP_ENV===undefined || this.env.APP_ENV==='staging') && typeof owner==='string' && /^sealed:([0-9],[0-9])\|(continuous:[a-f0-9-]{36})$/.exec(owner);
     const zoneId=sealed ? normalizeZoneId(sealed[1]) :
       typeof owner==='string' && owner.startsWith('zone:') && normalizeZoneId(owner.slice(5));
     if (!zoneId || (!sealed && owner!==`zone:${zoneId}`)) return {ok:false,error:'Invalid session owner'};
@@ -1082,7 +1082,7 @@ export class GameRoom {
     }
 
     if (url.pathname==='/_internal/staging-handoff-commit' && request.method==='POST') {
-      if (this.env.APP_ENV!=='staging') return Response.json({ok:false},{status:404});
+      if (!(this.env.APP_ENV===undefined || this.env.APP_ENV==='staging')) return Response.json({ok:false},{status:404});
       let payload;
       try { payload=await request.json(); }
       catch (_) { return Response.json({ok:false,error:'Invalid JSON'},{status:400}); }
@@ -1302,7 +1302,7 @@ export class GameRoom {
 
       const now=Date.now();
       const expiresAt=now+12000;
-      const continuousHandoff=this.env.APP_ENV==='staging' && body.continuousHandoff===true;
+      const continuousHandoff=(this.env.APP_ENV===undefined || this.env.APP_ENV==='staging') && body.continuousHandoff===true;
       const token=(continuousHandoff ? 'continuous:' : '')+crypto.randomUUID();
       this.sql.exec('DELETE FROM voxel_zone_handoffs WHERE expires_at<=?',now);
       this.sql.exec('DELETE FROM voxel_handoff_grants WHERE expires_at<=?',now);
@@ -1342,7 +1342,7 @@ export class GameRoom {
 
         if (!row || row.uid!==uid || row.to_zone!==toZone || Number(row.expires_at||0)<=now ||
             !this.sessions.validate({uid,sessionId:row.session_id,owner:`zone:${row.from_zone}`}) ||
-            (this.env.APP_ENV==='staging' &&
+            ((this.env.APP_ENV===undefined || this.env.APP_ENV==='staging') &&
               token.startsWith('continuous:')!==(body.continuousHandoff===true))) {
           return null;
         }
@@ -1360,7 +1360,7 @@ export class GameRoom {
           expiresAt:Number(row.expires_at),
           x:Number(row.x),y:Number(row.y),z:Number(row.z),r:Number(row.r),
           createdAt:Number(row.created_at)||now,
-          ...(this.env.APP_ENV==='staging' && token.startsWith('continuous:') ? {continuousHandoff:true} : {})
+          ...((this.env.APP_ENV===undefined || this.env.APP_ENV==='staging') && token.startsWith('continuous:') ? {continuousHandoff:true} : {})
         };
       });
 
