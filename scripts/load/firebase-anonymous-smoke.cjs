@@ -89,7 +89,8 @@ async function deleteAnonymous(key, idToken, appCheckToken) {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        'referer': allowedReferer()
+        'referer': allowedReferer(),
+        'X-Firebase-AppCheck': appCheckToken
       },
       body: JSON.stringify({ idToken })
     }
