@@ -29,12 +29,21 @@ function apiKey() {
   return value;
 }
 
+function allowedReferer() {
+  const origin = String(process.env.ORIGIN || '').trim().replace(/\/$/, '');
+  if (!/^https:\/\//.test(origin)) throw new Error('ORIGIN must be an https:// URL');
+  return origin + '/';
+}
+
 async function createAnonymous(key) {
   const response = await fetch(
     'https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=' + encodeURIComponent(key),
     {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: {
+        'content-type': 'application/json',
+        'referer': allowedReferer()
+      },
       body: JSON.stringify({ returnSecureToken: true })
     }
   );
@@ -52,7 +61,10 @@ async function deleteAnonymous(key, idToken) {
     'https://identitytoolkit.googleapis.com/v1/accounts:delete?key=' + encodeURIComponent(key),
     {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: {
+        'content-type': 'application/json',
+        'referer': allowedReferer()
+      },
       body: JSON.stringify({ idToken })
     }
   );
