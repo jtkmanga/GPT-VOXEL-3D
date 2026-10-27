@@ -26,7 +26,7 @@ test('production gameplay runtime is the exact staging gameplay block with only 
 
 test('canonical entry appends the exact staging gameplay runtime after all normal production fragments',()=>{
   const entry=fs.readFileSync('src/client/entry.mjs','utf8');
-  assert.match(entry,/\.\/secure-wheel-startup\.js",\s*\.\/production-staging-gameplay\.js"\s*\]/);
+  assert.ok(entry.includes('"./secure-wheel-startup.js",\n  "./production-staging-gameplay.js"\n]'));
 });
 
 test('production keeps production auth and payment sources outside the staging gameplay override',()=>{
