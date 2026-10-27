@@ -34,10 +34,10 @@ jobs:
               const timer=setTimeout(()=>{console.log(name,'TIMEOUT');try{ws.terminate()}catch{}resolve(false)},8000);
               let opened=false;
               ws.on('open',()=>{opened=true;console.log(name,'OPEN');ws.send(JSON.stringify({type:'move',input:{x:0,z:0,jump:false},seq:0}))});
-              ws.on('unexpected-response',(_q,res)=>{clearTimeout(timer);console.log(name,'HTTP',res.statusCode);resolve(false)});
+              ws.on('unexpected-response',(_q,res)=>{clearTimeout(timer);console.log(name,'HTTP',res.statusCode);try{res.destroy()}catch{}try{ws.terminate()}catch{}resolve(false)});
               ws.on('close',(code,reason)=>{clearTimeout(timer);console.log(name,'CLOSE',code,String(reason));resolve(opened)});
               ws.on('error',e=>console.log(name,'ERROR',e.message));
             });
           }
-          (async()=>{for(const t of targets) await probe(t)})();
+          (async()=>{for(const t of targets) await probe(t); process.exit(0)})().catch(e=>{console.error(e);process.exit(1)});
           NODE
