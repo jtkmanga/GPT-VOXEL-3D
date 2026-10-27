@@ -125,7 +125,8 @@
 
         syncMyPlayerData = function(force = false) {
             const socket = typeof secureContinuousMovementSocket === 'function'
-                ? secureContinuousMovementSocket() : secureGameSocket;
+                ? secureContinuousMovementSocket()
+                : (secureHandoffInProgress ? null : secureGameSocket);
             if (!state.isPlaying || !secureGameReady ||
                 !socket || socket.readyState !== WebSocket.OPEN) return false;
             const now = Date.now();
@@ -155,7 +156,8 @@
 
         function secureFlushMovementForPickup() {
             const socket = typeof secureContinuousMovementSocket === 'function'
-                ? secureContinuousMovementSocket() : secureGameSocket;
+                ? secureContinuousMovementSocket()
+                : (secureHandoffInProgress ? null : secureGameSocket);
             if (!state.isPlaying || !secureGameReady ||
                 !socket || socket.readyState !== WebSocket.OPEN) return false;
             return (typeof secureUnsentMovementFrames !== 'function' || secureUnsentMovementFrames().length === 0)
