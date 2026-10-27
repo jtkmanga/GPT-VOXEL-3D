@@ -7,7 +7,7 @@ test('default client sends ordered movement frames instead of newest-input-only 
   const socket=readFileSync('src/client/secure-socket-handoff.js','utf8');
   const economy=readFileSync('src/client/secure-menu-economy.js','utf8');
   assert.match(socket,/function secureUnsentMovementFrames\(\)/);
-  assert.match(socket,/securePredictionResetPending/);
+  assert.match(socket,/secureContinuousHandoffPredictionAllowed/);
   assert.match(economy,/const frames = predicted\.length/);
   assert.match(economy,/type:\s*protocol\.WS_MESSAGE\.MOVE,[\s\S]*frames/);
   assert.match(economy,/function secureFlushMovementForPickup\(\)/);
