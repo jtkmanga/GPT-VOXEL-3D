@@ -77,6 +77,7 @@ jobs:
     needs: validate-harness
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    environment: staging
     env:
       TARGET: staging
       BOT_COUNT: '100'
