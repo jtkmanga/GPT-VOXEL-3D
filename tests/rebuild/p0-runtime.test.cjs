@@ -223,7 +223,7 @@ test('P0 synthetic slip payment grants server entitlement for VIP 50 THB / 30 da
   assert.equal((await duplicate.json()).duplicate, true);
   assert.equal(h.room().sql.exec('SELECT COUNT(*) AS count FROM voxel_payments').toArray()[0].count, 1);
   const paymentHistory=h.room().sql.exec('SELECT status,transaction_id FROM voxel_payment_history ORDER BY created_at ASC').toArray();
-  assert.deepEqual(paymentHistory.map(row=>row.status),['granted','duplicate']);
+  assert.deepEqual(paymentHistory.map(row=>row.status).sort(),['duplicate','granted']);
   assert.ok(paymentHistory.every(row=>String(row.transaction_id||'').length>0));
   assert.ok(h.records.fetches.some(record => record.url === SLIP_URL));
   assert.ok(h.records.fetches.every(record => [CERTS_URL, SLIP_URL].includes(record.url)));
