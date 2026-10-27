@@ -73,85 +73,8 @@ jobs:
           node scripts/load/firebase-anonymous-smoke.cjs self-test
           node scripts/load/live-10k-load.cjs --self-test
 
-  staging-live-smoke-100:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/development/voxel-continuous'
-    needs: validate-harness
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    environment: staging
-    env:
-      TARGET: staging
-      BOT_COUNT: '100'
-      DURATION_SEC: '30'
-      MOVE_HZ: '5'
-      CONNECT_RATE_PER_SEC: '20'
-      MIN_WELCOME_RATE: '0.99'
-      MIN_ACK_RATE: '0.95'
-      MAX_GENERATOR_EVENT_LOOP_P95_MS: '300'
-      TOKEN_FILE: work/load/firebase-load-users.json
-      LOAD_REPORT_FILE: work/load/live-staging-100-smoke.json
-      PROJECT_ID: gpt-voxel-3d-staging
-      WS_URL: wss://gpt-voxel-3d-staging-01.hjinffv5426.workers.dev/play
-      ORIGIN: https://gpt-voxel-3d-staging-01.hjinffv5426.workers.dev
-      FIREBASE_APPCHECK_DEBUG_TOKEN: ${{ secrets.FIREBASE_APPCHECK_DEBUG_TOKEN }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-      - run: npm ci
-      - name: Install pinned WebSocket dependency
-        run: npm install --no-save --ignore-scripts ws@8.18.3
-      - name: Resolve staging Firebase public API key
-        shell: bash
-        run: |
-          set -euo pipefail
-          node <<'NODE'
-          const fs = require('node:fs');
-          (async () => {
-            const origin = 'https://gpt-voxel-3d-staging-01.hjinffv5426.workers.dev';
-            const response = await fetch(origin + '/staging-config', {
-              headers: { 'User-Agent': 'VOXEL-LiveLoad/1.0', 'Accept': 'application/json' }
-            });
-            if (!response.ok) throw new Error('Staging config endpoint returned ' + response.status);
-            const manifest = await response.json();
-            if (manifest?.environment !== 'staging' || manifest?.workerOrigin !== origin)
-              throw new Error('Staging config identity mismatch');
-            const apiKey = manifest?.firebase?.apiKey;
-            if (!/^AIza[A-Za-z0-9_-]{35}$/.test(apiKey || ''))
-              throw new Error('Staging Firebase public API key unavailable');
-            const appId = manifest?.firebase?.appId;
-            if (!/^1:[0-9]+:web:[a-f0-9]+$/i.test(appId || ''))
-              throw new Error('Staging Firebase app ID unavailable');
-            fs.appendFileSync(process.env.GITHUB_ENV,
-              'FIREBASE_API_KEY=' + apiKey + '\nFIREBASE_APP_ID=' + appId + '\n');
-            console.log('PASS staging public Firebase config resolved; value withheld');
-          })().catch(error => {
-            console.error(error);
-            process.exit(1);
-          });
-          NODE
-      - name: Prepare 100 temporary anonymous staging identities
-        run: node scripts/load/firebase-anonymous-smoke.cjs prepare
-      - name: Run live 100-player authenticated staging smoke
-        shell: bash
-        run: |
-          set -euo pipefail
-          ulimit -n 65535 || true
-          node scripts/load/live-10k-load.cjs
-      - name: Upload sanitized staging smoke report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: live-staging-100-smoke
-          path: work/load/live-staging-100-smoke.json
-          if-no-files-found: warn
-          retention-days: 7
-      - name: Delete temporary anonymous staging identities
-        if: always()
-        run: node scripts/load/firebase-anonymous-smoke.cjs cleanup
+  # Live network load is intentionally manual-only.
+  # Pushes validate the harness without consuming Durable Objects quota.
 
   live-load:
     if: github.event_name == 'workflow_dispatch'
