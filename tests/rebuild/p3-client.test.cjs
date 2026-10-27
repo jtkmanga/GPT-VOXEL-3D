@@ -126,15 +126,20 @@ test('P3 client camera-relative four-direction and diagonal intent preserves bas
   approximately(fixture.context.secureMovementIntent().x, 0.25, 'baseline analog response');
 });
 
-test('P3 actual client sends intent and sequence only at the preserved 200ms cadence', async () => {
+test('P3 actual client sends ordered frames at the preserved 200ms cadence', async () => {
   const fixture = await clientFixture();
   fixture.context.keys.d = true;
   fixture.context.playerPos.set(300, 99, 500);
   fixture.context.playerVel.x = 999;
+  fixture.context.securePredictMovement(0);
+  fixture.context.securePredictMovement(0.05);
   fixture.context.syncMyPlayerData();
   assert.equal(fixture.sent.length, 1);
-  assert.deepEqual(Object.keys(fixture.sent[0]).sort(), ['input', 'seq', 'type']);
-  assert.deepEqual(fixture.sent[0], { type: 'move', input: { x: 1, z: 0, jump: false }, seq: 0 });
+  assert.deepEqual(Object.keys(fixture.sent[0]).sort(), ['frames', 'input', 'seq', 'type']);
+  assert.equal(fixture.sent[0].seq, 0);
+  assert.deepEqual(fixture.sent[0].input, { x: 1, z: 0, jump: false });
+  assert.ok(fixture.sent[0].frames.length >= 1);
+  assert.equal(fixture.movement.validMovementFrames(fixture.sent[0].frames), true);
   fixture.advance(199);
   fixture.context.syncMyPlayerData();
   assert.equal(fixture.sent.length, 1);
@@ -142,6 +147,7 @@ test('P3 actual client sends intent and sequence only at the preserved 200ms cad
   fixture.context.syncMyPlayerData();
   assert.equal(fixture.sent.length, 2);
   assert.equal(fixture.sent[1].seq, 1);
+  assert.equal(fixture.movement.validMovementFrames(fixture.sent[1].frames), true);
   fixture.context.state.isPaused = true;
   fixture.advance(200);
   fixture.context.syncMyPlayerData();

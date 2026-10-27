@@ -1,5 +1,25 @@
 # Current development state
 
+## D082 — promote ordered movement-frame batching to default client (2026-10-27)
+
+Starting source e56176232c8a3abf49e097fde7f4c8f80d1b0d2a. Mobile production video showed repeated walking
+rubber-banding/teleport corrections. Production still predicted every render
+frame but transmitted only the newest input every 200 ms. The already-verified
+Staging gameplay correction proved this causes client/server elapsed-time
+mismatch and hard reconciliation snaps under direction changes or packet delay.
+
+This bounded change promotes only ordered movement-frame batching to the default
+client. Each MOVE carries the exact predicted frames for that sequence, batches
+remain within the Worker's existing 0.5-second authority budget, high render
+rates flush before overflow, spawn/reconnect resets discard pre-reset render
+time, and coin pickup flushes unsent movement before COLLECT. Server physics,
+speed entitlement, collision, sequence validation, anti-cheat and the 200 ms
+network cadence remain unchanged.
+
+Continuous Zone handoff remains staging-only in this commit; this targets the
+repeated in-zone snap visible in the production recording first. Payment, Admin,
+Slip2Go, pricing and rollout paths are untouched.
+
 ## D081 — review Gate 7 synthetic credential candidate (2026-10-27)
 
 Starting source 865ec976d6f79d28f508843cfe8247e09b3ddbaf. The corrected payment-history

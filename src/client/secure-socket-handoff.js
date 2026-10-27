@@ -6,6 +6,7 @@
         const securePendingFrames = [];
         const securePendingInputs = [];
         const securePredictionCorrection = { x: 0, y: 0, z: 0 };
+        let securePredictionResetPending = true;
 
         function secureQueueJump() {
             secureJumpGeneration++;
@@ -60,20 +61,34 @@
             };
         }
 
+        function secureUnsentMovementFrames() {
+            return securePendingFrames.filter(frame => frame.seq === secureInputSequence);
+        }
+
         function securePredictMovement(delta) {
-            // Lost connections and provisional handoffs cannot advance a player.
-            // Camera and rendering continue while authority is being recovered.
-            if (!secureGameReady || (secureHandoffInProgress &&
-                !(typeof secureContinuousHandoffPredictionAllowed === 'function' && secureContinuousHandoffPredictionAllowed())) || !secureGameSocket ||
+            if (!secureGameReady || secureHandoffInProgress || !secureGameSocket ||
                 secureGameSocket.readyState !== WebSocket.OPEN) return;
+            const elapsed = securePredictionResetPending ? 0
+                : Math.min(.1, Math.max(0, Number.isFinite(delta) ? delta : 0));
+            securePredictionResetPending = false;
+
+            const unsent = secureUnsentMovementFrames();
+            const pendingSeconds = unsent.reduce((total, frame) => total + frame.delta, 0);
+            if (unsent.length >= 63 || pendingSeconds + elapsed > .5 + 1e-9) {
+                if (typeof syncMyPlayerData !== 'function' || syncMyPlayerData(true) === false) return;
+            }
+
             const input = secureMovementIntent();
             input.jump = secureJumpIntent;
-            const elapsed = Math.min(.1, Math.max(0, Number.isFinite(delta) ? delta : 0));
             const options = secureMovementOptions();
             secureApplyMovementState(movement.integrateMovement(secureMovementState(), input, elapsed, options));
             securePendingFrames.push({ seq: secureInputSequence, input, delta: elapsed, speed: options.speed });
-            // A long stalled connection cannot retain unbounded prediction work.
             if (securePendingFrames.length > 256) securePendingFrames.splice(0, securePendingFrames.length - 256);
+
+            const next = secureUnsentMovementFrames();
+            if (next.length >= 48 || next.reduce((total, frame) => total + frame.delta, 0) >= .45) {
+                if (typeof syncMyPlayerData === 'function') syncMyPlayerData(true);
+            }
         }
 
         function secureResetPrediction(position, motion = {}) {
@@ -96,6 +111,7 @@
             secureJumpIntent = false;
             secureJumpGeneration++;
             securePredictionCorrection.x = securePredictionCorrection.y = securePredictionCorrection.z = 0;
+            securePredictionResetPending = true;
             secureLastMoveSentAt = 0;
             if (playerGroup) {
                 playerGroup.position.copy(playerPos);

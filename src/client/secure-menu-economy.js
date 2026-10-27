@@ -124,21 +124,41 @@
         };
 
         syncMyPlayerData = function(force = false) {
-            if (!state.isPlaying || secureHandoffInProgress || !secureGameReady || !secureGameSocket || secureGameSocket.readyState !== WebSocket.OPEN) return;
+            if (!state.isPlaying || secureHandoffInProgress || !secureGameReady ||
+                !secureGameSocket || secureGameSocket.readyState !== WebSocket.OPEN) return false;
             const now = Date.now();
-            if (!force && now - secureLastMoveSentAt < config.MOVE_TICK_MS) return; // FREE_10K_PHASE1_CLIENT: 5Hz
-            secureLastMoveSentAt = now;
-
+            if (!force && now - secureLastMoveSentAt < config.MOVE_TICK_MS) return false;
             const input = state.isPaused ? { x: 0, z: 0, jump: false } : secureMovementIntent();
-            const seq = secureInputSequence++;
+            const predicted = typeof secureUnsentMovementFrames === 'function' ? secureUnsentMovementFrames() : [];
+            const frames = predicted.length
+                ? predicted.map(frame => ({ input: { ...frame.input }, delta: frame.delta }))
+                : [{ input, delta: 0 }];
+            if (!movement.validMovementFrames(frames)) return false;
+
+            const seq = secureInputSequence;
+            try {
+                secureGameSocket.send(JSON.stringify({
+                    type: protocol.WS_MESSAGE.MOVE,
+                    input,
+                    seq,
+                    frames
+                }));
+            } catch (_) {
+                return false;
+            }
+            secureInputSequence++;
+            secureLastMoveSentAt = now;
             securePendingInputs.push({ seq, input, jumpGeneration: secureJumpGeneration });
             if (securePendingInputs.length > 64) securePendingInputs.shift();
-            secureGameSocket.send(JSON.stringify({
-                type: protocol.WS_MESSAGE.MOVE,
-                input,
-                seq
-            }));
+            return true;
         };
+
+        function secureFlushMovementForPickup() {
+            if (!state.isPlaying || !secureGameReady || secureHandoffInProgress ||
+                !secureGameSocket || secureGameSocket.readyState !== WebSocket.OPEN) return false;
+            return (typeof secureUnsentMovementFrames !== 'function' || secureUnsentMovementFrames().length === 0)
+                || syncMyPlayerData(true);
+        }
 
         // Lucky Box is fully server-authoritative in this build.
         // The Worker owns: one-box state, claim locking, 4-hour respawn and reward RNG.
