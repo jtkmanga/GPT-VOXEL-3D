@@ -1,5 +1,24 @@
 # Current development state
 
+## D076 — remove Slip2Go global duplicate flag; keep server transaction idempotency (2026-10-27)
+
+Starting source 71ee0cacc3aceae8a901d4d66a6c0463ecb97f0c. Owner approved this bounded change after a real
+50 THB transfer was accepted by the bank but Slip2Go returned 200501
+"Slip is Duplicated" when the game submitted the receipt with
+`checkDuplicate: true`.
+
+Slip2Go documents `checkDuplicate` as an optional condition. This change omits
+that provider-global duplicate condition while preserving the receiver-account
+and exact-amount checks. The game continues to derive a provider transaction
+identifier from `transRef`/reference data and enforces one-time granting in the
+Durable Object payment ledger, where `voxel_payments.transaction_id` is a
+PRIMARY KEY and existing transactions fail closed as duplicates.
+
+The regression test now requires receiver and amount checks, rejects any
+`checkDuplicate` field in the Slip2Go payload, and preserves Bearer auth.
+No secret, payment recipient, price, entitlement duration, public rollout or
+production Worker is changed by this development commit.
+
 ## D074 — align synthetic Slip2Go harness with Bearer auth (2026-10-26)
 
 Starting source d8e2ba508afcb6b71be20679637500cb66b709a3. Gate 7 on D073 reached the new Slip2Go Bearer

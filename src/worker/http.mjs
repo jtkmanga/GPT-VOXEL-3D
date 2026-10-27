@@ -164,7 +164,6 @@ export async function handleVerifySlip(request, env) {
   }
 
   const payload = {
-    checkDuplicate: true,
     checkReceiver: [{
       accountType: '02001',
       accountNumber: env.PAYMENT_RECEIVER_ACCOUNT
