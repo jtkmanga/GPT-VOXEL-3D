@@ -47,6 +47,7 @@ jobs:
           site=next((b.get('text') for b in bindings if b.get('name')=='FIREBASE_APP_CHECK_SITE_KEY' and b.get('type')=='plain_text'),None)
           if not re.fullmatch(r'6L[A-Za-z0-9_-]{30,80}',str(site or '')):
               raise SystemExit('Public App Check key is missing')
+          print('::add-mask::'+site)
           with open(os.environ['GITHUB_ENV'],'a') as f:
               f.write('LUCKY_APP_CHECK_SITE_KEY='+site+'\n')
           print('PASS Firebase public identity and protected rollback secret names')
