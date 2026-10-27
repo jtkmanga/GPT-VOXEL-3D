@@ -119,6 +119,18 @@ export class GameRoom {
       amount INTEGER NOT NULL,
       created_at INTEGER NOT NULL
     )`);
+    // Reuse provider-generated PromptPay QR image links without storing the
+    // receiver account itself in this cache. cache_key is a SHA-256 digest
+    // derived by the HTTP adapter from receiver identity + amount.
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS voxel_payment_qr_cache (
+      cache_key TEXT PRIMARY KEY,
+      qr_image_url TEXT NOT NULL DEFAULT '',
+      account_name TEXT NOT NULL DEFAULT '',
+      amount INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL DEFAULT 0,
+      lease_until INTEGER NOT NULL DEFAULT 0,
+      updated_at INTEGER NOT NULL
+    )`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS voxel_zone_handoffs (
       token TEXT PRIMARY KEY,
       uid TEXT NOT NULL,
@@ -736,6 +748,78 @@ export class GameRoom {
     const url = new URL(request.url);
 
     if (url.pathname.startsWith('/_internal/2c2p/')) return handle2c2pInternal(request,this);
+
+    if (url.pathname==='/_internal/payment-qr-cache/claim' && request.method==='POST') {
+      let body; try { body=await request.json(); }
+      catch (_) { return Response.json({ok:false,error:'Invalid JSON'},{status:400}); }
+      const key=String(body?.key||''), amount=Number(body?.amount);
+      if (!/^[a-f0-9]{64}$/.test(key) || !Number.isSafeInteger(amount) || amount<1 || amount>100000)
+        return Response.json({ok:false,error:'Invalid QR cache claim'},{status:400});
+      const now=Date.now(), minFresh=now+60000, leaseMs=5000;
+      const result=this.ctx.storage.transactionSync(()=>{
+        const row=this.sql.exec(
+          'SELECT qr_image_url,account_name,amount,expires_at,lease_until FROM voxel_payment_qr_cache WHERE cache_key=?',
+          key
+        ).toArray()[0];
+        if (row && Number(row.amount)===amount && String(row.qr_image_url||'') &&
+            Number(row.expires_at)>minFresh) {
+          return {ok:true,state:'hit',qrImageUrl:String(row.qr_image_url),
+            accountName:String(row.account_name||''),amount:Number(row.amount),
+            expiresAt:Number(row.expires_at)};
+        }
+        if (row && Number(row.lease_until)>now)
+          return {ok:true,state:'pending',retryAfterMs:150};
+        const leaseUntil=now+leaseMs;
+        this.sql.exec(
+          `INSERT INTO voxel_payment_qr_cache
+            (cache_key,qr_image_url,account_name,amount,expires_at,lease_until,updated_at)
+           VALUES (?, '', '', ?, 0, ?, ?)
+           ON CONFLICT(cache_key) DO UPDATE SET
+             qr_image_url='',account_name='',amount=excluded.amount,expires_at=0,
+             lease_until=excluded.lease_until,updated_at=excluded.updated_at`,
+          key,amount,leaseUntil,now
+        );
+        return {ok:true,state:'lease',leaseUntil};
+      });
+      return Response.json(result);
+    }
+
+    if (url.pathname==='/_internal/payment-qr-cache/store' && request.method==='POST') {
+      let body; try { body=await request.json(); }
+      catch (_) { return Response.json({ok:false,error:'Invalid JSON'},{status:400}); }
+      const key=String(body?.key||''), amount=Number(body?.amount),
+        accountName=String(body?.accountName||'').trim(),
+        expiresAt=Number(body?.expiresAt), now=Date.now();
+      let qr;
+      try { qr=new URL(String(body?.qrImageUrl||'')); } catch (_) {}
+      if (!/^[a-f0-9]{64}$/.test(key) || !Number.isSafeInteger(amount) || amount<1 || amount>100000 ||
+          !qr || qr.protocol!=='https:' || qr.username || qr.password ||
+          accountName.length>160 || !Number.isSafeInteger(expiresAt) ||
+          expiresAt<now+5*60000 || expiresAt>now+21*60*60*1000)
+        return Response.json({ok:false,error:'Invalid QR cache entry'},{status:400});
+      this.sql.exec(
+        `INSERT INTO voxel_payment_qr_cache
+          (cache_key,qr_image_url,account_name,amount,expires_at,lease_until,updated_at)
+         VALUES (?,?,?,?,?,0,?)
+         ON CONFLICT(cache_key) DO UPDATE SET
+           qr_image_url=excluded.qr_image_url,account_name=excluded.account_name,
+           amount=excluded.amount,expires_at=excluded.expires_at,lease_until=0,
+           updated_at=excluded.updated_at`,
+        key,qr.href,accountName,amount,expiresAt,now
+      );
+      this.sql.exec('DELETE FROM voxel_payment_qr_cache WHERE expires_at>0 AND expires_at<=?',now);
+      return Response.json({ok:true});
+    }
+
+    if (url.pathname==='/_internal/payment-qr-cache/release' && request.method==='POST') {
+      let body; try { body=await request.json(); }
+      catch (_) { return Response.json({ok:false,error:'Invalid JSON'},{status:400}); }
+      const key=String(body?.key||'');
+      if (!/^[a-f0-9]{64}$/.test(key))
+        return Response.json({ok:false,error:'Invalid QR cache release'},{status:400});
+      this.sql.exec('UPDATE voxel_payment_qr_cache SET lease_until=0,updated_at=? WHERE cache_key=?',Date.now(),key);
+      return Response.json({ok:true});
+    }
 
     if (url.pathname==='/_internal/admin/role-check' && request.method==='GET') {
       const email=String(url.searchParams.get('email')||'').trim().toLowerCase();
