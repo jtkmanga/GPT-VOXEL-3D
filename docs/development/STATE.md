@@ -1,5 +1,18 @@
 # Current development state
 
+## D080 — payment-history test ordering correction (2026-10-27)
+
+Starting source 471fb5caf13e102a9b323cf34c0590fabfb3183c. Gate 7 showed the new
+payment-history runtime and Admin tests passing, with one failure only in the
+existing P0 payment test because the synthetic clock gave the successful grant
+and duplicate retry the same millisecond timestamp. SQLite therefore returned
+the two history rows in an unspecified order.
+
+Commit c5ddf9e217deb2ba86887bfd35676be39d175348 changes only that assertion to
+verify the same exact set of statuses without assuming row order. No runtime,
+Admin UI, payment behavior, provider request, production configuration or secret
+is changed. P9 on D079 passed; Gate 7 must rerun on this corrected source.
+
 ## D076 — remove Slip2Go global duplicate flag; keep server transaction idempotency (2026-10-27)
 
 Starting source 71ee0cacc3aceae8a901d4d66a6c0463ecb97f0c. Owner approved this bounded change after a real
