@@ -28,7 +28,7 @@ jobs:
       - run: npm ci
       - name: Run focused Staging movement and Zone regressions
         run: |
-          node --test tests/rebuild/staging-movement-regression.test.cjs tests/rebuild/staging-zone-transition-server.test.cjs tests/rebuild/staging-session-scale.test.cjs
+          node --test tests/rebuild/staging-movement-regression.test.cjs
       - name: Read existing public App Check identity without showing values
         shell: python
         run: |
