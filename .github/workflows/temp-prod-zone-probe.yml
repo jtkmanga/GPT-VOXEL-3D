@@ -1,0 +1,64 @@
+name: Temporary Production Zone WebSocket Probe
+
+on:
+  push:
+    branches:
+      - diag/prod-zone-websocket-20261028
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm install --no-save --ignore-scripts ws@8.18.3
+      - name: Probe Production Zone upgrades
+        run: |
+          node <<'NODE'
+          const WebSocket = require('ws');
+          const origin = 'https://jtkmanga.github.io';
+          const zones = ['0,0','5,5','9,9'];
+          function probe(zone) {
+            return new Promise((resolve) => {
+              const url = 'wss://voxel-run-v2-demo.hjinffv5426.workers.dev/play?zone=' + encodeURIComponent(zone);
+              const ws = new WebSocket(url, [], { origin });
+              let opened = false;
+              const timer = setTimeout(() => {
+                console.log('TIMEOUT', zone, 'opened=' + opened);
+                try { ws.terminate(); } catch {}
+                resolve(false);
+              }, 8000);
+              ws.on('open', () => {
+                opened = true;
+                console.log('OPEN', zone);
+                ws.send(JSON.stringify({type:'move',input:{x:0,z:0,jump:false},seq:0}));
+              });
+              ws.on('close', (code, reason) => {
+                clearTimeout(timer);
+                console.log('CLOSE', zone, code, String(reason));
+                resolve(opened && code === 1008);
+              });
+              ws.on('unexpected-response', (_req, res) => {
+                clearTimeout(timer);
+                console.log('HTTP', zone, res.statusCode, res.statusMessage || '');
+                resolve(false);
+              });
+              ws.on('error', (err) => {
+                console.log('ERROR', zone, err.message);
+              });
+            });
+          }
+          (async () => {
+            let ok = true;
+            for (const z of zones) ok = (await probe(z)) && ok;
+            if (!ok) process.exit(1);
+          })();
+          NODE
