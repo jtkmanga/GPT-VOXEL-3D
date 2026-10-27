@@ -20,7 +20,7 @@ jobs:
         with:
           node-version: 24
       - run: npm install --no-save --ignore-scripts ws@8.18.3
-      - name: Compare Zone upgrade health
+      - name: Compare Zone upgrade health after unchanged-version recovery
         run: |
           node <<'NODE'
           const WebSocket=require('ws');
