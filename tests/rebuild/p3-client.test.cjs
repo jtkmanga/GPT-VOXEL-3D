@@ -126,15 +126,20 @@ test('P3 client camera-relative four-direction and diagonal intent preserves bas
   approximately(fixture.context.secureMovementIntent().x, 0.25, 'baseline analog response');
 });
 
-test('P3 actual client sends intent and sequence only at the preserved 200ms cadence', async () => {
+test('P3 actual client sends ordered frames at the preserved 200ms cadence', async () => {
   const fixture = await clientFixture();
   fixture.context.keys.d = true;
   fixture.context.playerPos.set(300, 99, 500);
   fixture.context.playerVel.x = 999;
+  fixture.context.securePredictMovement(0);
+  fixture.context.securePredictMovement(0.05);
   fixture.context.syncMyPlayerData();
   assert.equal(fixture.sent.length, 1);
-  assert.deepEqual(Object.keys(fixture.sent[0]).sort(), ['input', 'seq', 'type']);
-  assert.deepEqual(fixture.sent[0], { type: 'move', input: { x: 1, z: 0, jump: false }, seq: 0 });
+  assert.deepEqual(Object.keys(fixture.sent[0]).sort(), ['frames', 'input', 'seq', 'type']);
+  assert.equal(fixture.sent[0].seq, 0);
+  assert.deepEqual(fixture.sent[0].input, { x: 1, z: 0, jump: false });
+  assert.ok(fixture.sent[0].frames.length >= 1);
+  assert.equal(fixture.movement.validMovementFrames(fixture.sent[0].frames), true);
   fixture.advance(199);
   fixture.context.syncMyPlayerData();
   assert.equal(fixture.sent.length, 1);
@@ -142,6 +147,7 @@ test('P3 actual client sends intent and sequence only at the preserved 200ms cad
   fixture.context.syncMyPlayerData();
   assert.equal(fixture.sent.length, 2);
   assert.equal(fixture.sent[1].seq, 1);
+  assert.equal(fixture.movement.validMovementFrames(fixture.sent[1].frames), true);
   fixture.context.state.isPaused = true;
   fixture.advance(200);
   fixture.context.syncMyPlayerData();
@@ -231,27 +237,20 @@ test('P3 an actual nearby player movement message cannot reconcile the local pla
   assert.equal(fixture.remoteUpdates.at(-1).id, peer.attachment().id);
 });
 
-test('P3 early unapplied ACK retains jump intent until the actual server accepts it', async t => {
+test('P3 forced ordered-frame flush spends only predicted time and clears jump after authority accepts it', async t => {
   const { h, connection, fixture } = await runtimeClient(t, 'synthetic-p3-client-jump');
   await h.advance(200);
   fixture.setTime(h.now());
   fixture.context.syncMyPlayerData(true);
   await fixture.flush();
   fixture.context.secureHandleSocketMessage(last(connection, 'move'));
+
   fixture.context.triggerJump();
   assert.equal(fixture.context.playerVelocityY, 16);
   await h.advance(100);
   fixture.setTime(h.now());
+  fixture.context.securePredictMovement(0.1);
   fixture.context.syncMyPlayerData(true);
-  await fixture.flush();
-  const early = last(connection, 'move');
-  assert.equal(early.applied, false);
-  fixture.context.secureHandleSocketMessage(early);
-  assert.equal(fixture.read('secureJumpIntent'), true);
-  await h.advance(100);
-  fixture.setTime(h.now());
-  fixture.context.syncMyPlayerData(true);
-  assert.equal(fixture.sent.at(-1).input.jump, true);
   await fixture.flush();
   const accepted = last(connection, 'move');
   assert.equal(accepted.applied, true);
@@ -260,6 +259,12 @@ test('P3 early unapplied ACK retains jump intent until the actual server accepts
   assert.equal(fixture.read('secureJumpIntent'), false);
   assert.equal(fixture.state().grounded, false);
   approximately(fixture.state().y, connection.attachment().y, 'reconciled jump height');
+
+  await h.advance(100);
+  fixture.setTime(h.now());
+  fixture.context.securePredictMovement(0.1);
+  fixture.context.syncMyPlayerData(true);
+  assert.equal(fixture.sent.at(-1).input.jump, false);
 });
 
 test('P3 handoff or lost connection freezes intent/prediction until authority resumes', async () => {
@@ -338,6 +343,7 @@ test('P3 actual handoff cancellation restores client state from the server and p
   fixture.context.keys = { a: true };
   await h.advance(200);
   fixture.setTime(h.now());
+  fixture.context.securePredictMovement(0.2);
   fixture.context.syncMyPlayerData(true);
   await fixture.flush();
   assert.ok(fixture.sent.at(-1).seq >= 1);
