@@ -13,9 +13,17 @@ test('default client sends ordered movement frames instead of newest-input-only 
   assert.match(economy,/function secureFlushMovementForPickup\(\)/);
 });
 
-test('default prediction bounds unsent batches to the Worker half-second budget',()=>{
+test('production applies batching in exactly one gameplay wrapper, not inside the base predictor',()=>{
   const socket=readFileSync('src/client/secure-socket-handoff.js','utf8');
-  assert.match(socket,/pendingSeconds \+ elapsed > \.5 \+ 1e-9/);
-  assert.match(socket,/next\.length >= 48/);
-  assert.match(socket,/>= \.45/);
+  const production=readFileSync('src/client/production-staging-gameplay.js','utf8');
+  const start=socket.indexOf('function securePredictMovement(delta)');
+  const end=socket.indexOf('function secureResetPrediction',start);
+  assert.ok(start>=0&&end>start);
+  const predictor=socket.slice(start,end);
+  assert.doesNotMatch(predictor,/syncMyPlayerData/);
+  assert.doesNotMatch(predictor,/pendingSeconds \+ elapsed/);
+  assert.doesNotMatch(predictor,/next\.length >= 48/);
+  assert.match(production,/pendingSeconds \+ elapsed > \.5 \+ 1e-9/);
+  assert.match(production,/next\.length >= 48/);
+  assert.match(production,/>= \.45/);
 });
