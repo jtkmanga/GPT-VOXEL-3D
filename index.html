@@ -4577,7 +4577,6 @@ setTimeout(() => {
             const frames = predicted.length
                 ? predicted.map(frame => ({ input: { ...frame.input }, delta: frame.delta }))
                 : [{ input, delta: 0 }];
-
             const seq = secureInputSequence;
             try {
                 secureGameSocket.send(JSON.stringify({
