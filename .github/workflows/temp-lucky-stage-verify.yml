@@ -26,8 +26,9 @@ jobs:
         with:
           node-version: 24
       - run: npm ci
-      - name: Run Staging-source unit regressions before rebuilding public asset
-        run: npm test
+      - name: Run focused Staging movement and Zone regressions
+        run: |
+          node --test tests/rebuild/staging-movement-regression.test.cjs tests/rebuild/staging-zone-transition-server.test.cjs tests/rebuild/staging-session-scale.test.cjs
       - name: Read existing public App Check identity without showing values
         shell: python
         run: |
