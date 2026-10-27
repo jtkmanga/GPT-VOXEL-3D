@@ -33,7 +33,7 @@ function fixture(t, staging = true) {
       FIREBASE_ONLINE_USER_CHECK: 'false',
       STAGING_AUTH_MODE: 'popup', PAYMENT_MODE: 'provider-neutral-test',
       PAYMENT_WEBHOOK_SECRET: undefined, SLIP2GO_API_SECRET: undefined } } :
-    { env: { APP_ENV: 'production' } });
+    {});
   t.after(() => h.close());
   return h;
 }

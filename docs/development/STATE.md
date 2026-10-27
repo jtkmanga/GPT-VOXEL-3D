@@ -1,5 +1,20 @@
 # Current development state
 
+## D084 — align production handoff gate with deployed environment semantics (2026-10-27)
+
+Cloudflare production inspection confirmed voxel-run-v2-demo intentionally has
+no APP_ENV or staging selector bindings. The router treats that exact unset state
+as the legacy Production deployment; only APP_ENV=staging selects the isolated
+Staging boundary. The first D083 test revision used a nonexistent
+APP_ENV=production value and was therefore correctly rejected by the staging
+boundary before ZoneRoom.
+
+Continuous Free handoff now follows the same trusted deployment distinction as
+the router: it is enabled only for the legacy Production environment
+(APP_ENV undefined) or explicit Staging (APP_ENV=staging). Any other APP_ENV
+value remains fail-closed. The production runtime fixture again uses the normal
+unset environment and exercises the full continuous cutover.
+
 ## D083 — promote continuous Free Zone handoff to production path (2026-10-27)
 
 Production mobile video 7586.mp4 reproduced a legacy Zone rollback: a boundary

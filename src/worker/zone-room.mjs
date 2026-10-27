@@ -156,7 +156,7 @@ export class ZoneRoom {
   }
 
   async handoffBarrier(request,unseal=false) {
-    if (!['staging','production'].includes(this.env.APP_ENV)) return Response.json({ok:false},{status:404});
+    if (!(this.env.APP_ENV===undefined || this.env.APP_ENV==='staging')) return Response.json({ok:false},{status:404});
     let body;
     try { body=await request.json(); }
     catch (_) { return Response.json({ok:false,error:'Invalid JSON'},{status:400}); }
@@ -228,7 +228,7 @@ export class ZoneRoom {
       for (const ws of this.sockets()) {
         const p=this.player(ws);
         if ((p?.uid||p?.pendingUid)!==body.uid || (p.sessionId||p.pendingSessionId)!==body.sessionId) continue;
-        if (body.handoffToken!==undefined && (!['staging','production'].includes(this.env.APP_ENV) ||
+        if (body.handoffToken!==undefined && (!(this.env.APP_ENV===undefined || this.env.APP_ENV==='staging') ||
             !p.handoffPending?.sealed || p.handoffPending.token!==body.handoffToken)) continue;
         if (this.activePlayer(p)) this.broadcastNearby({
           type:WS_MESSAGE.LEAVE,id:p.id,count:Math.max(0,this.count()-1)
@@ -474,7 +474,7 @@ export class ZoneRoom {
               uid:verified.uid,
               token:handoffToken,
               toZone:zoneId,
-              continuousHandoff:['staging','production'].includes(this.env.APP_ENV) && m.continuousHandoff===true
+              continuousHandoff:(this.env.APP_ENV===undefined || this.env.APP_ENV==='staging') && m.continuousHandoff===true
             })
           })
         );
@@ -574,7 +574,7 @@ export class ZoneRoom {
       last:0,
       lastCollect:0,
       handoffPending:null,
-      continuousHandoff:['staging','production'].includes(this.env.APP_ENV) && m.continuousHandoff===true,
+      continuousHandoff:(this.env.APP_ENV===undefined || this.env.APP_ENV==='staging') && m.continuousHandoff===true,
       handoffResume: handoff ? {
         token:handoffToken,
         continuousHandoff:handoff.continuousHandoff===true,
@@ -894,7 +894,7 @@ export class ZoneRoom {
     if (!applyMovementIntent(p,m,speedActive ? MOVEMENT.entitledSpeed : MOVEMENT.speed,now)) return;
     const {x,y,z,r}=p;
     const authoritativeZone=zoneFromPosition(x,z);
-    if (['staging','production'].includes(this.env.APP_ENV) && p.continuousHandoff && authoritativeZone &&
+    if ((this.env.APP_ENV===undefined || this.env.APP_ENV==='staging') && p.continuousHandoff && authoritativeZone &&
         authoritativeZone!==p.zoneId && !zonesAreAdjacent(p.zoneId,authoritativeZone)) {
       // A delayed target must not leave a source owning an unrelated region.
       // Keep the established adjacent-zone security fence and fail closed.
@@ -938,7 +938,7 @@ export class ZoneRoom {
 
       p.handoffPending={
         creating:true,
-        continuousHandoff:['staging','production'].includes(this.env.APP_ENV) && p.continuousHandoff===true && m.frames!==undefined,
+        continuousHandoff:(this.env.APP_ENV===undefined || this.env.APP_ENV==='staging') && p.continuousHandoff===true && m.frames!==undefined,
         zone:requestedZone,
         position:{x,y,z,r},
         source,
@@ -1008,7 +1008,7 @@ export class ZoneRoom {
       player:this.publicPlayer(p)
     },p,ws);
 
-    if (['staging','production'].includes(this.env.APP_ENV) && p.continuousHandoff) this.ctx.waitUntil(this.visibility.refresh(ws));
+    if ((this.env.APP_ENV===undefined || this.env.APP_ENV==='staging') && p.continuousHandoff) this.ctx.waitUntil(this.visibility.refresh(ws));
     else await this.visibility.refresh(ws);
     this.ctx.waitUntil(this.flushBorderSnapshot(false));
   }
