@@ -35,14 +35,40 @@ function allowedReferer() {
   return origin + '/';
 }
 
-async function createAnonymous(key) {
+async function exchangeAppCheckToken(key) {
+  const projectId = String(process.env.PROJECT_ID || '').trim();
+  const appId = String(process.env.FIREBASE_APP_ID || '').trim();
+  const debugToken = String(process.env.FIREBASE_APPCHECK_DEBUG_TOKEN || '').trim();
+  if (!projectId || !appId || !debugToken)
+    throw new Error('Firebase App Check CI configuration is incomplete');
+  const url = 'https://firebaseappcheck.googleapis.com/v1/projects/' +
+    encodeURIComponent(projectId) + '/apps/' + encodeURIComponent(appId) +
+    ':exchangeDebugToken?key=' + encodeURIComponent(key);
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'referer': allowedReferer()
+    },
+    body: JSON.stringify({ debug_token: debugToken })
+  });
+  let body = {};
+  try { body = await response.json(); } catch {}
+  if (!response.ok || typeof body.token !== 'string' || body.token.length < 100)
+    throw new Error('Firebase App Check debug exchange failed: ' +
+      String(body?.error?.message || response.status).slice(0, 120));
+  return body.token;
+}
+
+async function createAnonymous(key, appCheckToken) {
   const response = await fetch(
     'https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=' + encodeURIComponent(key),
     {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        'referer': allowedReferer()
+        'referer': allowedReferer(),
+        'X-Firebase-AppCheck': appCheckToken
       },
       body: JSON.stringify({ returnSecureToken: true })
     }
@@ -56,7 +82,7 @@ async function createAnonymous(key) {
   return { uid: body.localId, idToken: body.idToken };
 }
 
-async function deleteAnonymous(key, idToken) {
+async function deleteAnonymous(key, idToken, appCheckToken) {
   const response = await fetch(
     'https://identitytoolkit.googleapis.com/v1/accounts:delete?key=' + encodeURIComponent(key),
     {
@@ -80,6 +106,7 @@ async function prepare() {
   const target = count();
   const key = apiKey();
   const file = workPath(process.env.TOKEN_FILE);
+  const appCheckToken = await exchangeAppCheckToken(key);
   const manifest = {
     formatVersion: 1,
     mode: 'firebase-anonymous-staging-smoke',
@@ -91,7 +118,7 @@ async function prepare() {
   fs.writeFileSync(file, JSON.stringify(manifest));
 
   for (let index = 0; index < target; index++) {
-    const user = await createAnonymous(key);
+    const user = await createAnonymous(key, appCheckToken);
     manifest.users.push(user);
     fs.writeFileSync(file, JSON.stringify(manifest));
     if ((index + 1) % 10 === 0 || index + 1 === target)
@@ -110,9 +137,10 @@ async function cleanup() {
   const key = apiKey();
   const manifest = JSON.parse(fs.readFileSync(file, 'utf8'));
   const users = manifest.users || [];
+  const appCheckToken = await exchangeAppCheckToken(key);
   let failures = 0;
   for (let index = 0; index < users.length; index++) {
-    try { await deleteAnonymous(key, users[index].idToken); }
+    try { await deleteAnonymous(key, users[index].idToken, appCheckToken); }
     catch (error) {
       failures++;
       if (failures <= 5) console.error(error.message);
