@@ -1,5 +1,27 @@
 # S001: public repository credential audit
 
+## D085 reviewed continuous-Zone handoff increment — 2026-10-27
+
+Reviewed the bounded committed-history increment from the prior Gate 7 exclusion
+baseline 865ec976d6f79d28f508843cfe8247e09b3ddbaf through
+1da57429880bbfd80e1b31f5ac52098433bd494c. The incremental scanner reported no
+coverage gaps and exactly three credential-assignment candidates, all at the
+same existing synthetic Staging Zone transition fixture location in
+`tests/rebuild/staging-zone-transition-server.test.cjs`. That fixture contains
+only synthetic/public test configuration shapes and intentionally undefined
+secret placeholders so isolated tests can verify fail-closed behavior. Rewriting
+the fixture to add the Production continuous-handoff regression made those
+existing synthetic assignments newly reachable to the committed-history scan.
+
+No Firebase admin credential, payment/provider secret, Cloudflare token, GitHub
+token, bank/account credential or other usable private credential was introduced
+or used. The continuous handoff feature itself adds no credential material and
+does not change payment, Admin, Slip2Go, pricing, receiver or secret bindings.
+
+Advance only the Gate 7 exclusion baseline to this reviewed source. Scanner
+patterns, coverage-gap checks, current-file checks and fail-on-new-finding
+behavior remain unchanged.
+
 ## D081 reviewed Admin payment-history increment — 2026-10-27
 
 Reviewed the bounded committed-history increment from the prior Gate 7 exclusion

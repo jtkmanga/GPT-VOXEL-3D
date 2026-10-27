@@ -1,5 +1,18 @@
 # Current development state
 
+## D085 — review continuous-handoff secret-audit increment (2026-10-27)
+
+Starting source 1da57429880bbfd80e1b31f5ac52098433bd494c. Functional verification,
+client/static checks, Staging checks and current-file secret checks passed. Gate 7
+then stopped only on three identical incremental-history candidates at the
+existing synthetic Staging Zone transition fixture. Review confirmed they are
+test-only public/synthetic configuration shapes and undefined secret placeholders,
+not usable credentials; the scanner reported no coverage gaps.
+
+SECRET_AUDIT.md records the bounded review and Gate 7 advances only its exclusion
+baseline. Scanner patterns, allowlists, gap detection, runtime code and production
+configuration are unchanged.
+
 ## D084 — align production handoff gate with deployed environment semantics (2026-10-27)
 
 Cloudflare production inspection confirmed voxel-run-v2-demo intentionally has
