@@ -34,7 +34,22 @@ jobs:
               const timer=setTimeout(()=>{console.log(name,'TIMEOUT');try{ws.terminate()}catch{}resolve(false)},8000);
               let opened=false;
               ws.on('open',()=>{opened=true;console.log(name,'OPEN');ws.send(JSON.stringify({type:'move',input:{x:0,z:0,jump:false},seq:0}))});
-              ws.on('unexpected-response',(_q,res)=>{clearTimeout(timer);console.log(name,'HTTP',res.statusCode);try{res.destroy()}catch{}try{ws.terminate()}catch{}resolve(false)});
+              ws.on('unexpected-response',(_q,res)=>{
+                clearTimeout(timer);
+                let body='';
+                res.setEncoding('utf8');
+                res.on('data',chunk=>{ if(body.length<1000) body+=chunk });
+                res.on('end',()=>{
+                  console.log(name,'HTTP',res.statusCode,String(body).slice(0,500));
+                  try{ws.terminate()}catch{}
+                  resolve(false);
+                });
+                res.on('error',()=>{
+                  console.log(name,'HTTP',res.statusCode,'[body unavailable]');
+                  try{ws.terminate()}catch{}
+                  resolve(false);
+                });
+              });
               ws.on('close',(code,reason)=>{clearTimeout(timer);console.log(name,'CLOSE',code,String(reason));resolve(opened)});
               ws.on('error',e=>console.log(name,'ERROR',e.message));
             });
