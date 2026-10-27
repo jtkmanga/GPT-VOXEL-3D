@@ -66,7 +66,32 @@ function allowedReferer() {
   return origin + '/';
 }
 
-async function exchangeCustomToken(apiKey, token) {
+async function exchangeAppCheckToken(apiKey) {
+  const projectId = String(process.env.PROJECT_ID || '').trim();
+  const appId = String(process.env.FIREBASE_APP_ID || '').trim();
+  const debugToken = String(process.env.FIREBASE_APPCHECK_DEBUG_TOKEN || '').trim();
+  if (!projectId || !appId || !debugToken)
+    throw new Error('Firebase App Check CI configuration is incomplete');
+  const url = 'https://firebaseappcheck.googleapis.com/v1/projects/' +
+    encodeURIComponent(projectId) + '/apps/' + encodeURIComponent(appId) +
+    ':exchangeDebugToken?key=' + encodeURIComponent(apiKey);
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'referer': allowedReferer()
+    },
+    body: JSON.stringify({ debug_token: debugToken })
+  });
+  let body = {};
+  try { body = await response.json(); } catch {}
+  if (!response.ok || typeof body.token !== 'string' || body.token.length < 100)
+    throw new Error('Firebase App Check debug exchange failed: ' +
+      String(body?.error?.message || response.status).slice(0, 120));
+  return body.token;
+}
+
+async function exchangeCustomToken(apiKey, token, appCheckToken) {
   const url = 'https://identitytoolkit.googleapis.com/v1/accounts:signInWithCustomToken?key=' +
     encodeURIComponent(apiKey);
   for (let attempt = 0; attempt < 6; attempt++) {
@@ -76,7 +101,8 @@ async function exchangeCustomToken(apiKey, token) {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
-          'referer': allowedReferer()
+          'referer': allowedReferer(),
+          'X-Firebase-AppCheck': appCheckToken
         },
         body: JSON.stringify({ token, returnSecureToken: true })
       });
@@ -116,6 +142,7 @@ async function prepare() {
   if (!/^[a-z0-9-]{4,64}$/.test(projectId)) throw new Error('PROJECT_ID is invalid');
   if (!/^AIza[A-Za-z0-9_-]{35}$/.test(apiKey)) throw new Error('FIREBASE_API_KEY is invalid');
   const file = safeWorkPath(process.env.TOKEN_FILE);
+  const appCheckToken = await exchangeAppCheckToken(apiKey);
   const tag = runTag();
   const prefix = ('voxel-load-' + tag + '-').slice(0, 90);
   const users = Array.from({ length: count }, (_, index) => {
@@ -155,7 +182,7 @@ async function prepare() {
 
     const authenticated = await mapLimit(users, 80, async ({ uid }) => {
       const customToken = await auth.createCustomToken(uid, { voxelLoadTest: true, loadRun: tag });
-      const signedIn = await exchangeCustomToken(apiKey, customToken);
+      const signedIn = await exchangeCustomToken(apiKey, customToken, appCheckToken);
       if (signedIn.localId && signedIn.localId !== uid)
         throw new Error('Firebase returned a different UID during token exchange');
       return { uid, idToken: signedIn.idToken };
