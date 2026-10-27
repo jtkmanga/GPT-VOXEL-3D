@@ -133,8 +133,6 @@
             const frames = predicted.length
                 ? predicted.map(frame => ({ input: { ...frame.input }, delta: frame.delta }))
                 : [{ input, delta: 0 }];
-            if (!movement.validMovementFrames(frames)) return false;
-
             const seq = secureInputSequence;
             try {
                 secureGameSocket.send(JSON.stringify({
