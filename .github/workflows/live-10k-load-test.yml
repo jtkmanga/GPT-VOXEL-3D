@@ -45,7 +45,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: live-authenticated-load-test
+  group: live-authenticated-load-test-${{ github.event_name == 'workflow_dispatch' && 'manual' || github.sha }}
   cancel-in-progress: false
 
 jobs:
@@ -77,7 +77,6 @@ jobs:
     needs: validate-harness
     runs-on: ubuntu-24.04
     timeout-minutes: 20
-    environment: staging
     env:
       TARGET: staging
       BOT_COUNT: '100'
@@ -92,7 +91,6 @@ jobs:
       PROJECT_ID: gpt-voxel-3d-staging
       WS_URL: wss://gpt-voxel-3d-staging-01.hjinffv5426.workers.dev/play
       ORIGIN: https://gpt-voxel-3d-staging-01.hjinffv5426.workers.dev
-      STAGING_PUBLIC_MANIFEST: ${{ vars.STAGING_PUBLIC_MANIFEST }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -107,9 +105,14 @@ jobs:
         shell: node
         run: |
           const fs = require('node:fs');
-          let manifest;
-          try { manifest = JSON.parse(process.env.STAGING_PUBLIC_MANIFEST || ''); }
-          catch { throw new Error('STAGING_PUBLIC_MANIFEST is missing or invalid'); }
+          const origin = 'https://gpt-voxel-3d-staging-01.hjinffv5426.workers.dev';
+          const response = await fetch(origin + '/staging-config', {
+            headers: { 'User-Agent': 'VOXEL-LiveLoad/1.0', 'Accept': 'application/json' }
+          });
+          if (!response.ok) throw new Error('Staging config endpoint returned ' + response.status);
+          const manifest = await response.json();
+          if (manifest?.environment !== 'staging' || manifest?.workerOrigin !== origin)
+            throw new Error('Staging config identity mismatch');
           const apiKey = manifest?.firebase?.apiKey;
           if (!/^AIza[A-Za-z0-9_-]{35}$/.test(apiKey || ''))
             throw new Error('Staging Firebase public API key unavailable');
