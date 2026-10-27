@@ -1,0 +1,43 @@
+name: Temporary Prod vs Staging Zone Probe
+
+on:
+  push:
+    branches:
+      - diag/prod-zone-websocket-20261028
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm install --no-save --ignore-scripts ws@8.18.3
+      - name: Compare Zone upgrade health
+        run: |
+          node <<'NODE'
+          const WebSocket=require('ws');
+          const targets=[
+            ['prod','wss://voxel-run-v2-demo.hjinffv5426.workers.dev/play?zone=5%2C5','https://jtkmanga.github.io'],
+            ['staging','wss://gpt-voxel-3d-staging-01.hjinffv5426.workers.dev/play?zone=5%2C5','https://gpt-voxel-3d-staging-01.hjinffv5426.workers.dev']
+          ];
+          function probe([name,url,origin]){
+            return new Promise(resolve=>{
+              const ws=new WebSocket(url,[],{origin});
+              const timer=setTimeout(()=>{console.log(name,'TIMEOUT');try{ws.terminate()}catch{}resolve(false)},8000);
+              let opened=false;
+              ws.on('open',()=>{opened=true;console.log(name,'OPEN');ws.send(JSON.stringify({type:'move',input:{x:0,z:0,jump:false},seq:0}))});
+              ws.on('unexpected-response',(_q,res)=>{clearTimeout(timer);console.log(name,'HTTP',res.statusCode);resolve(false)});
+              ws.on('close',(code,reason)=>{clearTimeout(timer);console.log(name,'CLOSE',code,String(reason));resolve(opened)});
+              ws.on('error',e=>console.log(name,'ERROR',e.message));
+            });
+          }
+          (async()=>{for(const t of targets) await probe(t)})();
+          NODE
