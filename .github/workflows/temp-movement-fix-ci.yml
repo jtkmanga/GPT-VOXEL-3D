@@ -41,3 +41,5 @@ jobs:
           node scripts/rebuild/build-client.cjs --check
           node scripts/rebuild/check-syntax.cjs
           git diff --check
+      - name: Full regression suite
+        run: npm test
