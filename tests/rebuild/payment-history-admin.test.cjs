@@ -49,3 +49,14 @@ test('admin UI exposes payment/slip history controls without raw slip/account fi
   assert.match(source,/transactionRef/);
   assert.doesNotMatch(source,/slipImage|senderAccount|receiverAccount/);
 });
+
+
+test('rendered admin inline script parses without syntax errors',async()=>{
+  const {handleAdmin}=await import('../../src/worker/admin.mjs');
+  const response=await handleAdmin(new Request('https://admin.invalid/admin'),{});
+  assert.equal(response.status,200);
+  const html=await response.text();
+  const match=html.match(/<script>([\\s\\S]*?)<\\/script>/);
+  assert.ok(match,'inline admin script missing');
+  assert.doesNotThrow(()=>new Function(match[1]));
+});
