@@ -293,7 +293,6 @@ export async function handleVerifySlip(request, env) {
   }
 
   const payload = {
-    checkDuplicate: true,
     checkReceiver: [{
       accountType: receiver.accountType,
       accountNumber: receiver.account
