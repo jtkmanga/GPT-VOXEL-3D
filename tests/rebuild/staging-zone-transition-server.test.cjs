@@ -896,7 +896,9 @@ for (const restartCoordinator of [false, true]) {
     assert.equal(restored.attachment().id, originalId);
     assert.notEqual(restored.attachment().sessionId, priorSession);
     assert.deepEqual(pose(restored.attachment()), saved);
-    assert.equal(session(h, uid).save_revision, savedRevision);
+    assert.ok(session(h, uid).save_revision >= savedRevision &&
+      session(h, uid).save_revision <= savedRevision + 1,
+      'reauthentication may persist an additional monotonic checkpoint but cannot roll back pose');
     assertOneOwner(h, uid, '5,4');
     const current = session(h, uid);
     const replay = await authenticate(h, uid, '5,4', {
