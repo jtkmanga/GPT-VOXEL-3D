@@ -105,6 +105,72 @@ export function buildSlip2GoQrPayload({receiver,price}) {
   };
 }
 
+const PAYMENT_QR_CACHE_TTL_MS=20*60*60*1000;
+const PAYMENT_QR_CACHE_WAIT_MS=150;
+const PAYMENT_QR_CACHE_RETRIES=12;
+
+async function paymentQrCacheKey(receiver,price) {
+  const source=[
+    receiver.promptPayType,
+    receiver.account,
+    receiver.accountName,
+    String(price)
+  ].join('\n');
+  const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(source));
+  return Array.from(new Uint8Array(digest),byte=>byte.toString(16).padStart(2,'0')).join('');
+}
+
+async function paymentQrCacheClaim(env,key,amount) {
+  const room=env.ROOM.getByName('free-v2-demo');
+  for(let attempt=0;attempt<PAYMENT_QR_CACHE_RETRIES;attempt++) {
+    let response,data;
+    try {
+      response=await room.fetch(new Request('https://internal/_internal/payment-qr-cache/claim',{
+        method:'POST',
+        headers:{'content-type':'application/json'},
+        body:JSON.stringify({key,amount})
+      }));
+      data=await response.json();
+    } catch (_) {
+      return {state:'bypass'};
+    }
+    if(!response.ok||!data?.ok) return {state:'bypass'};
+    if(data.state==='lease') return {state:'lease'};
+    if(data.state==='hit') {
+      let qr;
+      try { qr=new URL(String(data.qrImageUrl||'')); } catch (_) {}
+      if(qr&&qr.protocol==='https:'&&!qr.username&&!qr.password&&Number(data.amount)===amount)
+        return {state:'hit',qrImageUrl:qr.href,accountName:String(data.accountName||'')};
+      return {state:'bypass'};
+    }
+    if(data.state!=='pending') return {state:'bypass'};
+    await new Promise(resolve=>setTimeout(resolve,PAYMENT_QR_CACHE_WAIT_MS));
+  }
+  return {state:'busy'};
+}
+
+async function paymentQrCacheStore(env,entry) {
+  try {
+    await env.ROOM.getByName('free-v2-demo').fetch(new Request(
+      'https://internal/_internal/payment-qr-cache/store',{
+        method:'POST',
+        headers:{'content-type':'application/json'},
+        body:JSON.stringify(entry)
+      }));
+  } catch (_) {}
+}
+
+async function paymentQrCacheRelease(env,key) {
+  try {
+    await env.ROOM.getByName('free-v2-demo').fetch(new Request(
+      'https://internal/_internal/payment-qr-cache/release',{
+        method:'POST',
+        headers:{'content-type':'application/json'},
+        body:JSON.stringify({key})
+      }));
+  } catch (_) {}
+}
+
 export async function handlePaymentQr(request, env) {
   if (env.PAYMENT_MODE !== 'slip2go-production') {
     return jsonResponse(request, env, {ok:false,error:'Production payment is disabled'}, 503);
@@ -147,6 +213,26 @@ export async function handlePaymentQr(request, env) {
   try { receiver=slip2goReceiverConfig(env); }
   catch (_) { return jsonResponse(request,env,{ok:false,error:'Payment server is not configured'},503); }
 
+  let cacheKey=null,cacheClaim={state:'bypass'};
+  try {
+    cacheKey=await paymentQrCacheKey(receiver,price);
+    cacheClaim=await paymentQrCacheClaim(env,cacheKey,price);
+  } catch (_) {
+    cacheKey=null;
+    cacheClaim={state:'bypass'};
+  }
+  if(cacheClaim.state==='hit') {
+    return jsonResponse(request,env,{
+      ok:true,item,price,currency:'THB',
+      qrImageUrl:cacheClaim.qrImageUrl,
+      accountName:cacheClaim.accountName||receiver.accountName
+    });
+  }
+  if(cacheClaim.state==='busy') {
+    return jsonResponse(request,env,{ok:false,error:'Payment QR generation is busy; retry shortly'},503);
+  }
+  const ownsCacheLease=cacheClaim.state==='lease';
+
   let slipResponse;
   try {
     slipResponse=await fetch('https://connect.slip2go.com/api/qr-payment/generate-qr-image-link',{
@@ -155,14 +241,19 @@ export async function handlePaymentQr(request, env) {
       body:JSON.stringify(buildSlip2GoQrPayload({receiver,price}))
     });
   } catch (_) {
+    if(ownsCacheLease&&cacheKey) await paymentQrCacheRelease(env,cacheKey);
     return jsonResponse(request,env,{ok:false,error:'Payment QR service unavailable'},502);
   }
   let result;
   try { result=await slipResponse.json(); }
-  catch (_) { return jsonResponse(request,env,{ok:false,error:'Invalid response from QR service'},502); }
+  catch (_) {
+    if(ownsCacheLease&&cacheKey) await paymentQrCacheRelease(env,cacheKey);
+    return jsonResponse(request,env,{ok:false,error:'Invalid response from QR service'},502);
+  }
   const providerCode=String(result?.code??'').trim();
   const providerMessage=typeof result?.message==='string' ? result.message.trim().slice(0,160) : '';
   if(!slipResponse.ok||providerCode!=='200') {
+    if(ownsCacheLease&&cacheKey) await paymentQrCacheRelease(env,cacheKey);
     const safeCode=/^\d{3,6}$/.test(providerCode)?providerCode:'unknown';
     return jsonResponse(request,env,{
       ok:false,
@@ -172,16 +263,30 @@ export async function handlePaymentQr(request, env) {
   const data=result?.data||{};
   let qr;
   try { qr=new URL(String(data.qrImageLink||'')); }
-  catch (_) { return jsonResponse(request,env,{ok:false,error:'Slip2Go QR success response is missing a valid image URL'},502); }
+  catch (_) {
+    if(ownsCacheLease&&cacheKey) await paymentQrCacheRelease(env,cacheKey);
+    return jsonResponse(request,env,{ok:false,error:'Slip2Go QR success response is missing a valid image URL'},502);
+  }
   const returnedAmount=Number(data.amount);
   const returnedName=String(data.accountName||'').trim();
   if(qr.protocol!=='https:'||qr.username||qr.password||
       !Number.isFinite(returnedAmount)||returnedAmount!==price) {
+    if(ownsCacheLease&&cacheKey) await paymentQrCacheRelease(env,cacheKey);
     return jsonResponse(request,env,{ok:false,error:'Slip2Go QR success response failed integrity checks'},502);
+  }
+  const accountName=returnedName||receiver.accountName;
+  if(cacheKey) {
+    await paymentQrCacheStore(env,{
+      key:cacheKey,
+      amount:price,
+      qrImageUrl:qr.href,
+      accountName,
+      expiresAt:Date.now()+PAYMENT_QR_CACHE_TTL_MS
+    });
   }
   return jsonResponse(request,env,{
     ok:true,item,price,currency:'THB',qrImageUrl:qr.href,
-    accountName:returnedName||receiver.accountName
+    accountName
   });
 }
 
