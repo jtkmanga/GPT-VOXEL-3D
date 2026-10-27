@@ -95,6 +95,8 @@ async function run() {
     ghostSnapshots: 0, zoneChanges: 0, generatorBackpressure: 0
   };
   const typeCounts = {};
+  const prematureCloseCodes = {};
+  const prematureCloseReasons = {};
   const welcomeLatencyMs = [];
   const sockets = new Set();
   const moveTimers = new Map();
@@ -229,12 +231,23 @@ async function run() {
         settle();
       });
 
-      ws.on('close', () => {
+      ws.on('close', (code, reasonValue) => {
         clearTimeout(timeout);
         stopMovement(ws);
         if (open && stats.active > 0) stats.active--;
         stats.closed++;
-        if (!finishing && welcomed) stats.prematureCloses++;
+        if (!finishing && welcomed) {
+          stats.prematureCloses++;
+          const codeKey=String(code);
+          const reason=Buffer.isBuffer(reasonValue)
+            ? reasonValue.toString('utf8').slice(0,120)
+            : String(reasonValue||'').slice(0,120);
+          const reasonKey=reason||'(none)';
+          prematureCloseCodes[codeKey]=(prematureCloseCodes[codeKey]||0)+1;
+          prematureCloseReasons[reasonKey]=(prematureCloseReasons[reasonKey]||0)+1;
+          if (stats.prematureCloses<=12)
+            console.log(`[PREMATURE-CLOSE] index=${index} zone=${zone} code=${codeKey} reason=${reasonKey}`);
+        }
         sockets.delete(ws);
         settle();
       });
@@ -261,9 +274,13 @@ async function run() {
 
   finishing = true;
   clearInterval(statTimer);
-  for (const ws of [...sockets]) {
+  const closing=[...sockets];
+  const closeRate=200;
+  for (let index=0; index<closing.length; index++) {
+    const ws=closing[index];
     stopMovement(ws);
     try { ws.close(1000, 'load test complete'); } catch {}
+    if ((index+1)%closeRate===0 && index+1<closing.length) await sleep(1000);
   }
   await sleep(2000);
   loopDelay.disable();
@@ -298,6 +315,8 @@ async function run() {
     },
     stats,
     messageTypes: typeCounts,
+    prematureCloseCodes,
+    prematureCloseReasons,
     limitations: [
       'Traffic originates from one GitHub-hosted generator unless the workflow is later sharded.',
       'This measures Worker/Durable Object/WebSocket behavior, not browser rendering or mobile GPU performance.',

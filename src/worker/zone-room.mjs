@@ -1190,14 +1190,33 @@ export class ZoneRoom {
 
   async endSession(ws,code,reason) {
     clearAuthDeadline(ws);
-    const p=this.player(ws);
+    let p=this.player(ws);
     if (p?.sessionClosed) return;
     const wasActive=this.activePlayer(p);
+    // Batched movement no longer persists on every frame. Persist the latest
+    // authoritative pose before a normal/error disconnect, while the exact
+    // session generation still owns the lease. Replacement/revoked sockets are
+    // intentionally excluded so they can never overwrite a successor.
     if (p) {
       p.sessionClosed=true;
       ws.serializeAttachment(p);
     }
     if (wasActive) {
+      const identity={uid:p.uid,sessionId:p.sessionId};
+      try {
+        const checkpoint=await checkpointPlayer(this,ws,p);
+        const current=this.player(ws);
+        if (checkpoint?.ok && current?.uid===identity.uid && current?.sessionId===identity.sessionId &&
+            !current.revoked) {
+          if (Number.isFinite(checkpoint.resumeExpiresAt))
+            current.resumeExpiresAt=checkpoint.resumeExpiresAt;
+          p=current;
+          ws.serializeAttachment(p);
+        }
+      } catch (_) {
+        console.warn('Final zone checkpoint unavailable');
+        p=this.player(ws)||p;
+      }
       this.broadcastNearby({
         type:WS_MESSAGE.LEAVE,
         id:p.id,
