@@ -124,8 +124,10 @@
         };
 
         syncMyPlayerData = function(force = false) {
-            if (!state.isPlaying || secureHandoffInProgress || !secureGameReady ||
-                !secureGameSocket || secureGameSocket.readyState !== WebSocket.OPEN) return false;
+            const socket = typeof secureContinuousMovementSocket === 'function'
+                ? secureContinuousMovementSocket() : secureGameSocket;
+            if (!state.isPlaying || !secureGameReady ||
+                !socket || socket.readyState !== WebSocket.OPEN) return false;
             const now = Date.now();
             if (!force && now - secureLastMoveSentAt < config.MOVE_TICK_MS) return false;
             const input = state.isPaused ? { x: 0, z: 0, jump: false } : secureMovementIntent();
@@ -135,7 +137,7 @@
                 : [{ input, delta: 0 }];
             const seq = secureInputSequence;
             try {
-                secureGameSocket.send(JSON.stringify({
+                socket.send(JSON.stringify({
                     type: protocol.WS_MESSAGE.MOVE,
                     input,
                     seq,
@@ -152,8 +154,10 @@
         };
 
         function secureFlushMovementForPickup() {
-            if (!state.isPlaying || !secureGameReady || secureHandoffInProgress ||
-                !secureGameSocket || secureGameSocket.readyState !== WebSocket.OPEN) return false;
+            const socket = typeof secureContinuousMovementSocket === 'function'
+                ? secureContinuousMovementSocket() : secureGameSocket;
+            if (!state.isPlaying || !secureGameReady ||
+                !socket || socket.readyState !== WebSocket.OPEN) return false;
             return (typeof secureUnsentMovementFrames !== 'function' || secureUnsentMovementFrames().length === 0)
                 || syncMyPlayerData(true);
         }

@@ -1,5 +1,27 @@
 # Current development state
 
+## D083 — promote continuous Free Zone handoff to production path (2026-10-27)
+
+Production mobile video 7586.mp4 reproduced a legacy Zone rollback: a boundary
+crossing displayed “ย้าย Zone ไม่สำเร็จ...” and restored the old source pose,
+visible as a teleport. Ordered movement batching fixed ordinary in-zone
+reconciliation, but the verified continuous handoff was still gated to staging.
+
+This change enables the same bounded continuous ownership protocol for explicit
+production and staging Free Server environments only. During target warmup the
+source remains authoritative and accepts ordered frames; cutover seals the
+source queue, commits the latest server-authored position/motion/session/world
+snapshot, ACKs the target, then revokes the exact source generation.
+Cancellation returns to the still-owning source without rollback or time-credit
+refund. VIP remains on its separate room path.
+
+The default production client now includes continuous handoff hooks and its
+movement/economy sender follows the current authoritative source or confirmed
+target socket during handoff. Server physics, adjacent-zone checks, one-use
+tickets, Firebase/session ownership, frame validation, sequence fencing,
+economy idempotency and the 0.5-second movement budget are unchanged.
+Payment/Admin/Slip2Go/pricing/receiver/secrets are untouched.
+
 ## D082 — promote ordered movement-frame batching to default client (2026-10-27)
 
 Starting source e56176232c8a3abf49e097fde7f4c8f80d1b0d2a. Mobile production video showed repeated walking
