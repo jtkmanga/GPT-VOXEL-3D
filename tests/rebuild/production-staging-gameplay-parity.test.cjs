@@ -35,3 +35,24 @@ test('production high-FPS prediction keeps Staging-style ordered batches bounded
     assert.equal(f.movement.validMovementFrames(packet.frames),true);
   }
 });
+
+
+test('production visual reconciliation smooths a valid one-batch correction instead of hard-snapping',async()=>{
+  const f=await stagingClientFixture({includeStagingRuntime:false,serverId:'free1'});
+  const c=f.context;
+  c.secureResetPrediction({x:0,y:0,z:0,r:0},{vx:0,vy:0,vz:0,grounded:true,jumpHeld:false,lastSeq:-1});
+  c.keys.d=true;
+  c.securePredictMovement(0);
+  f.advance(100);
+  c.securePredictMovement(.1);
+  assert.equal(c.syncMyPlayerData(true),true);
+  const before=f.state();
+  const authoritative={x:before.x-5,y:before.y,z:before.z,r:before.r};
+  assert.equal(c.secureReconcileMovement({
+    type:'move',applied:true,ack:0,player:authoritative,
+    movement:{vx:0,vy:0,vz:0,grounded:true,jumpHeld:false,lastSeq:0}
+  }),true);
+  const correction=f.read('securePredictionCorrection');
+  assert.ok(correction.x>4.9 && correction.x<5.1,
+    'a 5-unit valid batch correction should be visually damped instead of snapped');
+});

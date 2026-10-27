@@ -158,7 +158,9 @@ function stagingReconcileTransferAuthority(message) {
         corrected = movement.integrateMovement(corrected, frame.input, frame.delta, { ...options, speed: frame.speed });
     }
     secureApplyMovementState(corrected);
-    if (Math.hypot(before.x - corrected.x, before.y - corrected.y, before.z - corrected.z) <= 4) {
+    const correctionLimit = Math.max(6,
+        options.speed * movement.MOVEMENT.maxElapsedSeconds + 1);
+    if (Math.hypot(before.x - corrected.x, before.y - corrected.y, before.z - corrected.z) <= correctionLimit) {
         securePredictionCorrection.x += before.x - corrected.x;
         securePredictionCorrection.y += before.y - corrected.y;
         securePredictionCorrection.z += before.z - corrected.z;
