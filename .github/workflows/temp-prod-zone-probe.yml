@@ -9,9 +9,12 @@ permissions:
   contents: read
 
 jobs:
-  probe:
+  tail-and-probe:
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 6
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -19,46 +22,61 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+      - run: npm ci
       - run: npm install --no-save --ignore-scripts ws@8.18.3
-      - name: Probe Production Zone upgrades
+      - name: Tail Production and reproduce Zone 500
+        shell: bash
         run: |
+          set -uo pipefail
+          : > /tmp/tail.log
+          : > /tmp/tail.err
+          npx wrangler tail voxel-run-v2-demo --format json > /tmp/tail.log 2> /tmp/tail.err &
+          TAIL_PID=$!
+          cleanup() { kill "$TAIL_PID" 2>/dev/null || true; }
+          trap cleanup EXIT
+          sleep 8
           node <<'NODE'
           const WebSocket = require('ws');
-          const origin = 'https://jtkmanga.github.io';
-          const zones = ['0,0','5,5','9,9'];
-          function probe(zone) {
-            return new Promise((resolve) => {
-              const url = 'wss://voxel-run-v2-demo.hjinffv5426.workers.dev/play?zone=' + encodeURIComponent(zone);
-              const ws = new WebSocket(url, [], { origin });
-              let opened = false;
-              const timer = setTimeout(() => {
-                console.log('TIMEOUT', zone, 'opened=' + opened);
-                try { ws.terminate(); } catch {}
-                resolve(false);
-              }, 8000);
-              ws.on('open', () => {
-                opened = true;
-                console.log('OPEN', zone);
-                ws.send(JSON.stringify({type:'move',input:{x:0,z:0,jump:false},seq:0}));
-              });
-              ws.on('close', (code, reason) => {
-                clearTimeout(timer);
-                console.log('CLOSE', zone, code, String(reason));
-                resolve(opened && code === 1008);
-              });
-              ws.on('unexpected-response', (_req, res) => {
-                clearTimeout(timer);
-                console.log('HTTP', zone, res.statusCode, res.statusMessage || '');
-                resolve(false);
-              });
-              ws.on('error', (err) => {
-                console.log('ERROR', zone, err.message);
-              });
+          const origin='https://jtkmanga.github.io';
+          const zones=['0,0','5,5','9,9'];
+          function probe(zone){
+            return new Promise(resolve=>{
+              const url='wss://voxel-run-v2-demo.hjinffv5426.workers.dev/play?zone='+encodeURIComponent(zone);
+              const ws=new WebSocket(url,[],{origin});
+              const timer=setTimeout(()=>{ console.log('TIMEOUT',zone); try{ws.terminate()}catch{} resolve(); },5000);
+              ws.on('open',()=>{ console.log('OPEN',zone); ws.send(JSON.stringify({type:'move',input:{x:0,z:0,jump:false},seq:0})); });
+              ws.on('unexpected-response',(_req,res)=>{ clearTimeout(timer); console.log('HTTP',zone,res.statusCode); resolve(); });
+              ws.on('close',(code,reason)=>{ clearTimeout(timer); console.log('CLOSE',zone,code,String(reason)); resolve(); });
+              ws.on('error',err=>console.log('ERROR',zone,err.message));
             });
           }
-          (async () => {
-            let ok = true;
-            for (const z of zones) ok = (await probe(z)) && ok;
-            if (!ok) process.exit(1);
-          })();
+          (async()=>{ for(const z of zones) await probe(z); })();
           NODE
+          sleep 5
+          cleanup
+          sleep 1
+          echo '--- TAIL STDERR ---'
+          sed -E 's/(Bearer|token|authorization)[^ ]*/[REDACTED]/Ig' /tmp/tail.err | tail -80
+          echo '--- TAIL EVENTS ---'
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('/tmp/tail.log')
+          for raw in p.read_text(errors='replace').splitlines()[-200:]:
+              try:
+                  x=json.loads(raw)
+              except Exception:
+                  if raw.strip(): print(raw[:1200])
+                  continue
+              # Only print diagnostic fields; avoid request headers/auth data.
+              out={}
+              for k in ('outcome','scriptName','exceptions','logs','eventTimestamp','event'):
+                  if k in x: out[k]=x[k]
+              if isinstance(out.get('event'),dict):
+                  e=out['event']
+                  out['event']={k:e.get(k) for k in ('request','response') if k in e}
+                  if isinstance(out['event'].get('request'),dict):
+                      r=out['event']['request']
+                      out['event']['request']={k:r.get(k) for k in ('method','url') if k in r}
+              print(json.dumps(out,ensure_ascii=False)[:6000])
+          PY
