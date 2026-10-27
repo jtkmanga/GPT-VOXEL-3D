@@ -78,18 +78,32 @@ jobs:
               raise SystemExit('Production origin mismatch')
           if by_name.get('FIREBASE_PROJECT_ID',{}).get('text')!='lucky-game-6936b':
               raise SystemExit('Production Firebase project mismatch')
-          print('PASS existing secret names, Durable Object classes, Firebase identity and web origin')
+          import pathlib
+          prepared=pathlib.Path('work/lucky-stage-deploy')
+          prepared.mkdir(parents=True,exist_ok=True)
+          cfg=json.load(open('wrangler.jsonc'))
+          cfg['main']='../../worker.js'
+          cfg['vars']={b['name']:b['text'] for b in bindings if b.get('type')=='plain_text'}
+          cfg['vars']['PAYMENT_MODE']='disabled'
+          cfg['vars']['PAYMENT_ROLLOUT']='disabled'
+          cfg['triggers']={'crons':['0 17 * * *']}
+          if any(k in cfg['vars'] for k in ('STAGING_WORKER_NAME','STAGING_WORKER_ORIGIN','APP_ENV')):
+              raise SystemExit('Staging environment selectors must not leak into Lucky Worker')
+          with open(prepared/'wrangler.jsonc','w') as out: json.dump(cfg,out)
+          with open(prepared/'namespace-ids.json','w') as out:
+              json.dump({n:by_name[n].get('namespace_id') for n in ('ROOM','ZONE')},out)
+          print('PASS production vars prepared with payments disabled, cron retained, identities and secret names guarded')
       - name: Verify exact Staging Worker module bundling without deploying
         shell: bash
         run: |
           set -euo pipefail
-          npx wrangler deploy --dry-run --keep-vars --config wrangler.jsonc --outdir work/lucky-staging-dry-run
+          npx wrangler deploy --dry-run --config work/lucky-stage-deploy/wrangler.jsonc --outdir work/lucky-staging-dry-run
           test -d work/lucky-staging-dry-run
       - name: Deploy Staging source to existing Lucky Worker, preserving secrets and variables
         shell: bash
         run: |
           set -euo pipefail
-          npx wrangler deploy --keep-vars --config wrangler.jsonc
+          npx wrangler deploy --config work/lucky-stage-deploy/wrangler.jsonc
       - name: Verify production payment is off and rollback secrets survived
         shell: python
         run: |
@@ -100,6 +114,10 @@ jobs:
           req=urllib.request.Request(url,headers={'Authorization':'Bearer '+token,'Accept':'application/json'})
           with urllib.request.urlopen(req,timeout=30) as r: data=json.load(r)
           bindings={b.get('name'):b for b in data.get('result',{}).get('bindings',[])}
+          with open('work/lucky-stage-deploy/namespace-ids.json') as f: old_ids=json.load(f)
+          for name in ('ROOM','ZONE'):
+              if not old_ids.get(name) or old_ids[name]!=bindings.get(name,{}).get('namespace_id'):
+                  raise SystemExit('FAIL: Durable Object namespace changed')
           if bindings.get('PAYMENT_MODE',{}).get('text')!='disabled':
               raise SystemExit('FAIL: Payment mode was not disabled')
           if not ({'SLIP2GO_API_SECRET','PAYMENT_RECEIVER_ACCOUNT'} <= {n for n,b in bindings.items() if b.get('type')=='secret_text'}):
