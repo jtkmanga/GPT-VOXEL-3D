@@ -1,0 +1,165 @@
+name: Live 10K WebSocket Load Test (No Chromium)
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Run against staging first; Production requires explicit confirmation'
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+      players:
+        description: 'Concurrent authenticated players'
+        required: true
+        type: choice
+        options:
+          - '100'
+          - '1000'
+          - '5000'
+          - '10000'
+      duration_sec:
+        description: 'Hold duration after admission ramp'
+        required: true
+        default: '60'
+        type: choice
+        options:
+          - '30'
+          - '60'
+          - '120'
+      confirm:
+        description: 'Type RUN-STAGING-<players> or RUN-PRODUCTION-<players>'
+        required: true
+        type: string
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/live-10k-load-test.yml'
+      - 'scripts/load/firebase-load-users.cjs'
+      - 'scripts/load/live-10k-load.cjs'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-authenticated-load-test
+  cancel-in-progress: false
+
+jobs:
+  validate-harness:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci
+      - name: Install pinned load-test-only dependencies
+        run: npm install --no-save --ignore-scripts ws@8.18.3 firebase-admin@14.5.0
+      - name: Validate non-Chromium harness
+        run: |
+          set -euo pipefail
+          node --check scripts/load/firebase-load-users.cjs
+          node --check scripts/load/live-10k-load.cjs
+          node scripts/load/firebase-load-users.cjs self-test
+          node scripts/load/live-10k-load.cjs --self-test
+
+  live-load:
+    if: github.event_name == 'workflow_dispatch'
+    needs: validate-harness
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    environment: ${{ inputs.target }}
+    env:
+      TARGET: ${{ inputs.target }}
+      BOT_COUNT: ${{ inputs.players }}
+      DURATION_SEC: ${{ inputs.duration_sec }}
+      MOVE_HZ: '5'
+      CONNECT_RATE_PER_SEC: '100'
+      MIN_WELCOME_RATE: '0.995'
+      MIN_ACK_RATE: '0.95'
+      MAX_GENERATOR_EVENT_LOOP_P95_MS: '300'
+      TOKEN_FILE: work/load/firebase-load-users.json
+      LOAD_REPORT_FILE: work/load/live-${{ inputs.target }}-${{ inputs.players }}.json
+      STAGING_PUBLIC_MANIFEST: ${{ vars.STAGING_PUBLIC_MANIFEST }}
+      FIREBASE_SERVICE_ACCOUNT_JSON: ${{ inputs.target == 'production' && secrets.FIREBASE_LOADTEST_SERVICE_ACCOUNT_JSON_PRODUCTION || secrets.FIREBASE_LOADTEST_SERVICE_ACCOUNT_JSON_STAGING }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci
+      - name: Install pinned load-test-only dependencies
+        run: npm install --no-save --ignore-scripts ws@8.18.3 firebase-admin@14.5.0
+
+      - name: Guard explicit load-test approval
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="RUN-$(echo "$TARGET" | tr '[:lower:]' '[:upper:]')-$BOT_COUNT"
+          test "${{ inputs.confirm }}" = "$expected"
+          test -n "$FIREBASE_SERVICE_ACCOUNT_JSON"
+          test "$BOT_COUNT" = "100" -o "$BOT_COUNT" = "1000" -o "$BOT_COUNT" = "5000" -o "$BOT_COUNT" = "10000"
+          echo "PASS explicit $TARGET $BOT_COUNT-player approval"
+
+      - name: Resolve public Firebase and Worker configuration
+        shell: node
+        run: |
+          const fs = require('node:fs');
+          const target = process.env.TARGET;
+          let config;
+          if (target === 'staging') {
+            let publicManifest;
+            try { publicManifest = JSON.parse(process.env.STAGING_PUBLIC_MANIFEST || ''); }
+            catch { throw new Error('STAGING_PUBLIC_MANIFEST is missing or invalid'); }
+            config = {
+              PROJECT_ID: 'gpt-voxel-3d-staging',
+              FIREBASE_API_KEY: publicManifest?.firebase?.apiKey,
+              WS_URL: 'wss://gpt-voxel-3d-staging-01.hjinffv5426.workers.dev/play',
+              ORIGIN: 'https://gpt-voxel-3d-staging-01.hjinffv5426.workers.dev'
+            };
+          } else if (target === 'production') {
+            const html = fs.readFileSync('index.html', 'utf8');
+            config = {
+              PROJECT_ID: 'lucky-game-6936b',
+              FIREBASE_API_KEY: html.match(/apiKey:\s*"(AIza[A-Za-z0-9_-]{35})"/)?.[1],
+              WS_URL: 'wss://voxel-run-v2-demo.hjinffv5426.workers.dev/play',
+              ORIGIN: 'https://jtkmanga.github.io'
+            };
+          } else throw new Error('Invalid target');
+          if (!/^AIza[A-Za-z0-9_-]{35}$/.test(config.FIREBASE_API_KEY || ''))
+            throw new Error('Firebase public API key unavailable');
+          const out = process.env.GITHUB_ENV;
+          fs.appendFileSync(out, Object.entries(config).map(([k,v]) => k + '=' + v).join('\n') + '\n');
+          console.log('PASS target configuration resolved; credential values withheld');
+
+      - name: Prepare unique Firebase load identities
+        run: node scripts/load/firebase-load-users.cjs prepare
+
+      - name: Run authenticated WebSocket load
+        shell: bash
+        run: |
+          set -euo pipefail
+          ulimit -n 65535 || true
+          export NODE_OPTIONS="--max-old-space-size=6144"
+          node scripts/load/live-10k-load.cjs
+
+      - name: Upload sanitized load report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-load-${{ inputs.target }}-${{ inputs.players }}
+          path: work/load/live-${{ inputs.target }}-${{ inputs.players }}.json
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Delete temporary Firebase load identities
+        if: always()
+        run: node scripts/load/firebase-load-users.cjs cleanup
