@@ -3605,6 +3605,234 @@ setTimeout(() => {
             if (secureActiveHandoff === operation) secureActiveHandoff = null;
         }
 
+        // Free Server continuous Zone handoff. Source authority remains live
+        // during target warmup; VIP keeps its separate room path.
+        function secureUseContinuousHandoff(serverId = state.selectedServerId) {
+            return serverId === 'free1' && state.selectedServerId === 'free1';
+        }
+        function secureContinuousOperation() {
+            if (!secureUseContinuousHandoff() || typeof secureActiveHandoff === 'undefined' ||
+                !secureActiveHandoff?.continuous || !secureHandoffOperationIsCurrent(secureActiveHandoff)) return null;
+            return secureActiveHandoff;
+        }
+        function secureBeginContinuousHandoff(operation, message, fromZone, targetZone) {
+            if (!secureUseContinuousHandoff() || message.continuousHandoff !== true) return;
+            Object.assign(operation, { continuous: true, fromZone, targetZone, confirmed: false, sealed: false });
+        }
+        function secureContinuousHandoffPredictionAllowed() {
+            const operation = secureContinuousOperation();
+            return Boolean(operation && !operation.failed &&
+                (operation.source?.readyState === WebSocket.OPEN || operation.target?.readyState === WebSocket.OPEN));
+        }
+        function secureContinuousMovementSocket() {
+            if (!secureHandoffInProgress) return secureGameSocket;
+            const operation = secureContinuousOperation();
+            if (!operation) return null;
+            if (operation.failed) return null;
+            if (operation.confirmed) return operation.target;
+            return !operation.sealed && operation.source?.readyState === WebSocket.OPEN ? operation.source : null;
+        }
+        function secureHandoffEconomySocket() {
+            return secureContinuousMovementSocket();
+        }
+        function secureDispatchContinuousHandoffSocket(ws, message) {
+            const operation = secureContinuousOperation();
+            if (!operation || !secureHandoffInProgress) return null;
+            if (ws.secureAuthenticatedUid !== operation.uid || operation.failed) return false;
+            if (ws === operation.source) {
+                if (operation.confirmed) return false;
+                if (message.type === "move" && message.sealed && message.applied === false) operation.sealed = true;
+                if (message.type === "auth_refreshed") {
+                    if (message.serverNow) secureSetServerNow(message.serverNow);
+                    secureTrackAuthenticatedSocket(ws, operation.fromZone, message.session);
+                    if (message.entitlements && typeof secureApplyEntitlements === 'function') {
+                        secureApplyEntitlements(message.entitlements, null, message.serverNow);
+                    }
+                    return false;
+                }
+                return ["move", "join", "leave",
+                    "ghost_snapshot", "score", "leaderboard",
+                    "coin_collect_result", "coin_collected",
+                    "coin_state", "box_state",
+                    "handoff_cancelled", "handoff_error",
+                    "server_error"].includes(message.type);
+            }
+            if (ws !== secureGameSocket || (operation.target && ws !== operation.target)) return false;
+            if (operation.confirmed) return true;
+            if (["coin_state", "coin_collected", "box_state",
+                "score", "leaderboard"].includes(message.type)) {
+                // The server may send the commit's world snapshot immediately before
+                // its ownership ACK. Preserve that snapshot without letting provisional
+                // authority change rendered economy state before a validated cutover.
+                operation.worldMessages ||= new Map();
+                operation.worldMessages.set(message.type === "coin_collected"
+                    ? `${message.type}:${message.id}` : message.type, message);
+                if (operation.worldMessages.size > 204) {
+                    operation.failed = true;
+                    secureAbortClientConnections('Invalid continuous handoff world snapshot', 1008);
+                    secureReturnToMenu();
+                }
+                return false;
+            }
+            // Provisional sockets may acknowledge ownership, never write movement or
+            // economy state over the still-owning source before that acknowledgement.
+            return ["handoff_resumed", "handoff_resume_error",
+                "handoff_error", "auth_error",
+                "server_error"].includes(message.type);
+        }
+        function secureReplayMovementGroups(ws, ack) {
+            const groups = new Map();
+            for (const frame of securePendingFrames) {
+                if (frame.seq <= ack) continue;
+                if (!groups.has(frame.seq)) groups.set(frame.seq, []);
+                groups.get(frame.seq).push({ input: { ...frame.input }, delta: frame.delta });
+            }
+            for (const [seq, frames] of [...groups].sort((a, b) => a[0] - b[0])) {
+                if (!movement.validMovementFrames(frames)) throw new Error('Continuous handoff prediction is invalid');
+                const pending = securePendingInputs.find(packet => packet.seq === seq);
+                const input = pending?.input || frames.at(-1).input;
+                ws.send(JSON.stringify({ type: "move", input, seq, frames }));
+                if (!pending) securePendingInputs.push({ seq, input, jumpGeneration: secureJumpGeneration });
+                secureInputSequence = Math.max(secureInputSequence, seq + 1);
+            }
+            secureLastMoveSentAt = Date.now();
+        }
+        function secureReconcileTransferAuthority(message) {
+            const position = message.position, motion = message.movement || message.motion;
+            const ack = Number(message.ack ?? motion?.lastSeq);
+            if (!position || !motion || !Number.isSafeInteger(ack) || ack < -1 ||
+                ack < secureLastAcknowledgedSequence || ack >= secureInputSequence ||
+                (Object.hasOwn(motion, 'lastSeq') && motion.lastSeq !== ack) ||
+                !['x', 'y', 'z', 'r'].every(key => Number.isFinite(position[key])) ||
+                Math.abs(position.x) > movement.MOVEMENT.bounds || Math.abs(position.z) > movement.MOVEMENT.bounds ||
+                position.y < 0 || position.y > 8 ||
+                !['vx', 'vy', 'vz'].every(key => Number.isFinite(motion[key])) ||
+                Math.hypot(motion.vx, motion.vz) > movement.MOVEMENT.entitledSpeed + 1e-6 ||
+                Math.abs(motion.vy) > 128 || typeof motion.grounded !== 'boolean' ||
+                typeof motion.jumpHeld !== 'boolean') return false;
+            const before = { x: playerPos.x, y: playerPos.y, z: playerPos.z };
+            if (securePendingInputs.some(packet => packet.seq <= ack && packet.input.jump &&
+                packet.jumpGeneration === secureJumpGeneration)) secureJumpIntent = false;
+            while (securePendingFrames.length && securePendingFrames[0].seq <= ack) securePendingFrames.shift();
+            while (securePendingInputs.length && securePendingInputs[0].seq <= ack) securePendingInputs.shift();
+            secureLastAcknowledgedSequence = ack;
+            let corrected = { ...position, vx: motion.vx, vy: motion.vy, vz: motion.vz,
+                grounded: Boolean(motion.grounded), jumpHeld: Boolean(motion.jumpHeld) };
+            const options = secureMovementOptions();
+            for (const frame of securePendingFrames) {
+                corrected = movement.integrateMovement(corrected, frame.input, frame.delta, { ...options, speed: frame.speed });
+            }
+            secureApplyMovementState(corrected);
+            if (Math.hypot(before.x - corrected.x, before.y - corrected.y, before.z - corrected.z) <= 4) {
+                securePredictionCorrection.x += before.x - corrected.x;
+                securePredictionCorrection.y += before.y - corrected.y;
+                securePredictionCorrection.z += before.z - corrected.z;
+            } else {
+                securePredictionCorrection.x = securePredictionCorrection.y = securePredictionCorrection.z = 0;
+            }
+            return true;
+        }
+        function secureApplyContinuousHandoffAck(message) {
+            const operation = secureContinuousOperation();
+            if (!operation || !secureHandoffInProgress || !secureHandoffResumeResolve ||
+                !operation.target || secureGameSocket !== operation.target || message.zone !== operation.targetZone ||
+                !secureReconcileTransferAuthority(message)) return false;
+            operation.confirmed = true;
+            try { secureReplayMovementGroups(operation.target, secureLastAcknowledgedSequence); }
+            catch (_) { operation.failed = true; return false; }
+            for (const event of operation.worldMessages?.values() || []) secureHandleSocketMessage(event);
+            operation.worldMessages?.clear();
+            return true;
+        }
+        function secureApplyContinuousHandoffCancel(message) {
+            const operation = secureContinuousOperation();
+            if (!operation || !operation.cancelResolve || secureGameSocket !== operation.source ||
+                message.zone !== operation.fromZone || !secureReconcileTransferAuthority(message)) return false;
+            operation.sealed = false;
+            try { secureReplayMovementGroups(operation.source, secureLastAcknowledgedSequence); }
+            catch (_) { operation.failed = true; return false; }
+            operation.worldMessages?.clear();
+            const resolve = operation.cancelResolve;
+            operation.cancelResolve = operation.cancelReject = null;
+            if (operation.cancelTimer) clearTimeout(operation.cancelTimer);
+            operation.cancelTimer = null;
+            resolve(message);
+            return true;
+        }
+        function secureContinuousHandoffDefersWelcomeWorld() {
+            return Boolean(secureContinuousOperation());
+        }
+        function secureContinuousHandoffRequiresAck() {
+            return Boolean(secureContinuousOperation());
+        }
+        function secureContinuousHandoffSocketOpened(ws, handoffToken) {
+            const operation = secureContinuousOperation();
+            if (operation && handoffToken && ws !== operation.source) operation.target = ws;
+        }
+        function secureContinuousHandoffSocketClosed(ws, event) {
+            const operation = secureContinuousOperation();
+            if (!operation || operation.confirmed || secureIntentionalSockets.has(ws)) return;
+            if (ws === operation.source) {
+                // Different sockets have no shared delivery order. Source closure after
+                // cutover can precede the target's ownership ACK on the wire. Retain only
+                // the bounded in-flight prediction window while that ACK is pending.
+                if (operation.target?.readyState === WebSocket.OPEN && secureHandoffResumeResolve) {
+                    operation.sealed = true;
+                    return;
+                }
+                operation.failed = true;
+                secureAbortClientConnections('Continuous handoff source disconnected', event.code);
+                secureReturnToMenu();
+            } else if (ws === operation.target && secureHandoffResumeReject) {
+                const reject = secureHandoffResumeReject;
+                if (secureHandoffResumeTimer) clearTimeout(secureHandoffResumeTimer);
+                secureHandoffResumeTimer = null;
+                secureHandoffResumeResolve = secureHandoffResumeReject = null;
+                reject(new Error('Continuous handoff target disconnected'));
+            }
+        }
+        function secureAbortContinuousHandoff(operation, reason) {
+            if (operation.cancelTimer) clearTimeout(operation.cancelTimer);
+            operation.cancelTimer = null;
+            const reject = operation.cancelReject;
+            operation.cancelResolve = operation.cancelReject = null;
+            if (reject) reject(new Error(reason));
+        }
+        function secureFinishContinuousHandoff(operation) {
+            secureAbortContinuousHandoff(operation, 'Continuous handoff finished');
+        }
+        async function secureCancelContinuousHandoff(operation, targetSocket, fromZone) {
+            if (!secureHandoffOperationIsCurrent(operation)) return;
+            if (targetSocket && targetSocket !== operation.source) secureCloseSocket(targetSocket, 1000, 'Continuous handoff cancelled');
+            if (operation.source?.readyState !== WebSocket.OPEN) {
+                operation.failed = true;
+                secureReturnToMenu();
+                return;
+            }
+            secureGameSocket = operation.source;
+            secureGameReady = true;
+            secureCurrentZoneId = fromZone;
+            try {
+                const acknowledged = new Promise((resolve, reject) => {
+                    operation.cancelResolve = resolve;
+                    operation.cancelReject = reject;
+                    operation.cancelTimer = setTimeout(() => reject(new Error('Continuous handoff cancellation timed out')), 3200);
+                });
+                operation.source.send(JSON.stringify({ type: "handoff_cancel" }));
+                await acknowledged;
+                secureRequireHandoffOperation(operation);
+                secureHandoffInProgress = false;
+                secureRememberStablePosition();
+            } catch (_) {
+                if (secureHandoffOperationIsCurrent(operation)) {
+                    operation.failed = true;
+                    secureAbortClientConnections('Continuous handoff authority is unavailable', 1008);
+                    secureReturnToMenu();
+                }
+            }
+        }
+
+
         function secureClientDelay(delay) {
             return new Promise((resolve, reject) => {
                 const waiter = { timer: null, reject };
@@ -4568,8 +4796,11 @@ setTimeout(() => {
         };
 
         syncMyPlayerData = function(force = false) {
-            if (!state.isPlaying || secureHandoffInProgress || !secureGameReady ||
-                !secureGameSocket || secureGameSocket.readyState !== WebSocket.OPEN) return false;
+            const socket = typeof secureContinuousMovementSocket === 'function'
+                ? secureContinuousMovementSocket()
+                : (secureHandoffInProgress ? null : secureGameSocket);
+            if (!state.isPlaying || !secureGameReady ||
+                !socket || socket.readyState !== WebSocket.OPEN) return false;
             const now = Date.now();
             if (!force && now - secureLastMoveSentAt < 200) return false;
             const input = state.isPaused ? { x: 0, z: 0, jump: false } : secureMovementIntent();
@@ -4579,7 +4810,7 @@ setTimeout(() => {
                 : [{ input, delta: 0 }];
             const seq = secureInputSequence;
             try {
-                secureGameSocket.send(JSON.stringify({
+                socket.send(JSON.stringify({
                     type: "move",
                     input,
                     seq,
@@ -4596,8 +4827,11 @@ setTimeout(() => {
         };
 
         function secureFlushMovementForPickup() {
-            if (!state.isPlaying || !secureGameReady || secureHandoffInProgress ||
-                !secureGameSocket || secureGameSocket.readyState !== WebSocket.OPEN) return false;
+            const socket = typeof secureContinuousMovementSocket === 'function'
+                ? secureContinuousMovementSocket()
+                : (secureHandoffInProgress ? null : secureGameSocket);
+            if (!state.isPlaying || !secureGameReady ||
+                !socket || socket.readyState !== WebSocket.OPEN) return false;
             return (typeof secureUnsentMovementFrames !== 'function' || secureUnsentMovementFrames().length === 0)
                 || syncMyPlayerData(true);
         }
