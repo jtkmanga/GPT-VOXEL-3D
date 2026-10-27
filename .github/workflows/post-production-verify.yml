@@ -3,6 +3,11 @@ name: Post-Production Verification
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/post-production-verify.yml'
 
 permissions:
   contents: read
