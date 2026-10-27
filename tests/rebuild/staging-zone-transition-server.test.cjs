@@ -263,20 +263,19 @@ test('staging source seal waits for earlier queued movement before transferring 
   const h = fixture(t), uid = 'synthetic-continuous-serialized-seal';
   const { source, ticket } = await continuousCrossing(h, uid);
   const target = await admitted(h, uid, '5,4', { handoffToken: ticket.handoffToken, continuousHandoff: true });
-  let release, enteredValidation, enteredSeal;
+  let release, enteredMovement, enteredSeal;
   const blocked = new Promise(resolve => { release = resolve; });
-  const validationSeen = new Promise(resolve => { enteredValidation = resolve; });
+  const movementSeen = new Promise(resolve => { enteredMovement = resolve; });
   const sealSeen = new Promise(resolve => { enteredSeal = resolve; });
-  const call = source.instance.sessionCall.bind(source.instance);
+  const move = source.instance.handleMove.bind(source.instance);
   let held = false;
-  source.instance.sessionCall = async (action, payload) => {
-    const response = await call(action, payload);
-    if (!held && action === 'validate') {
+  source.instance.handleMove = async (...args) => {
+    if (!held) {
       held = true;
-      enteredValidation();
+      enteredMovement();
       await blocked;
     }
-    return response;
+    return move(...args);
   };
   const get = h.env.ZONE.getByName;
   h.env.ZONE.getByName = name => {
@@ -288,7 +287,7 @@ test('staging source seal waits for earlier queued movement before transferring 
   };
   await h.advance(200);
   const pendingSource = source.send(framePacket(2, { ...forward, jump: true }));
-  await validationSeen;
+  await movementSeen;
   const before = source.attachment();
   const pendingResume = target.send({ type: 'handoff_resume' });
   try {
