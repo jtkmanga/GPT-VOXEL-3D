@@ -338,7 +338,7 @@ export async function handleVerifySlip(request, env) {
     }, 502);
   }
 
-  if (!slipResponse.ok || result?.code !== '200000') {
+  if (!slipResponse.ok || !['200000', '200200'].includes(String(result?.code || ''))) {
     return jsonResponse(request, env, {
       ok: false,
       error: result?.message || 'Slip verification failed',
