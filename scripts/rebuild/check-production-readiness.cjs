@@ -10,7 +10,7 @@ if(!/"FIREBASE_PROJECT_ID"\s*:\s*"lucky-game-6936b"/.test(config)) fail('product
 if(!/"PAYMENT_MODE"\s*:\s*"disabled"/.test(config)) fail('production PAYMENT_MODE must be explicitly disabled in wrangler');
 const ref=process.env.GITHUB_REF||'';
 if(ref&&!['refs/heads/main','refs/heads/development/voxel-continuous','refs/heads/release/production-prep',
-  'refs/heads/feature/promptpay-dynamic-qr'].includes(ref)) fail('unexpected branch');
+  'refs/heads/feature/promptpay-dynamic-qr','refs/heads/validation/staging-runtime-production-v2'].includes(ref)) fail('unexpected branch');
 const mode=String(process.env.PRODUCTION_PAYMENT_MODE||'').trim();
 if(!['disabled','slip2go-production'].includes(mode)) fail('invalid production payment mode');
 
