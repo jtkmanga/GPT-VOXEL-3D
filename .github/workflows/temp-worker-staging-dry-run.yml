@@ -30,7 +30,7 @@ jobs:
           grep -q '"PAYMENT_MODE": "disabled"' wrangler.jsonc
           ! test -e src/client/production-staging-gameplay.js
           test -f src/client/staging-runtime.js
-          node --test tests/rebuild/staging-movement-regression.test.cjs tests/rebuild/staging-session-scale.test.cjs
+          node --test tests/rebuild/staging-movement-regression.test.cjs tests/rebuild/staging-session-scale.test.cjs tests/rebuild/staging-zone-transition-server.test.cjs
       - name: Bundle full Staging Worker for Lucky Game without deploying
         run: |
           npx wrangler deploy --keep-vars --dry-run --config wrangler.jsonc --outdir work/lucky-worker-dry-run
