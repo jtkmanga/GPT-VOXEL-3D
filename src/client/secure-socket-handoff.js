@@ -6,7 +6,6 @@
         const securePendingFrames = [];
         const securePendingInputs = [];
         const securePredictionCorrection = { x: 0, y: 0, z: 0 };
-        let securePredictionResetPending = true;
 
         function secureQueueJump() {
             secureJumpGeneration++;
@@ -69,14 +68,10 @@
             if (!secureGameReady || (secureHandoffInProgress &&
                 !(typeof secureContinuousHandoffPredictionAllowed === 'function' && secureContinuousHandoffPredictionAllowed())) ||
                 !secureGameSocket || secureGameSocket.readyState !== WebSocket.OPEN) return;
-            const elapsed = securePredictionResetPending ? 0
-                : Math.min(.1, Math.max(0, Number.isFinite(delta) ? delta : 0));
-            securePredictionResetPending = false;
+            const elapsed = Math.min(.1, Math.max(0, Number.isFinite(delta) ? delta : 0));
 
             const unsent = secureUnsentMovementFrames();
             const pendingSeconds = unsent.reduce((total, frame) => total + frame.delta, 0);
-            const operation = typeof secureContinuousOperation === 'function' ? secureContinuousOperation() : null;
-            if (operation?.sealed && securePendingFrames.reduce((total, frame) => total + frame.delta, 0) + elapsed > .5) return;
             if (unsent.length >= 63 || pendingSeconds + elapsed > .5 + 1e-9) {
                 if (typeof syncMyPlayerData !== 'function' || syncMyPlayerData(true) === false) return;
             }
@@ -114,7 +109,6 @@
             secureJumpIntent = false;
             secureJumpGeneration++;
             securePredictionCorrection.x = securePredictionCorrection.y = securePredictionCorrection.z = 0;
-            securePredictionResetPending = true;
             secureLastMoveSentAt = 0;
             if (playerGroup) {
                 playerGroup.position.copy(playerPos);

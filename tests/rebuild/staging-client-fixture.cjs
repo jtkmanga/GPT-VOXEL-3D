@@ -57,7 +57,8 @@ async function stagingClientFixture(options = {}) {
     updateScoreDisplay() {}, audio: { playJump() {}, playCoin() {} }
   });
   const fragments = ['secure-snapshots.js', 'secure-socket-handoff.js', 'secure-menu-economy.js'];
-  if (options.includeStagingRuntime !== false) fragments.push('staging-runtime.js');
+  if (options.includeStagingRuntime === false) fragments.push('production-staging-gameplay.js');
+  else fragments.push('staging-runtime.js');
   for (const fragment of fragments) {
     vm.runInContext(fs.readFileSync(sourcePath(`client/${fragment}`), 'utf8'), context, { filename: fragment });
   }

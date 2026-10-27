@@ -136,7 +136,6 @@
             const frames = predicted.length
                 ? predicted.map(frame => ({ input: { ...frame.input }, delta: frame.delta }))
                 : [{ input, delta: 0 }];
-            if (typeof movement !== 'undefined' && !movement.validMovementFrames(frames)) return false;
             const seq = secureInputSequence;
             try {
                 socket.send(JSON.stringify({
