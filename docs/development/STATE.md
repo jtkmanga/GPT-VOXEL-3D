@@ -1,5 +1,19 @@
 # Current development state
 
+## D081 — review Gate 7 synthetic credential candidate (2026-10-27)
+
+Starting source 865ec976d6f79d28f508843cfe8247e09b3ddbaf. The corrected payment-history
+tests passed the full development verification suite, but Gate 7 then stopped on
+two identical incremental secret-scanner candidates at the pre-existing synthetic
+invalid-auth fixture in `tests/rebuild/p0-runtime.test.cjs`. The scanner reported
+no coverage gaps. Private review confirmed the candidate is test-only and is not
+a usable credential; the feature itself adds no secret or account values.
+
+SECRET_AUDIT.md records the bounded review and Gate 7 advances only its exclusion
+baseline to the reviewed source. No scanner pattern, allowlist, rejection rule,
+runtime code, payment behavior, production configuration or provider integration
+is weakened or changed. P9 on the D079 runtime source passed.
+
 ## D080 — payment-history test ordering correction (2026-10-27)
 
 Starting source 471fb5caf13e102a9b323cf34c0590fabfb3183c. Gate 7 showed the new

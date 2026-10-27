@@ -1,5 +1,23 @@
 # S001: public repository credential audit
 
+## D081 reviewed Admin payment-history increment — 2026-10-27
+
+Reviewed the bounded committed-history increment from the prior Gate 7 exclusion
+baseline 81b3f0a60aea02835daac19221569d1123ee46b9 through
+865ec976d6f79d28f508843cfe8247e09b3ddbaf. The scanner reported no coverage
+gaps and exactly two credential-assignment candidates, both at the same existing
+synthetic invalid-auth fixture location in `tests/rebuild/p0-runtime.test.cjs`.
+That test value predates this feature; rewriting the P0 blob to add payment-history
+assertions made the unchanged synthetic fixture newly reachable to the incremental
+scanner. It is not a provider, Firebase admin, GitHub, payment, Cloudflare or
+account credential and was not used against any service.
+
+The payment-history feature stores no credentials, slip images or bank account
+numbers. Newly added history tests use only synthetic identifiers and example
+domains. No secret value is reproduced in this review. Advance only the Gate 7
+exclusion baseline to this reviewed source; scanner patterns, gap detection and
+fail-on-new-finding behavior remain unchanged.
+
 ## D072 reviewed incremental history — 2026-10-23
 
 Reviewed 8a333eb..1ace8fd: 18 development commits covering staging-only
