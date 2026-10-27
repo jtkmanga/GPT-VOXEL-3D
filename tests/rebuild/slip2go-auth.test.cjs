@@ -12,6 +12,11 @@ test('Slip2Go provider requests use Bearer authentication, never a raw API secre
   assert.doesNotMatch(httpSource,/'Authorization':\s*env\.SLIP2GO_API_SECRET/);
 });
 
+test('Slip verification accepts documented Slip2Go success codes only',()=>{
+  assert.match(httpSource,/\['200000', '200200'\]\.includes\(String\(result\?\.code \|\| ''\)\)/);
+  assert.doesNotMatch(httpSource,/String\(result\?\.code[^\n]*startsWith\(['"]2/);
+});
+
 test('Slip verification keeps receiver and amount checks without provider-global duplicate state',()=>{
   assert.match(httpSource,/checkReceiver\s*:/);
   assert.match(httpSource,/checkAmount\s*:/);
