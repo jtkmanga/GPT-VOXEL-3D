@@ -1,0 +1,38 @@
+name: Validate Staging Worker For Lucky Game
+
+on:
+  push:
+    branches:
+      - restore/lucky-game-from-staging-20261028
+    paths:
+      - '.github/workflows/temp-worker-staging-dry-run.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  worker-dry-run:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci
+      - name: Validate Staging-derived Worker imports and identity
+        run: |
+          set -euo pipefail
+          node scripts/rebuild/check-syntax.cjs
+          grep -q '"name": "voxel-run-v2-demo"' wrangler.jsonc
+          grep -q '"PAYMENT_MODE": "disabled"' wrangler.jsonc
+          ! test -e src/client/production-staging-gameplay.js
+          test -f src/client/staging-runtime.js
+          node --test tests/rebuild/staging-movement-regression.test.cjs
+      - name: Bundle full Staging Worker for Lucky Game without deploying
+        run: |
+          npx wrangler deploy --keep-vars --dry-run --config wrangler.jsonc --outdir work/lucky-worker-dry-run
+          test -d work/lucky-worker-dry-run
+          git diff --check
