@@ -1,4 +1,4 @@
-# Verify production auth gate after hardening
+# Verify current public Production surface without spending or granting entitlements
 name: Post-Production Verification
 
 on:
@@ -37,16 +37,25 @@ jobs:
               assert body == 'VOXEL RUN v4 online', body
               print('PASS /health')
 
-          req=urllib.request.Request(origin+'/verify-slip', data=b'', method='POST',
-              headers={'Content-Type':'application/octet-stream'})
-          try:
-              opener.open(req, timeout=20)
-              raise AssertionError('/verify-slip unexpectedly accepted')
-          except urllib.error.HTTPError as e:
-              body=e.read(65537).decode(errors='replace')
-              assert e.code == 503, (e.code, body)
-              assert 'Production payment is disabled' in body
-              print('PASS payment fail-closed')
+          # Public Slip2Go is enabled now. Probe only unauthenticated requests so
+          # this verification can never generate a QR, submit a slip, spend money,
+          # or grant an entitlement. Enabled payment endpoints must reject the
+          # anonymous request at Origin/Auth before contacting the provider.
+          probes = [
+              ('/payment-qr', b'{"item":"vip1"}', 'application/json'),
+              ('/verify-slip', b'', 'application/octet-stream'),
+          ]
+          for path, payload, content_type in probes:
+              req=urllib.request.Request(origin+path, data=payload, method='POST',
+                  headers={'Content-Type':content_type})
+              try:
+                  opener.open(req, timeout=20)
+                  raise AssertionError(path+' unexpectedly accepted anonymous request')
+              except urllib.error.HTTPError as e:
+                  body=e.read(65537).decode(errors='replace')
+                  assert e.code in (401,403), (path,e.code,body)
+                  assert 'Production payment is disabled' not in body, (path,e.code,body)
+                  print('PASS public payment enabled + anonymous denied', path, e.code)
 
           try:
               opener.open(origin+'/entitlements', timeout=20)
