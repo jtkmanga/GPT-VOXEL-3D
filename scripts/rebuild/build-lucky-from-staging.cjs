@@ -40,7 +40,10 @@ async function build() {
   if (!/^6L[A-Za-z0-9_-]{30,80}$/.test(siteKey))
     throw Error('Missing or invalid public production App Check site key');
   const runtime = fs.readFileSync(path.join(root,'src/client/staging-runtime.js'),'utf8');
-  const paymentEnabled = process.env.LUCKY_SLIP2GO_UI_ENABLED === '1';
+  // Lucky production has owner-only canary as the checked-in release default.
+  // LUCKY_SLIP2GO_UI_ENABLED=0 is the emergency client kill-switch.
+  // The Worker independently restricts the authenticated owner.
+  const paymentEnabled = process.env.LUCKY_SLIP2GO_UI_ENABLED !== '0';
   const prependScript =
     'const STAGING_PUBLIC_CONFIG = Object.freeze({authMode:"popup"});\n' +
     'const STAGING_CLIENT_ENABLED = window.location.origin === ' + JSON.stringify(origin) + ';\n' +
@@ -84,7 +87,7 @@ async function main(){
   } else if (process.argv.length===2) fs.writeFileSync(dest,html);
   else throw Error('Usage: build-lucky-from-staging.cjs [--check]');
   console.log('PASS Lucky client built from Staging gameplay; payment UI ' +
-    (process.env.LUCKY_SLIP2GO_UI_ENABLED === '1' ? 'canary-ready' : 'disabled'));
+    (paymentEnabled ? 'canary-ready' : 'disabled'));
 }
 if(require.main===module) main().catch(error=>{console.error(error.message);process.exitCode=1});
 module.exports={build,sanitizeTokenRequests};
