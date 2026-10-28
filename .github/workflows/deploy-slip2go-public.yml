@@ -1,11 +1,6 @@
 name: Deploy Slip2Go Public
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - '.github/workflows/deploy-slip2go-public.yml'
   workflow_dispatch:
     inputs:
       confirm:
@@ -24,7 +19,7 @@ jobs:
   deploy:
     if: >-
       github.ref == 'refs/heads/main' &&
-      (github.event_name == 'push' || inputs.confirm == 'SLIP2GO-PUBLIC')
+      inputs.confirm == 'SLIP2GO-PUBLIC'
     runs-on: ubuntu-24.04
     timeout-minutes: 22
     environment: production
