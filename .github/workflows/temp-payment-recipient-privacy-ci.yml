@@ -6,6 +6,11 @@ on:
       - fix/hide-payment-recipient-details-20261028
     paths:
       - .github/workflows/temp-payment-recipient-privacy-ci.yml
+      - tests/rebuild/payment-qr-cache.test.cjs
+      - tests/rebuild/slip2go-payment.test.cjs
+      - src/client/index.template.html
+      - src/client/secure-entitlements-payment.js
+      - src/worker/http.mjs
 
 permissions:
   contents: write
