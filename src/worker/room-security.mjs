@@ -14,25 +14,39 @@ const owned = result => result === true || result?.ok === true;
 // traffic, but renew ordinary movement in a staggered bounded heartbeat.
 const MOVEMENT_SESSION_HEARTBEAT_BASE_MS = 30_000;
 const MOVEMENT_SESSION_HEARTBEAT_JITTER_MS = 15_000;
+// VIP uses short centralized seat revocation intervals without blocking every MOVE.
+const VIP_MOVEMENT_HEARTBEAT_BASE_MS = 5_000;
+const VIP_MOVEMENT_HEARTBEAT_JITTER_MS = 1_000;
+function vipMovementRoom(room) {
+  return room?.serverScope === 'vip1' && room.sessionOwner?.() === 'room';
+}
 
-function movementHeartbeatDelay(player) {
+function movementHeartbeatDelay(player, vip = false) {
   const value=String(player?.sessionId||player?.uid||'');
   let hash=2166136261;
   for (let index=0; index<value.length; index++)
     hash=Math.imul(hash^value.charCodeAt(index),16777619)>>>0;
-  return MOVEMENT_SESSION_HEARTBEAT_BASE_MS +
-    (hash % (MOVEMENT_SESSION_HEARTBEAT_JITTER_MS + 1));
+  const base = vip ? VIP_MOVEMENT_HEARTBEAT_BASE_MS : MOVEMENT_SESSION_HEARTBEAT_BASE_MS;
+  const jitter = vip ? VIP_MOVEMENT_HEARTBEAT_JITTER_MS : MOVEMENT_SESSION_HEARTBEAT_JITTER_MS;
+  return base + (hash % (jitter + 1));
 }
 
-function zoneMovementFastPath(room, packet, provisional) {
-  return !provisional && packet?.type===WS_MESSAGE.MOVE &&
-    typeof room?.sessionOwner==='function' &&
-    String(room.sessionOwner()).startsWith('zone:');
+function localMovementFastPath(room, packet, player, provisional) {
+  if (provisional || packet?.type !== WS_MESSAGE.MOVE ||
+      typeof room?.sessionOwner !== 'function') return false;
+  if (String(room.sessionOwner()).startsWith('zone:')) return true;
+  if (!vipMovementRoom(room)) return false;
+  // A VIP seat is admitted and locally fenced by the durable session
+  // generation. Recheck local identity and entitlement on EVERY movement;
+  // the central seat is revalidated/renewed within six seconds.
+  return Boolean(room?.activePlayer?.(player) && room?.sessions?.validate?.({
+    uid: player.uid, sessionId: player.sessionId, owner: 'room'
+  }));
 }
 
-function movementHeartbeatDue(player, now) {
+function movementHeartbeatDue(player, now, vip = false) {
   if (!Number.isFinite(Number(player?.nextSessionCheckpointAt))) {
-    player.nextSessionCheckpointAt=now+movementHeartbeatDelay(player);
+    player.nextSessionCheckpointAt=now+movementHeartbeatDelay(player, vip);
     return false;
   }
   return now>=Number(player.nextSessionCheckpointAt);
@@ -98,7 +112,7 @@ async function handleFrame(room, ws, raw, protocol, dispatch) {
     ws.close(1008, 'Sign in required'); return;
   }
   const provisional = Boolean(player.handoffResume);
-  const movementFastPath = zoneMovementFastPath(room, packet, provisional);
+  const movementFastPath = localMovementFastPath(room, packet, player, provisional);
   if (provisional) {
     if (packet.type !== WS_MESSAGE.HANDOFF_RESUME && packet.type !== WS_MESSAGE.HANDOFF_CANCEL) {
       ws.close(1008, 'Handoff acknowledgement required'); return;
@@ -150,7 +164,7 @@ async function handleFrame(room, ws, raw, protocol, dispatch) {
   }
   if (ws.readyState !== 1 || !player?.uid || player.revoked || player.handoffResume) return;
   const checkpointNow=Date.now();
-  if (movementFastPath && !movementHeartbeatDue(player,checkpointNow)) {
+  if (movementFastPath && !movementHeartbeatDue(player,checkpointNow,vipMovementRoom(room))) {
     ws.serializeAttachment(player);
     return;
   }
@@ -164,8 +178,8 @@ async function handleFrame(room, ws, raw, protocol, dispatch) {
   if (!owned(checkpoint)) { ws.close(1008, 'Session no longer owned'); return; }
   if (Number.isFinite(checkpoint.resumeExpiresAt)) player.resumeExpiresAt = checkpoint.resumeExpiresAt;
   const now = Date.now();
-  if (String(room.sessionOwner()).startsWith('zone:'))
-    player.nextSessionCheckpointAt=now+movementHeartbeatDelay(player);
+  if (movementFastPath)
+    player.nextSessionCheckpointAt=now+movementHeartbeatDelay(player, vipMovementRoom(room));
   if (!Number.isFinite(player.sessionNoticeAt)) player.sessionNoticeAt = now;
   if (now - player.sessionNoticeAt >= 30_000) {
     player.sessionNoticeAt = now;
