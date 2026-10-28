@@ -48,6 +48,6 @@ test('Worker canary independently validates authenticated owner on both purchase
   assert.match(worker,/function paymentRolloutAllowed\(env, identity\)/);
   assert.match(worker,/if\(rollout==='public'\) return true/);
   assert.match(worker,/if\(rollout!=='canary'\) return false/);
-  assert.equal(worker.match(/if\(!paymentRolloutAllowed\(env, ?verified\)\)/g)?.length,2);
+  assert.equal(worker.match(/if\s*\(\s*!paymentRolloutAllowed\s*\(\s*env\s*,\s*verified\s*\)\s*\)/g)?.length,2);
   assert.match(worker,/env\.ADMIN_OWNER_EMAIL/);
 });
