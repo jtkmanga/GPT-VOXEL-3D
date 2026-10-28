@@ -125,6 +125,24 @@ test('Slip2Go canary allows only the configured owner account',async t=>{
   assert.equal((await allowed.json()).ok,true);
 });
 
+test('public rollout accepts any authenticated Google player, still denies anonymous requests',async t=>{
+  const h=createHarness({env:{PAYMENT_ROLLOUT:'public',ADMIN_OWNER_EMAIL:'owner@example.invalid'}});
+  t.after(()=>h.close());
+  const makeQr=(uid,email)=>h.request('/payment-qr',{
+    method:'POST',headers:{Authorization:'Bearer '+h.token(uid,{email}),'Content-Type':'application/json'},
+    body:JSON.stringify({item:'vip1'})
+  });
+  const nonAdmin=await makeQr('public-player','player@example.invalid');
+  assert.equal(nonAdmin.status,200,'authenticated non-admin should get QR under public rollout');
+  const response=await nonAdmin.json();
+  assert.equal(response.ok,true);
+  assert.equal(response.price,50);
+  assert.equal(response.merchantName,'Lucky Game');
+  assert.equal(Object.hasOwn(response,'accountName'),false);
+  const anonymous=await h.request('/payment-qr',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({item:'vip1'})});
+  assert.ok([401,403].includes(anonymous.status),'anonymous requests must be denied');
+});
+
 test('verified VIP slip grants exactly 30 days once and duplicate receipt cannot grant twice',async t=>{
   const h=createHarness();
   t.after(()=>h.close());
