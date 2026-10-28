@@ -1,12 +1,6 @@
 name: Deploy Slip2Go Admin-only Canary
 
 on:
-  # One-time guarded rollout of privacy-only QR API changes; return to manual after success.
-  push:
-    branches:
-      - main
-    paths:
-      - '.github/workflows/deploy-slip2go-admin-canary.yml'
   workflow_dispatch:
     inputs:
       confirm:
@@ -25,7 +19,7 @@ jobs:
   deploy:
     if: >-
       github.ref == 'refs/heads/main' &&
-      (github.event_name == 'push' || inputs.confirm == 'ADMIN-SLIP2GO-CANARY')
+      inputs.confirm == 'ADMIN-SLIP2GO-CANARY'
     runs-on: ubuntu-24.04
     timeout-minutes: 22
     environment: production
