@@ -151,7 +151,26 @@ const worker = {
         `https://zone.internal/play-zone/${zoneX}/${zoneZ}`,
         request
       );
-      return env.ZONE.getByName(`free-zone-${zoneId}`).fetch(zoneRequest);
+      try {
+        return await env.ZONE.getByName(`free-zone-${zoneId}`).fetch(zoneRequest);
+      } catch (error) {
+        if (env.APP_ENV !== 'staging') throw error;
+        // Temporary Staging-only diagnostic. Never reflect exception text,
+        // arbitrary stack traces, binding values or request headers.
+        const message = String(error?.message || '');
+        let code = 'unknown-do-error';
+        if (/Exceeded allowed volume of requests in Durable Objects free tier/i.test(message)) {
+          code = 'durable-objects-free-quota';
+        } else if (/limit|quota|exceed/i.test(message)) {
+          code = 'durable-objects-other-limit';
+        } else if (/storage|sqlite|database/i.test(message)) {
+          code = 'durable-objects-storage';
+        }
+        return new Response('ZONE_DIAGNOSTIC ' + code, {
+          status: 503, headers: { 'content-type': 'text/plain; charset=utf-8',
+            'cache-control': 'no-store' }
+        });
+      }
     }
 
     // Backward-compatible path: current game remains on the tested Phase 1 room.
