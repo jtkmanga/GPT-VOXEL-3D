@@ -87,14 +87,14 @@ canvas{display:block;width:100%;height:min(53dvh,510px);min-height:310px;touch-a
 (function () {
   const $ = (id) => document.getElementById(id);
   const canvas = $("scene"), ctx = canvas.getContext("2d", { alpha: false });
-  if (!ctx) { $("worldLabel").textContent = "เบราว์เซอร์นี้ไม่รองรับ Canvas"; return; }
+  if (!ctx) { $("levelLabel").textContent = "เบราว์เซอร์นี้ไม่รองรับ Canvas"; return; }
   const SIZE = 26, TILE = 45, RUN_LENGTH = 180000, COIN_RESPAWN = 60000, CHEST_RESPAWN = 4 * 60 * 60 * 1000;
   const LEVELS = [
     {name:"ป่าล่าสมบัติ", seed:2121, ground:"#4c8250", dark:"#386941", accent:"#6a985a", hazard:"#28616a"},
     {name:"ถ้ำทองคำ", seed:6381, ground:"#726047", dark:"#594936", accent:"#98734c", hazard:"#344c63"},
     {name:"วิหารโบราณ", seed:9477, ground:"#6b8269", dark:"#526450", accent:"#91a386", hazard:"#33616b"}
   ];
-  const state = {level:0,tiles:[],coins:[],chest:null,player:{x:2.5,y:2.5},score:0,wallet:0,got:0,run:false,start:0,last:0,mode:"free",cosmetic:false,bonus:false,joy:{x:0,y:0},held:new Set(),toastUntil:0,panel:""};
+  const state = {level:0,tiles:[],coins:[],chest:null,player:{x:2.5,y:2.5},score:0,wallet:0,got:0,run:false,completed:false,start:0,last:0,mode:"free",cosmetic:false,bonus:false,joy:{x:0,y:0},held:new Set(),toastUntil:0,panel:""};
   function rng(seed){let a=seed>>>0;return function(){a+=0x6D2B79F5;let t=a;t=Math.imul(t^(t>>>15),t|1);t^=t+Math.imul(t^(t>>>7),t|61);return((t^(t>>>14))>>>0)/4294967296;};}
   function buildWorld(level){
     const random=rng(LEVELS[level].seed), tiles=[], coins=[];
@@ -112,7 +112,7 @@ canvas{display:block;width:100%;height:min(53dvh,510px);min-height:310px;touch-a
     state.tiles=tiles;state.coins=coins;state.chest={x:23.5,y:23.5,respawnAt:0};
   }
   function reset(level){
-    state.level=level;state.player={x:2.5,y:2.5};state.score=0;state.wallet=0;state.got=0;state.bonus=false;state.cosmetic=false;state.start=performance.now();state.run=true;state.last=state.start;
+    state.level=level;state.player={x:2.5,y:2.5};state.score=0;state.wallet=0;state.got=0;state.bonus=false;state.cosmetic=false;state.start=performance.now();state.run=true;state.completed=false;state.last=state.start;
     buildWorld(level);$("levelLabel").textContent=LEVELS[level].name+" • ด่านทดลอง";updateHUD();
     notify("เริ่มด่าน! ล่าสมบัติภายใน 3 นาที");
   }
@@ -133,12 +133,12 @@ canvas{display:block;width:100%;height:min(53dvh,510px);min-height:310px;touch-a
     $("score").textContent=state.score.toLocaleString("th-TH");
     $("wallet").textContent=state.wallet.toLocaleString("th-TH");
     $("collected").textContent=state.got.toLocaleString("th-TH");
-    const remaining=state.run?Math.max(0,Math.ceil((RUN_LENGTH-(performance.now()-state.start))/1000)):180;
+    const remaining=state.run?Math.max(0,Math.ceil((RUN_LENGTH-(performance.now()-state.start))/1000)):(state.completed?0:180);
     $("time").textContent=String(Math.floor(remaining/60)).padStart(2,"0")+":"+String(remaining%60).padStart(2,"0");
   }
   function finish(){
     if(!state.run)return;
-    state.run=false;updateHUD();
+    state.run=false;state.completed=true;updateHUD();
     openPanel("ผลการเล่นต้นแบบ",function(root,actions){
       addText(root,"คะแนนรอบนี้: "+state.score+" คะแนน • เก็บเหรียญ "+state.got+" เหรียญ");
       addText(root,"ยังไม่มีการส่งคะแนนขึ้นเซิร์ฟเวอร์ ผลนี้ไม่ถูกบันทึกลงอันดับจริง","small");
