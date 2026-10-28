@@ -57,7 +57,7 @@ server.on('listening',()=>{
     clearTimeout(stop);
     try{
       const report=JSON.parse(fs.readFileSync(reportFile,'utf8'));
-      if(!report.result.passed||report.stats.welcomed!==users||
+      if(!report.result.passed||report.stats.peakWelcomed!==users||report.stats.welcomed!==users||
           report.stats.moveAcks<users||report.scheduler?.mode!=='pooled-40ms')
         throw Error('Loopback v2 WebSocket scheduler regression');
       console.log('PASS v2 actual local WebSocket handshakes='+accepted+
