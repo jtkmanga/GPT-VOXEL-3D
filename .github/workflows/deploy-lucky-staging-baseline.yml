@@ -1,11 +1,6 @@
 name: Deploy Lucky Game From Staging Baseline
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - '.github/workflows/deploy-lucky-staging-baseline.yml'
   workflow_dispatch:
     inputs:
       confirm:
@@ -24,7 +19,7 @@ jobs:
   deploy:
     if: >-
       github.ref == 'refs/heads/main' &&
-      (github.event_name == 'push' || inputs.confirm == 'RESTORE-STAGING-BASELINE')
+      inputs.confirm == 'RESTORE-STAGING-BASELINE'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     environment: production
@@ -128,12 +123,16 @@ jobs:
         run: |
           import urllib.request,urllib.error
           origin='https://voxel-run-v2-demo.hjinffv5426.workers.dev'
-          with urllib.request.urlopen(origin+'/health',timeout=25) as r:
+          opener=urllib.request.build_opener()
+          opener.addheaders=[('User-Agent','VOXEL-Production-Smoke/1.0'),
+                             ('Accept','text/plain, application/json'),
+                             ('Origin','https://jtkmanga.github.io')]
+          with opener.open(origin+'/health',timeout=25) as r:
               assert r.status==200 and r.read().decode().strip()=='VOXEL RUN v4 online'
           req=urllib.request.Request(origin+'/verify-slip',data=b'',method='POST',
               headers={'content-type':'application/octet-stream'})
           try:
-              urllib.request.urlopen(req,timeout=25)
+              opener.open(req,timeout=25)
               raise SystemExit('FAIL: Real payment endpoint unexpectedly accepted')
           except urllib.error.HTTPError as e:
               if e.code!=503: raise
