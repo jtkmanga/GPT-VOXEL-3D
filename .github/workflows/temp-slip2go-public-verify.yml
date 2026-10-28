@@ -6,6 +6,9 @@ on:
       - release/slip2go-public-remove-purple-banner-20261028
     paths:
       - .github/workflows/temp-slip2go-public-verify.yml
+      - tests/rebuild/lucky-vip-payment-routing.test.cjs
+      - tests/rebuild/slip2go-admin-canary-ui.test.cjs
+      - scripts/rebuild/build-lucky-from-staging.cjs
 
 permissions:
   contents: write
