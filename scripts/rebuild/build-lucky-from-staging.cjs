@@ -40,14 +40,17 @@ async function build() {
   if (!/^6L[A-Za-z0-9_-]{30,80}$/.test(siteKey))
     throw Error('Missing or invalid public production App Check site key');
   const runtime = fs.readFileSync(path.join(root,'src/client/staging-runtime.js'),'utf8');
-  // Lucky production has owner-only canary as the checked-in release default.
-  // LUCKY_SLIP2GO_UI_ENABLED=0 is the emergency client kill-switch.
-  // The Worker independently restricts the authenticated owner.
+  // Public payment UI by default; LUCKY_SLIP2GO_UI_ENABLED=0 is
+  // the emergency client kill-switch. Worker-side PAYMENT_ROLLOUT is authoritative.
   const paymentEnabled = process.env.LUCKY_SLIP2GO_UI_ENABLED !== '0';
+  const paymentRollout = process.env.LUCKY_SLIP2GO_ROLLOUT || 'public';
+  if (!['public','canary','disabled'].includes(paymentRollout))
+    throw Error('Invalid Slip2Go client rollout mode');
   const prependScript =
     'const STAGING_PUBLIC_CONFIG = Object.freeze({authMode:"popup"});\n' +
     'const STAGING_CLIENT_ENABLED = window.location.origin === ' + JSON.stringify(origin) + ';\n' +
     'const LUCKY_SLIP2GO_UI_ENABLED = ' + JSON.stringify(paymentEnabled) + ';\n' +
+    'const LUCKY_SLIP2GO_ROLLOUT = ' + JSON.stringify(paymentRollout) + ';\n' +
     'const LUCKY_SLIP2GO_CANARY_OWNER_EMAIL = ' + JSON.stringify('jtkmanga@gmail.com') + ';\n';
   let html = await buildClient({
     prependScript,
@@ -66,10 +69,8 @@ async function build() {
   });
   if (!html.includes(authSdk)) throw Error('Auth SDK missing');
   if (!html.includes(appCheckSdk)) html = html.replace(authSdk,authSdk + '\n' + appCheckSdk);
-  const paymentStatus = paymentEnabled ? 'STAGING GAMEPLAY · SLIP2GO CANARY (OWNER ONLY)'
-    : 'STAGING GAMEPLAY · REAL PAYMENTS DISABLED';
-  html=html.replace(/(<body[^>]*>)/,
-    '$1\n<div id="staging-status" role="status" style="position:fixed;top:0;left:0;right:0;z-index:10000;background:#5b21b6;color:white;text-align:center;font:12px sans-serif;padding:3px">' + paymentStatus + '</div>');
+  // Do not inject the temporary Staging diagnostics banner on the public game.
+  // Staging socket status is optional and never changes gameplay auth.
   if (!paymentEnabled) html=html.replace('ชำระเงินผ่าน PromptPay','ระบบทดลอง · ปิดการชำระเงินจริง');
   if (!html.includes('async function stagingGetAppCheckToken') ||
       !html.includes('STAGING_CLIENT_ENABLED') ||
@@ -87,7 +88,7 @@ async function main(){
   } else if (process.argv.length===2) fs.writeFileSync(dest,html);
   else throw Error('Usage: build-lucky-from-staging.cjs [--check]');
   console.log('PASS Lucky client built from Staging gameplay; payment UI ' +
-    (process.env.LUCKY_SLIP2GO_UI_ENABLED !== '0' ? 'canary-ready' : 'disabled'));
+    (process.env.LUCKY_SLIP2GO_UI_ENABLED === '0' ? 'disabled' : 'public-ready'));
 }
 if(require.main===module) main().catch(error=>{console.error(error.message);process.exitCode=1});
 module.exports={build,sanitizeTokenRequests};
