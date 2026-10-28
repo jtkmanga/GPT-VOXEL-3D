@@ -7,6 +7,8 @@ on:
       - feat/nonchromium-10k-harness-v2-20261028
     paths:
       - '.github/workflows/nonchromium-10k-v2.yml'
+      - 'scripts/load/live-10k-v2.cjs'
+      - 'scripts/load/loopback-v2-smoke.cjs'
   workflow_dispatch:
     inputs:
       run_mode:
