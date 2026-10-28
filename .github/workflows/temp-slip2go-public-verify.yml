@@ -1,0 +1,99 @@
+name: Temporary Slip2Go Public Release Verification
+
+on:
+  push:
+    branches:
+      - release/slip2go-public-remove-purple-banner-20261028
+    paths:
+      - .github/workflows/temp-slip2go-public-verify.yml
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    environment: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci
+      - name: Check stable Free and VIP gameplay and unchanged payment authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git diff --quiet origin/main HEAD -- src/worker src/shared src/client/staging-runtime.js src/client/secure-socket-handoff.js src/client/world.js src/client/wheel-frame.js
+          grep -q '"PAYMENT_MODE": "disabled"' wrangler.jsonc
+          test ! -e src/client/production-staging-gameplay.js
+          echo 'PASS no change to movement, client physics, Worker security or receiver bindings'
+      - name: Read existing App Check public site key without leaking credentials
+        shell: python
+        run: |
+          import json,os,re,urllib.request
+          token=os.environ['CLOUDFLARE_API_TOKEN']
+          account=os.environ['CLOUDFLARE_ACCOUNT_ID']
+          url=f'https://api.cloudflare.com/client/v4/accounts/{account}/workers/scripts/voxel-run-v2-demo/settings'
+          req=urllib.request.Request(url,headers={'Authorization':'Bearer '+token,'Accept':'application/json'})
+          with urllib.request.urlopen(req,timeout=25) as r: data=json.load(r)
+          b={x['name']:x for x in data['result']['bindings']}
+          assert b['PAYMENT_MODE']['text']=='slip2go-production'
+          assert b['PAYMENT_ROLLOUT']['text']=='canary'
+          assert b['FIREBASE_PROJECT_ID']['text']=='lucky-game-6936b'
+          assert b['ALLOWED_ORIGIN']['text']=='https://jtkmanga.github.io'
+          assert all(b[n]['type']=='secret_text' for n in ('SLIP2GO_API_SECRET','PAYMENT_RECEIVER_ACCOUNT'))
+          site=b['FIREBASE_APP_CHECK_SITE_KEY']['text']
+          assert re.fullmatch(r'6L[A-Za-z0-9_-]{30,80}',site)
+          print('::add-mask::'+site)
+          with open(os.environ['GITHUB_ENV'],'a') as f: f.write('LUCKY_APP_CHECK_SITE_KEY='+site+'\n')
+          print('PASS protected production identity and current Canary rollout')
+      - name: Generate final public page with no temporary Staging banner
+        shell: bash
+        env:
+          LUCKY_SLIP2GO_ROLLOUT: public
+        run: |
+          set -euo pipefail
+          node scripts/rebuild/build-lucky-from-staging.cjs
+          node scripts/rebuild/build-lucky-from-staging.cjs --check
+          node --test tests/rebuild/slip2go-admin-canary-ui.test.cjs tests/rebuild/slip2go-payment.test.cjs tests/rebuild/slip2go-auth.test.cjs tests/rebuild/payment-qr-cache.test.cjs tests/rebuild/payment-recipient-display-privacy.test.cjs tests/rebuild/lucky-vip-payment-routing.test.cjs tests/rebuild/vip-movement-session-scale.test.cjs tests/rebuild/staging-movement-regression.test.cjs
+          node scripts/rebuild/check-syntax.cjs
+          node scripts/rebuild/check-secrets.cjs
+          git diff --check
+          ! grep -q '<div id="staging-status"' index.html
+          ! grep -q '#5b21b6' index.html
+          grep -q 'const LUCKY_SLIP2GO_ROLLOUT = "public"' index.html
+      - name: Ensure isolated Canary client still builds when explicitly selected
+        shell: bash
+        run: |
+          node <<'NODE'
+          const {build}=require('./scripts/rebuild/build-lucky-from-staging.cjs');
+          process.env.LUCKY_SLIP2GO_ROLLOUT='canary';
+          build().then(html=>{
+            if(!html.includes('const LUCKY_SLIP2GO_ROLLOUT = "canary"'))
+              throw Error('Canary rollback client failed to assemble');
+            console.log('PASS Owner-only Canary builder is still available as a rollback');
+          }).catch(error=>{console.error(error.message);process.exit(1)});
+          NODE
+      - name: Verify original Worker source compiles without any deployment
+        run: |
+          npx wrangler deploy --dry-run --config wrangler.jsonc --outdir work/public-dry-run
+          test -d work/public-dry-run
+      - name: Commit verified public HTML only to guarded branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! git diff --quiet -- index.html; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add index.html
+            git commit -m "build(client): public Slip2Go checkout without Staging banner"
+            git push origin HEAD:release/slip2go-public-remove-purple-banner-20261028
+          fi
