@@ -6,6 +6,8 @@ on:
       - fix/vip-movement-local-lease-20261028
     paths:
       - .github/workflows/temp-vip-movement-ci.yml
+      - tests/rebuild/vip-movement-session-scale.test.cjs
+      - src/worker/room-security.mjs
 
 permissions:
   contents: read
