@@ -1,0 +1,84 @@
+name: Temporary Admin Slip2Go Canary Verification
+
+on:
+  push:
+    branches:
+      - release/slip2go-admin-only-canary-20261028
+    paths:
+      - .github/workflows/temp-admin-slip2go-ci.yml
+      - src/client/secure-entitlements-payment.js
+      - scripts/rebuild/build-lucky-from-staging.cjs
+      - tests/rebuild/slip2go-admin-canary-ui.test.cjs
+
+permissions:
+  contents: write
+
+jobs:
+  check-and-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    environment: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci
+      - name: Freeze stable gameplay and verify canary payment code
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git diff --quiet origin/main HEAD -- src/worker src/shared src/client/staging-runtime.js src/client/secure-socket-handoff.js src/client/world.js src/client/wheel-frame.js
+          grep -q '"PAYMENT_MODE": "disabled"' wrangler.jsonc
+          node --test tests/rebuild/slip2go-admin-canary-ui.test.cjs tests/rebuild/slip2go-payment.test.cjs tests/rebuild/slip2go-auth.test.cjs tests/rebuild/payment-qr-cache.test.cjs tests/rebuild/vip-movement-session-scale.test.cjs tests/rebuild/staging-movement-regression.test.cjs
+      - name: Verify Cloudflare currently has correct Admin and protected secrets
+        shell: python
+        run: |
+          import os,json,re,urllib.request
+          url='https://api.cloudflare.com/client/v4/accounts/'+os.environ['CLOUDFLARE_ACCOUNT_ID']+'/workers/scripts/voxel-run-v2-demo/settings'
+          req=urllib.request.Request(url,headers={'Authorization':'Bearer '+os.environ['CLOUDFLARE_API_TOKEN'],'Accept':'application/json'})
+          with urllib.request.urlopen(req,timeout=25) as r: data=json.load(r)
+          b={x['name']:x for x in data['result']['bindings']}
+          assert b['ADMIN_OWNER_EMAIL']['text'].strip().lower()=='jtkmanga@gmail.com'
+          assert b['ALLOWED_ORIGIN']['text']=='https://jtkmanga.github.io'
+          assert b['PAYMENT_MODE']['text']=='disabled'
+          assert b['PAYMENT_ROLLOUT']['text']=='disabled'
+          assert b['FIREBASE_PROJECT_ID']['text']=='lucky-game-6936b'
+          assert all(b[n]['type']=='secret_text' for n in ('SLIP2GO_API_SECRET','PAYMENT_RECEIVER_ACCOUNT'))
+          assert all(b[n]['type']=='durable_object_namespace' for n in ('ROOM','ZONE'))
+          site=b['FIREBASE_APP_CHECK_SITE_KEY']['text']
+          assert re.fullmatch(r'6L[A-Za-z0-9_-]{30,80}',site)
+          print('::add-mask::'+site)
+          with open(os.environ['GITHUB_ENV'],'a') as f: f.write('LUCKY_APP_CHECK_SITE_KEY='+site+'\n')
+          print('PASS owner, origin, Firebase, secret binding names and payment-disabled baseline')
+      - name: Build production client with Admin-only canary UI
+        shell: bash
+        env:
+          LUCKY_SLIP2GO_UI_ENABLED: '1'
+        run: |
+          set -euo pipefail
+          node scripts/rebuild/build-lucky-from-staging.cjs
+          node scripts/rebuild/build-lucky-from-staging.cjs --check
+          node scripts/rebuild/check-syntax.cjs
+          node scripts/rebuild/check-secrets.cjs
+          grep -q 'const LUCKY_SLIP2GO_UI_ENABLED = true' index.html
+          grep -q 'const LUCKY_SLIP2GO_CANARY_OWNER_EMAIL' index.html
+          grep -q 'SLIP2GO CANARY (OWNER ONLY)' index.html
+          git diff --check
+      - name: Commit generated canary HTML only on guarded branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! git diff --quiet -- index.html; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add index.html
+            git commit -m "build(client): Admin-only Slip2Go canary UI"
+            git push origin HEAD:release/slip2go-admin-only-canary-20261028
+          fi
