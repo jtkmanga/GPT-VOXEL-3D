@@ -1,0 +1,62 @@
+name: Lucky Staging Cutover Read-only Probes
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/lucky-staging-cutover-probes.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  health-and-zone:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm install --no-save --ignore-scripts ws@8.18.3
+      - name: Compare public health and unauthenticated Zone policy
+        run: |
+          node <<'NODE'
+          const WebSocket=require('ws');
+          const hosts=[
+            ['lucky','https://voxel-run-v2-demo.hjinffv5426.workers.dev','https://jtkmanga.github.io'],
+            ['staging','https://gpt-voxel-3d-staging-01.hjinffv5426.workers.dev','https://gpt-voxel-3d-staging-01.hjinffv5426.workers.dev']
+          ];
+          async function wsProbe(name,base,origin){
+            return await new Promise(resolve=>{
+              const url=base.replace(/^http/,'ws')+'/play?zone=5%2C5';
+              const ws=new WebSocket(url,[],{origin,handshakeTimeout:6000});
+              let opened=false,done=false;
+              const settle=(result)=>{if(done)return;done=true;clearTimeout(timer);try{ws.terminate()}catch{}resolve(result)};
+              const timer=setTimeout(()=>{console.log(name,'Zone TIMEOUT');settle(false)},8000);
+              ws.on('open',()=>{opened=true;console.log(name,'Zone OPEN');ws.send(JSON.stringify({type:'move',seq:0,input:{x:0,z:0,jump:false}}));});
+              ws.on('unexpected-response',(_req,res)=>{
+                console.log(name,'Zone HTTP',res.statusCode);
+                res.resume();res.on('end',()=>settle(false));res.on('error',()=>settle(false));
+              });
+              ws.on('close',(code,reason)=>{
+                console.log(name,'Zone CLOSE',code,String(reason));settle(opened&&code===1008);
+              });
+              ws.on('error',e=>{console.log(name,'Zone ERROR',e.code||e.name)});
+            });
+          }
+          (async()=>{
+            let ok=true;
+            for(const [name,base,origin] of hosts){
+              const response=await fetch(base+'/health',{headers:{'User-Agent':'VOXEL-Production-Smoke/1.0','Origin':origin,'Accept':'text/plain'},redirect:'manual'});
+              const body=(await response.text()).slice(0,140);
+              console.log(name,'HEALTH',response.status,JSON.stringify(body));
+              if(response.status!==200) ok=false;
+              if(!await wsProbe(name,base,origin)) ok=false;
+            }
+            if(!ok) process.exitCode=1;
+          })().catch(e=>{console.error(e.message);process.exitCode=1});
+          NODE
