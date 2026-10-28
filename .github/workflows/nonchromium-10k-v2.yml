@@ -1,0 +1,189 @@
+name: Non-Chromium 10K Harness V2
+
+on:
+  push:
+    branches:
+      - main
+      - feat/nonchromium-10k-harness-v2-20261028
+    paths:
+      - '.github/workflows/nonchromium-10k-v2.yml'
+  workflow_dispatch:
+    inputs:
+      run_mode:
+        description: 'Offline only or controlled live Staging (never Production)'
+        type: choice
+        required: true
+        options: [offline, staging-live]
+      players:
+        description: 'Distinct Firebase-authenticated Staging connections'
+        type: choice
+        required: true
+        options: ['100', '500', '1000', '5000', '10000']
+      duration_sec:
+        description: 'Hold after admission'
+        type: choice
+        required: true
+        options: ['30', '60', '120']
+      move_hz:
+        description: 'Movement packets per user per second'
+        type: choice
+        required: true
+        options: ['1', '2', '5']
+      confirm:
+        description: 'For live test type RUN-STAGING-<players>; 10K requires paid plan confirmation'
+        type: string
+        required: true
+      paid_cost_approval:
+        description: 'If exceeding Free safety budget type I-ACCEPT-PAID-CLOUDFLARE-COSTS'
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: voxel-v2-staging-load
+  cancel-in-progress: false
+
+jobs:
+  offline-validation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci
+      - name: Install pinned WebSocket-only test toolchain
+        run: npm install --no-save --ignore-scripts ws@8.18.3 firebase-admin@14.5.0
+      - name: Syntax and unique-user / zone distribution checks
+        run: |
+          set -euo pipefail
+          node --check scripts/load/live-10k-v2.cjs
+          node --check scripts/load/loopback-v2-smoke.cjs
+          node scripts/load/firebase-load-users.cjs --self-test
+          node scripts/load/live-10k-v2.cjs --self-test
+          BOT_COUNT=10000 MOVE_HZ=5 DURATION_SEC=60 CONNECT_RATE_PER_SEC=100 node scripts/load/live-10k-v2.cjs --plan
+      - name: Actually connect 250 simulated users to local WebSocket server
+        run: |
+          LOCAL_BOT_COUNT=250 node scripts/load/loopback-v2-smoke.cjs
+      - name: Upload sanitized local generator report (not a Cloudflare capacity claim)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nonchromium-v2-local-generator
+          path: work/load/loopback-v2-report.json
+          if-no-files-found: warn
+          retention-days: 7
+
+  staging-live:
+    if: github.event_name == 'workflow_dispatch' && inputs.run_mode == 'staging-live'
+    needs: offline-validation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    environment: staging
+    env:
+      TARGET: staging
+      BOT_COUNT: ${{ inputs.players }}
+      DURATION_SEC: ${{ inputs.duration_sec }}
+      MOVE_HZ: ${{ inputs.move_hz }}
+      CONNECT_RATE_PER_SEC: '100'
+      MIN_WELCOME_RATE: '0.995'
+      MIN_ACK_RATE: '0.95'
+      MAX_GENERATOR_EVENT_LOOP_P95_MS: '300'
+      MAX_ESTIMATED_DO_REQUESTS: ${{ vars.LOAD_MAX_ESTIMATED_DO_REQUESTS || '75000' }}
+      CLOUDFLARE_DO_PAID_CONFIRMED: ${{ vars.CLOUDFLARE_DO_PAID_CONFIRMED || 'false' }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      FIREBASE_LOADTEST_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_LOADTEST_SERVICE_ACCOUNT_JSON_STAGING }}
+      FIREBASE_APPCHECK_DEBUG_TOKEN: ${{ secrets.FIREBASE_APPCHECK_DEBUG_TOKEN }}
+      STAGING_PUBLIC_MANIFEST: ${{ vars.STAGING_PUBLIC_MANIFEST }}
+      TOKEN_FILE: work/load/firebase-load-users.json
+      LOAD_REPORT_FILE: work/load/staging-v2-report.json
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci
+      - run: npm install --no-save --ignore-scripts ws@8.18.3 firebase-admin@14.5.0
+      - name: Enforce explicit consent, daily DO capacity budget, and safe Staging target
+        shell: python
+        env:
+          USER_CONFIRM: ${{ inputs.confirm }}
+          PAID_APPROVAL: ${{ inputs.paid_cost_approval }}
+        run: |
+          import os,json,datetime,urllib.request
+          count=int(os.environ['BOT_COUNT'])
+          seconds=int(os.environ['DURATION_SEC'])
+          hz=int(os.environ['MOVE_HZ'])
+          rate=int(os.environ['CONNECT_RATE_PER_SEC'])
+          approved=int(os.environ['MAX_ESTIMATED_DO_REQUESTS'])
+          assert os.environ['USER_CONFIRM']=='RUN-STAGING-'+str(count),'Explicit live-Staging approval missing'
+          assert os.environ['TARGET']=='staging' and count in (100,500,1000,5000,10000)
+          estimate=__import__('math').ceil(count*hz*(seconds+count/rate/2)*3+count*16)
+          assert os.environ['FIREBASE_LOADTEST_SERVICE_ACCOUNT_JSON'] and os.environ['FIREBASE_APPCHECK_DEBUG_TOKEN']
+          paid=(os.environ['CLOUDFLARE_DO_PAID_CONFIRMED']=='true' and
+                os.environ['PAID_APPROVAL']=='I-ACCEPT-PAID-CLOUDFLARE-COSTS')
+          if not paid:
+              assert approved<=75000,'Free daily budget cannot exceed 75K'
+              assert estimate<=approved,'Projected DO traffic exceeds Free daily safety budget'
+          else:
+              assert approved<=20000000,'Paid budget exceeds maximum permitted by this workflow'
+              assert estimate<=approved,'Projected DO traffic exceeds owner-approved cost ceiling'
+          token=os.environ['CLOUDFLARE_API_TOKEN']
+          account=os.environ['CLOUDFLARE_ACCOUNT_ID']
+          assert token and account,'Cloudflare quota inspection credentials missing'
+          now=datetime.datetime.now(datetime.timezone.utc)
+          day=now.replace(hour=0,minute=0,second=0,microsecond=0)
+          q='query($id:String!,$after:DateTime!,$before:DateTime!){viewer{accounts(filter:{accountTag:$id}){durableObjectsInvocationsAdaptiveGroups(filter:{datetime_geq:$after,datetime_lt:$before},limit:1000){sum{requests}}}}}'
+          body=json.dumps({'query':q,'variables':{'id':account,'after':day.isoformat().replace('+00:00','Z'),'before':now.isoformat().replace('+00:00','Z')}}).encode()
+          req=urllib.request.Request('https://api.cloudflare.com/client/v4/graphql',data=body,method='POST',
+              headers={'Authorization':'Bearer '+token,'content-type':'application/json'})
+          with urllib.request.urlopen(req,timeout=30) as r: result=json.load(r)
+          assert not result.get('errors'),'Cannot confirm Cloudflare daily quota'
+          rows=result['data']['viewer']['accounts'][0]['durableObjectsInvocationsAdaptiveGroups']
+          assert len(rows)<1000,'Quota response truncated; fail closed'
+          spent=sum(int(x.get('sum',{}).get('requests') or 0) for x in rows)
+          if not paid:
+              assert spent+estimate<=90000,'Free Durable Object daily remaining budget insufficient'
+          print('PASS controlled Staging quota preflight; estimated requests:',estimate,
+                'account daily observed:',spent,'paid-confirmed:',paid)
+      - name: Set Staging public identity without echoing secrets
+        shell: node {0}
+        run: |
+          const fs=require('node:fs');
+          let config;
+          try{config=JSON.parse(process.env.STAGING_PUBLIC_MANIFEST||'')}catch{throw Error('Missing Staging manifest')}
+          const apiKey=config?.firebase?.apiKey,appId=config?.firebase?.appId;
+          if(!/^AIza[A-Za-z0-9_-]{35}$/.test(apiKey||'')||!/^1:[0-9]+:web:[a-f0-9]+$/i.test(appId||''))
+            throw Error('Staging public Firebase identity incomplete');
+          fs.appendFileSync(process.env.GITHUB_ENV,
+            'PROJECT_ID=gpt-voxel-3d-staging\nFIREBASE_API_KEY='+apiKey+
+            '\nFIREBASE_APP_ID='+appId+
+            '\nWS_URL=wss://gpt-voxel-3d-staging-01.hjinffv5426.workers.dev/play'+
+            '\nORIGIN=https://gpt-voxel-3d-staging-01.hjinffv5426.workers.dev\n');
+          console.log('PASS Staging origin and Firebase public config');
+      - name: Prepare unique Firebase test tokens
+        run: node scripts/load/firebase-load-users.cjs prepare
+      - name: Controlled live WebSocket load, no Chromium
+        run: |
+          set -euo pipefail
+          ulimit -n 65535 || true
+          node scripts/load/live-10k-v2.cjs
+      - name: Upload sanitized evidence, not login tokens
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-websocket-v2-${{ inputs.players }}
+          path: work/load/staging-v2-report.json
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Delete all synthetic Firebase identities even if load fails
+        if: always()
+        run: node scripts/load/firebase-load-users.cjs cleanup
