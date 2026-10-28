@@ -43,7 +43,7 @@ async function build() {
   const prependScript =
     'const STAGING_PUBLIC_CONFIG = Object.freeze({authMode:"popup"});\n' +
     'const STAGING_CLIENT_ENABLED = window.location.origin === ' + JSON.stringify(origin) + ';\n' +
-    'const LUCKY_SLIP2GO_UI_ENABLED = ' + JSON.stringify(process.env.LUCKY_SLIP2GO_UI_ENABLED === '1') + ';\\n';
+    'const LUCKY_SLIP2GO_UI_ENABLED = ' + JSON.stringify(process.env.LUCKY_SLIP2GO_UI_ENABLED === '1') + ';\n';
   let html = await buildClient({
     prependScript,
     appendScript: runtime,
