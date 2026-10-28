@@ -42,6 +42,8 @@ test('payment QR cache serializes first generation, reuses fresh links and expir
   const hit=await post(room,'/_internal/payment-qr-cache/claim',{key,amount});
   assert.equal(hit.body.state,'hit');
   assert.equal(hit.body.qrImageUrl,'https://example.invalid/payment-qr.png');
+  // Internal Durable Object cache retains the verified receiver name.
+  // Only the public /payment-qr endpoint redacts it.
   assert.equal(hit.body.accountName,'Lucky Game');
   assert.equal(hit.body.amount,50);
   assert.equal(hit.body.expiresAt,expiresAt);

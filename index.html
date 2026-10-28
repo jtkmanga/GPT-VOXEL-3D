@@ -428,9 +428,9 @@
                 <div class="bg-white p-3 rounded-xl inline-block shadow-lg mx-auto">
                     <img id="promptpay-qr-img" src="" alt="PromptPay QR" class="w-48 h-48 object-contain mx-auto">
                 </div>
-                <div class="text-[11px] text-slate-400">
-                    ชื่อบัญชี: <span class="text-white font-bold">นาย จิตกร</span><br>
-                    เลขที่อ้างอิง: <span class="text-amber-400 font-bold">004999086038089</span>
+                <div id="payment-account-info" class="text-[11px] text-slate-300" role="note">
+                    ร้านค้า: <span class="font-bold text-white">Lucky Game</span>
+                    <div class="text-amber-300 mt-1">ตรวจสอบชื่อผู้รับและยอดเงินในแอปธนาคารก่อนยืนยันการโอนทุกครั้ง</div>
                 </div>
 
                 <!-- Slip Upload & Check Section -->
@@ -3067,7 +3067,7 @@ firebase.appCheck().activate(new firebase.appCheck.ReCaptchaEnterpriseProvider("
                 const result = await response.json().catch(() => ({}));
                 if (!response.ok || !result?.ok || result.item !== type ||
                     !Number.isSafeInteger(result.price) || result.price < 1 ||
-                    typeof result.qrImageUrl !== 'string' || typeof result.accountName !== 'string') {
+                    typeof result.qrImageUrl !== 'string' || result.merchantName !== 'Lucky Game') {
                     throw new Error(result?.error || 'ไม่สามารถสร้าง PromptPay QR ได้');
                 }
                 const qr = new URL(result.qrImageUrl);
@@ -3080,7 +3080,7 @@ firebase.appCheck().activate(new firebase.appCheck.ReCaptchaEnterpriseProvider("
                 document.getElementById('pay-item-price').innerText =
                     result.price + (type === 'vip1' ? ' บาท / 30 วัน' : ' บาท');
                 if (qrImage) qrImage.src = qr.href;
-                if (accountInfo) accountInfo.innerText = 'ชื่อบัญชีผู้รับ: ' + result.accountName;
+                if (accountInfo) accountInfo.innerText = 'ร้านค้า: Lucky Game — ตรวจสอบชื่อผู้รับจริงในแอปธนาคารก่อนโอน';
                 if (status) status.innerText = 'สแกน QR ชำระเงิน แล้วอัปโหลดสลิปเพื่อตรวจสอบอัตโนมัติ';
                 if (verifyButton) verifyButton.disabled = false;
                 return true;
