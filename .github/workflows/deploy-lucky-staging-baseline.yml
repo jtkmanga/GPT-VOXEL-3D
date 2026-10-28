@@ -1,6 +1,12 @@
 name: Deploy Lucky Game From Staging Baseline
 
 on:
+  # One-time guarded deployment of restored payment handlers with all payments OFF.
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/deploy-lucky-staging-baseline.yml'
   workflow_dispatch:
     inputs:
       confirm:
@@ -19,7 +25,7 @@ jobs:
   deploy:
     if: >-
       github.ref == 'refs/heads/main' &&
-      inputs.confirm == 'RESTORE-STAGING-BASELINE'
+      (github.event_name == 'push' || inputs.confirm == 'RESTORE-STAGING-BASELINE')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     environment: production
@@ -95,6 +101,14 @@ jobs:
           grep -q 'VIP_MOVEMENT_HEARTBEAT_BASE_MS = 5_000' src/worker/room-security.mjs
           grep -q 'localMovementFastPath' src/worker/room-security.mjs
           node --test tests/rebuild/vip-movement-session-scale.test.cjs tests/rebuild/p7-vip.test.cjs
+      - name: Verify restored Slip2Go paths and offline replay protection before deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'handlePaymentQr' src/worker/http.mjs
+          grep -q "url.pathname==='/payment-qr'" src/worker/router.mjs
+          node --test tests/rebuild/slip2go-payment.test.cjs tests/rebuild/slip2go-auth.test.cjs tests/rebuild/payment-qr-cache.test.cjs tests/rebuild/vip-movement-session-scale.test.cjs
+          echo 'PASS payment handlers restored with real processing still disabled'
       - name: Verify exact Staging Worker module bundling without deploying
         shell: bash
         run: |
@@ -145,4 +159,11 @@ jobs:
               # Authentication may fail closed (403) before the disabled
               # payment route checks its configuration (503).
               if e.code not in (401,403,503): raise
-          print('PASS Worker health and disabled-payment / anonymous-denial guards')
+          qr=urllib.request.Request(origin+'/payment-qr',data=b'{"item":"vip1"}',method='POST',
+              headers={'content-type':'application/json'})
+          try:
+              opener.open(qr,timeout=25)
+              raise SystemExit('FAIL: Real QR endpoint unexpectedly accepted')
+          except urllib.error.HTTPError as e:
+              if e.code!=503: raise
+          print('PASS Worker health; Slip2Go QR + slip verification remain disabled')
