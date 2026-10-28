@@ -40,9 +40,11 @@ async function build() {
   if (!/^6L[A-Za-z0-9_-]{30,80}$/.test(siteKey))
     throw Error('Missing or invalid public production App Check site key');
   const runtime = fs.readFileSync(path.join(root,'src/client/staging-runtime.js'),'utf8');
+  const paymentEnabled = process.env.LUCKY_SLIP2GO_UI_ENABLED === '1';
   const prependScript =
     'const STAGING_PUBLIC_CONFIG = Object.freeze({authMode:"popup"});\n' +
-    'const STAGING_CLIENT_ENABLED = window.location.origin === ' + JSON.stringify(origin) + ';\n';
+    'const STAGING_CLIENT_ENABLED = window.location.origin === ' + JSON.stringify(origin) + ';\n' +
+    'const LUCKY_SLIP2GO_UI_ENABLED = ' + JSON.stringify(paymentEnabled) + ';\n';
   let html = await buildClient({
     prependScript,
     appendScript: runtime,
@@ -60,9 +62,11 @@ async function build() {
   });
   if (!html.includes(authSdk)) throw Error('Auth SDK missing');
   if (!html.includes(appCheckSdk)) html = html.replace(authSdk,authSdk + '\n' + appCheckSdk);
+  const paymentStatus = paymentEnabled ? 'STAGING GAMEPLAY · SLIP2GO CANARY (OWNER ONLY)'
+    : 'STAGING GAMEPLAY · REAL PAYMENTS DISABLED';
   html=html.replace(/(<body[^>]*>)/,
-    '$1\n<div id="staging-status" role="status" style="position:fixed;top:0;left:0;right:0;z-index:10000;background:#5b21b6;color:white;text-align:center;font:12px sans-serif;padding:3px">STAGING GAMEPLAY · REAL PAYMENTS DISABLED</div>');
-  html=html.replace('ชำระเงินผ่าน PromptPay','ระบบทดลอง · ปิดการชำระเงินจริง');
+    '$1\n<div id="staging-status" role="status" style="position:fixed;top:0;left:0;right:0;z-index:10000;background:#5b21b6;color:white;text-align:center;font:12px sans-serif;padding:3px">' + paymentStatus + '</div>');
+  if (!paymentEnabled) html=html.replace('ชำระเงินผ่าน PromptPay','ระบบทดลอง · ปิดการชำระเงินจริง');
   if (!html.includes('async function stagingGetAppCheckToken') ||
       !html.includes('STAGING_CLIENT_ENABLED') ||
       !html.includes('SECURE_WORKER_HTTP_BASE'))
@@ -78,7 +82,8 @@ async function main(){
     if(fs.readFileSync(dest,'utf8')!==html) throw Error('Lucky Staging-derived index.html is stale');
   } else if (process.argv.length===2) fs.writeFileSync(dest,html);
   else throw Error('Usage: build-lucky-from-staging.cjs [--check]');
-  console.log('PASS Lucky client built from full Staging gameplay runtime; Slip2Go not enabled');
+  console.log('PASS Lucky client built from Staging gameplay; payment UI ' +
+    (process.env.LUCKY_SLIP2GO_UI_ENABLED === '1' ? 'canary-ready' : 'disabled'));
 }
 if(require.main===module) main().catch(error=>{console.error(error.message);process.exitCode=1});
 module.exports={build,sanitizeTokenRequests};

@@ -23,6 +23,8 @@ logoutGoogle = async function() {
     catch (_) { alert('Staging sign-out failed.'); return false; }
 };
 
+// Never enable payment on the actual Staging host. Lucky Game defaults to off.
+if (typeof LUCKY_SLIP2GO_UI_ENABLED === 'undefined' || !LUCKY_SLIP2GO_UI_ENABLED) {
 // Rebuild testing never offers a real payment or sends a slip to a payment API.
 openPaymentModal = function() {
     alert('Staging test entitlement events only. Real payments are disabled.');
@@ -33,6 +35,8 @@ grantPurchasedItem = function() { return false; };
 document.getElementById('slip-file-input').disabled = true;
 document.getElementById('btn-verify-slip').disabled = true;
 document.getElementById('promptpay-qr-img').src = '';
+
+}
 const stagingAuthoritativeStart = startGame;
 startGame = async function() {
     if (!STAGING_CLIENT_ENABLED) { alert('Staging is not configured for this origin.'); return false; }
@@ -470,7 +474,8 @@ async function stagingStartVipSandboxCheckout() {
         return false;
     }
 }
-if (stagingOriginalOpenPaymentModal) {
+if (stagingOriginalOpenPaymentModal &&
+    (typeof LUCKY_SLIP2GO_UI_ENABLED === 'undefined' || !LUCKY_SLIP2GO_UI_ENABLED)) {
     openPaymentModal = function(type, price, title) {
         if (STAGING_CLIENT_ENABLED && type === 'vip1') {
             void stagingStartVipSandboxCheckout();
