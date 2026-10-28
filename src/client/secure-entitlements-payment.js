@@ -191,34 +191,86 @@
 
         const SECURE_PAYMENT_ITEMS = catalog.CLIENT_PAYMENT_ITEMS;
 
-        openPaymentModal = function(type, _price, title) {
-            if (!state.isLoggedIn || !auth.currentUser) {
-                alert('กรุณาล็อกอินด้วย Google Account ก่อนทำรายการ');
-                return;
-            }
+        async function securePaymentHeaders(user, refresh = false) {
+            const token = await user.getIdToken(refresh);
+            if (auth.currentUser !== user) throw new Error('บัญชีเปลี่ยนระหว่างชำระเงิน');
+            const appCheckToken = typeof stagingGetAppCheckToken === 'function'
+                ? await stagingGetAppCheckToken(false) : '';
+            return {
+                'Authorization': 'Bearer ' + token,
+                ...(appCheckToken ? { 'X-Firebase-AppCheck': appCheckToken } : {})
+            };
+        }
 
-            if (type === 'vip1') {
-                const livePricing = typeof liveSiteConfig !== 'undefined' ? liveSiteConfig?.pricing : null;
-                const vipPrice = Number(livePricing?.vip1) || SECURE_PAYMENT_ITEMS.vip1.price;
-                alert('การชำระเงิน VIP ยังไม่เปิดใช้งาน: ราคา ' + vipPrice + ' บาท/เดือน ต้องยืนยันผู้ให้บริการชำระเงินก่อน');
-                return;
-            }
-
+        async function secureOpenSlip2GoPayment(type, title) {
+            const user = auth.currentUser;
             const cfg = SECURE_PAYMENT_ITEMS[type];
+            if (!state.isLoggedIn || !user) {
+                alert('กรุณาล็อกอินด้วย Google Account ก่อนทำรายการ');
+                return false;
+            }
             if (!cfg) {
                 alert('รายการสินค้าไม่ถูกต้อง');
-                return;
+                return false;
             }
 
-            const livePricing = typeof liveSiteConfig !== 'undefined' ? liveSiteConfig?.pricing : null;
-            const livePrice = Number(livePricing?.[type]);
-            const price = Number.isSafeInteger(livePrice) && livePrice > 0 ? livePrice : cfg.price;
-            state.pendingPayment = { type, price, title: title || cfg.title };
-            document.getElementById('pay-item-title').innerText = state.pendingPayment.title;
-            document.getElementById('pay-item-price').innerText = price + ' บาท';
-            document.getElementById('promptpay-qr-img').src = `https://promptpay.io/${SECURE_PAYMENT_PROMPTPAY_TARGET}/${price}.png`;
-            document.getElementById('slip-file-input').value = '';
-            document.getElementById('payment-modal').classList.remove('hidden');
+            const modal = document.getElementById('payment-modal');
+            const qrImage = document.getElementById('promptpay-qr-img');
+            const accountInfo = document.getElementById('payment-account-info');
+            const status = document.getElementById('payment-status');
+            const fileInput = document.getElementById('slip-file-input');
+            const verifyButton = document.getElementById('btn-verify-slip');
+
+            state.pendingPayment = null;
+            document.getElementById('pay-item-title').innerText = title || cfg.title;
+            document.getElementById('pay-item-price').innerText = 'กำลังโหลดราคา...';
+            if (qrImage) qrImage.src = '';
+            if (accountInfo) accountInfo.innerText = 'กำลังสร้าง PromptPay QR จาก Server...';
+            if (status) status.innerText = 'กรุณารอสักครู่';
+            if (fileInput) fileInput.value = '';
+            if (verifyButton) verifyButton.disabled = true;
+            modal.classList.remove('hidden');
+
+            try {
+                const headers = await securePaymentHeaders(user, true);
+                headers['Content-Type'] = 'application/json';
+                const response = await fetch(SECURE_WORKER_HTTP_BASE + '/payment-qr', {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify({ item: type })
+                });
+                const result = await response.json().catch(() => ({}));
+                if (!response.ok || !result?.ok || result.item !== type ||
+                    !Number.isSafeInteger(result.price) || result.price < 1 ||
+                    typeof result.qrImageUrl !== 'string' || typeof result.accountName !== 'string') {
+                    throw new Error(result?.error || 'ไม่สามารถสร้าง PromptPay QR ได้');
+                }
+                const qr = new URL(result.qrImageUrl);
+                if (qr.protocol !== 'https:' || qr.username || qr.password) {
+                    throw new Error('QR URL ไม่ปลอดภัย');
+                }
+                if (auth.currentUser !== user) throw new Error('บัญชีเปลี่ยนระหว่างชำระเงิน');
+
+                state.pendingPayment = { type, price: result.price, title: title || cfg.title };
+                document.getElementById('pay-item-price').innerText =
+                    result.price + (type === 'vip1' ? ' บาท / 30 วัน' : ' บาท');
+                if (qrImage) qrImage.src = qr.href;
+                if (accountInfo) accountInfo.innerText = 'ชื่อบัญชีผู้รับ: ' + result.accountName;
+                if (status) status.innerText = 'สแกน QR ชำระเงิน แล้วอัปโหลดสลิปเพื่อตรวจสอบอัตโนมัติ';
+                if (verifyButton) verifyButton.disabled = false;
+                return true;
+            } catch (error) {
+                state.pendingPayment = null;
+                if (status) status.innerText = 'ระบบชำระเงินยังไม่พร้อมใช้งาน';
+                if (accountInfo) accountInfo.innerText = 'ยังไม่ได้สร้าง QR';
+                if (verifyButton) verifyButton.disabled = true;
+                alert('PromptPay: ' + (error?.message || 'ไม่สามารถสร้างรายการชำระเงินได้'));
+                return false;
+            }
+        }
+
+        openPaymentModal = function(type, _price, title) {
+            void secureOpenSlip2GoPayment(type, title);
         };
 
         verifyAndBuySlip = async function() {
@@ -229,8 +281,8 @@
             }
 
             const item = state.pendingPayment?.type;
-            if (!SECURE_PAYMENT_ITEMS[item] || item === 'vip1') {
-                alert('รายการชำระเงินนี้ยังไม่เปิดใช้งานใน Security Test');
+            if (!SECURE_PAYMENT_ITEMS[item]) {
+                alert('กรุณาสร้าง PromptPay QR ใหม่ก่อนตรวจสอบสลิป');
                 return;
             }
 
@@ -242,17 +294,17 @@
 
             const btnVerify = document.getElementById('btn-verify-slip');
             btnVerify.disabled = true;
-            btnVerify.innerHTML = `<i class="fa-solid fa-spinner animate-spin"></i> กำลังตรวจสอบกับ Server...`;
+            btnVerify.innerHTML = `<i class="fa-solid fa-spinner animate-spin"></i> กำลังตรวจสอบกับ Slip2Go...`;
 
             try {
-                const token = await user.getIdToken(true);
+                const headers = await securePaymentHeaders(user, true);
                 const formData = new FormData();
                 formData.append('file', fileInput.files[0]);
                 formData.append('item', item);
 
                 const response = await fetch(SECURE_WORKER_HTTP_BASE + '/verify-slip', {
                     method: 'POST',
-                    headers: { 'Authorization': 'Bearer ' + token },
+                    headers,
                     body: formData
                 });
                 const result = await response.json().catch(() => ({}));
@@ -267,9 +319,12 @@
                 secureApplyEntitlements(result.entitlements, null, null);
                 await secureLoadEntitlements().catch(() => null);
 
-                alert(item === 'speed'
+                const successMessage = item === 'speed'
                     ? 'ชำระเงินสำเร็จ! Speed ×2 ถูกบันทึกบน Server 24 ชั่วโมง'
-                    : 'ชำระเงินสำเร็จ! Coin ×2 ถูกบันทึกบน Server 24 ชั่วโมง');
+                    : item === 'coin'
+                        ? 'ชำระเงินสำเร็จ! Coin ×2 ถูกบันทึกบน Server 24 ชั่วโมง'
+                        : 'ชำระเงินสำเร็จ! เปิดสิทธิ์ VIP Server 30 วันแล้ว';
+                alert(successMessage);
 
                 closePaymentModal();
                 closeShopModal();
