@@ -40,7 +40,7 @@ test('QR and slip upload both guard admin access before making any network reque
   assert.ok(slip.indexOf('if (!secureSlip2GoCanaryOwner(user))')>=0);
   assert.ok(slip.indexOf('if (!secureSlip2GoCanaryOwner(user))')<slip.indexOf("'/verify-slip'"));
   assert.match(script,/LUCKY_SLIP2GO_CANARY_OWNER_EMAIL/);
-  assert.match(script,/process\.env\.LUCKY_SLIP2GO_UI_ENABLED === '1'/);
+  assert.match(script,/process\.env\.LUCKY_SLIP2GO_UI_ENABLED !== '0'/);
 });
 
 test('Worker canary independently validates authenticated owner on both purchase routes',()=>{
