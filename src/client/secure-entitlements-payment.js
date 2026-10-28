@@ -202,6 +202,16 @@
             };
         }
 
+        function secureSlip2GoCanaryOwner(user) {
+            // UI convenience only; the Worker separately verifies Firebase
+            // identity and restricts both QR and slip processing by owner.
+            return Boolean(typeof LUCKY_SLIP2GO_UI_ENABLED !== 'undefined' &&
+                LUCKY_SLIP2GO_UI_ENABLED &&
+                typeof LUCKY_SLIP2GO_CANARY_OWNER_EMAIL === 'string' &&
+                String(user?.email || '').trim().toLowerCase() ===
+                    LUCKY_SLIP2GO_CANARY_OWNER_EMAIL.toLowerCase());
+        }
+
         async function secureOpenSlip2GoPayment(type, title) {
             const user = auth.currentUser;
             const cfg = SECURE_PAYMENT_ITEMS[type];
@@ -211,6 +221,10 @@
             }
             if (!cfg) {
                 alert('รายการสินค้าไม่ถูกต้อง');
+                return false;
+            }
+            if (!secureSlip2GoCanaryOwner(user)) {
+                alert('Slip2Go อยู่ระหว่างทดสอบเฉพาะบัญชี Admin เท่านั้น');
                 return false;
             }
 
@@ -278,6 +292,10 @@
             if (!user) {
                 alert('กรุณาล็อกอินใหม่ก่อนตรวจสอบสลิป');
                 return;
+            }
+            if (!secureSlip2GoCanaryOwner(user)) {
+                alert('Slip2Go อยู่ระหว่างทดสอบเฉพาะบัญชี Admin เท่านั้น');
+                return false;
             }
 
             const item = state.pendingPayment?.type;
