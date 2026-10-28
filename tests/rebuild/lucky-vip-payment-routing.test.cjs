@@ -51,8 +51,9 @@ test('original Staging keeps its legacy test-only handler, while Lucky uses a de
   assert.match(source,/typeof LUCKY_SLIP2GO_UI_ENABLED === 'undefined'\) \{/);
   const build=readFileSync('scripts/rebuild/build-lucky-from-staging.cjs','utf8');
   assert.match(build,/const LUCKY_SLIP2GO_UI_ENABLED = /);
-  assert.match(build,/process\.env\.LUCKY_SLIP2GO_UI_ENABLED === '1'/);
+  assert.match(build,/process\.env\.LUCKY_SLIP2GO_UI_ENABLED !== '0'/);
   const html=readFileSync('index.html','utf8');
-  assert.match(html,/const LUCKY_SLIP2GO_UI_ENABLED = false/);
-  assert.match(html,/STAGING GAMEPLAY · REAL PAYMENTS DISABLED/);
+  assert.match(html,/const LUCKY_SLIP2GO_UI_ENABLED = true/);
+  assert.match(html,/const LUCKY_SLIP2GO_ROLLOUT = "public"/);
+  assert.doesNotMatch(html,/<div id="staging-status"/);
 });

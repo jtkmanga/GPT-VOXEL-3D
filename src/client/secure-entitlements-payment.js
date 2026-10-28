@@ -202,14 +202,18 @@
             };
         }
 
-        function secureSlip2GoCanaryOwner(user) {
-            // UI convenience only; the Worker separately verifies Firebase
-            // identity and restricts both QR and slip processing by owner.
-            return Boolean(typeof LUCKY_SLIP2GO_UI_ENABLED !== 'undefined' &&
-                LUCKY_SLIP2GO_UI_ENABLED &&
-                typeof LUCKY_SLIP2GO_CANARY_OWNER_EMAIL === 'string' &&
-                String(user?.email || '').trim().toLowerCase() ===
-                    LUCKY_SLIP2GO_CANARY_OWNER_EMAIL.toLowerCase());
+        function secureSlip2GoPurchaseAllowed(user) {
+            // UI eligibility mirrors the production rollout. The Worker is the
+            // authority and independently validates Firebase, App Check and
+            // payment mode before generating QR codes or accepting slips.
+            if (typeof LUCKY_SLIP2GO_UI_ENABLED === 'undefined' ||
+                !LUCKY_SLIP2GO_UI_ENABLED || !user) return false;
+            if (typeof LUCKY_SLIP2GO_ROLLOUT === 'undefined') return false;
+            if (LUCKY_SLIP2GO_ROLLOUT === 'public') return true;
+            if (LUCKY_SLIP2GO_ROLLOUT !== 'canary') return false;
+            return typeof LUCKY_SLIP2GO_CANARY_OWNER_EMAIL === 'string' &&
+                String(user.email || '').trim().toLowerCase() ===
+                    LUCKY_SLIP2GO_CANARY_OWNER_EMAIL.toLowerCase();
         }
 
         async function secureOpenSlip2GoPayment(type, title) {
@@ -223,8 +227,8 @@
                 alert('รายการสินค้าไม่ถูกต้อง');
                 return false;
             }
-            if (!secureSlip2GoCanaryOwner(user)) {
-                alert('Slip2Go อยู่ระหว่างทดสอบเฉพาะบัญชี Admin เท่านั้น');
+            if (!secureSlip2GoPurchaseAllowed(user)) {
+                alert('ระบบชำระเงินยังไม่เปิดสำหรับบัญชีนี้');
                 return false;
             }
 
@@ -293,8 +297,8 @@
                 alert('กรุณาล็อกอินใหม่ก่อนตรวจสอบสลิป');
                 return;
             }
-            if (!secureSlip2GoCanaryOwner(user)) {
-                alert('Slip2Go อยู่ระหว่างทดสอบเฉพาะบัญชี Admin เท่านั้น');
+            if (!secureSlip2GoPurchaseAllowed(user)) {
+                alert('ระบบชำระเงินยังไม่เปิดสำหรับบัญชีนี้');
                 return false;
             }
 
