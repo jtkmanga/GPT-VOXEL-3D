@@ -132,7 +132,10 @@ async function run() {
   const wsBase = String(process.env.WS_URL || '').trim();
   const origin = String(process.env.ORIGIN || '').trim();
   const target = String(process.env.TARGET || 'unknown').trim();
-  if (!/^wss:\/\//.test(wsBase)) throw new Error('WS_URL must be wss://');
+  const local = target === 'loopback' &&
+    /^ws:\/\/(127\.0\.0\.1|localhost):[0-9]+\/play$/.test(wsBase);
+  if (!local && !/^wss:\/\//.test(wsBase))
+    throw new Error('WS_URL must be wss:// (except explicit localhost loopback)');
   if (!['staging','loopback'].includes(target) &&
       process.env.ALLOW_PRODUCTION_LOAD !== 'I-ACCEPT-PRODUCTION-IMPACT')
     throw new Error('SAFETY: production or unknown target requires explicit ALLOW_PRODUCTION_LOAD confirmation');
