@@ -162,6 +162,7 @@ async function run() {
   const prematureCloseCodes = {};
   const prematureCloseReasons = {};
   const welcomeLatencyMs = [];
+  const ackLatencyMs = [];
   const sockets = new Set();
   // One pooled timer serves all 10,000 sessions; never create 10,000 intervals.
   const movers = new Map();
@@ -182,6 +183,8 @@ async function run() {
         const packet=movementPacket(state.index,state.seq++,moveHz,
           now-testStart,state.motionState);
         socket.send(JSON.stringify(packet));
+        state.sentAt.set(packet.seq, now);
+        if (state.sentAt.size > 256) state.sentAt.delete(state.sentAt.keys().next().value);
         stats.movesSent++;
       } catch {
         stats.connectionErrors++;
@@ -206,7 +209,7 @@ async function run() {
     movers.set(ws, {
       index, seq:initialSeq, motionState,
       periodMs:Math.round(1000/moveHz),
-      nextAt:Date.now()+Math.round(1000/moveHz)
+      nextAt:Date.now()+Math.round(1000/moveHz), sentAt:new Map()
     });
   }
 
@@ -291,6 +294,13 @@ async function run() {
         } else if (type === 'move') {
           if (Number.isSafeInteger(Number(message?.ack))) {
             stats.moveAcks++;
+            const sending=movers.get(ws);
+            const seq=Number(message.ack);
+            const sentAt=sending?.sentAt?.get(seq);
+            if (Number.isFinite(sentAt)) {
+              ackLatencyMs.push(Math.max(0,Date.now()-sentAt));
+              sending.sentAt.delete(seq);
+            }
             if (Number.isFinite(message?.player?.x) && Number.isFinite(message?.player?.z))
               motionState.current = { x: Number(message.player.x), z: Number(message.player.z) };
           } else stats.remoteMoves++;
@@ -397,6 +407,12 @@ async function run() {
         p50: percentile(welcomeLatencyMs, 0.50),
         p95: percentile(welcomeLatencyMs, 0.95),
         max: welcomeLatencyMs.length ? Math.max(...welcomeLatencyMs) : null
+      },
+      ackLatencyMs: {
+        samples:ackLatencyMs.length,
+        p50:percentile(ackLatencyMs,0.50),
+        p95:percentile(ackLatencyMs,0.95),
+        max:ackLatencyMs.length?Math.max(...ackLatencyMs):null
       }
     },
     stats,
