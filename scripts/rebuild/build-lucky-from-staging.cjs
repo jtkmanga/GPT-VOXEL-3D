@@ -87,7 +87,7 @@ async function main(){
   } else if (process.argv.length===2) fs.writeFileSync(dest,html);
   else throw Error('Usage: build-lucky-from-staging.cjs [--check]');
   console.log('PASS Lucky client built from Staging gameplay; payment UI ' +
-    (paymentEnabled ? 'canary-ready' : 'disabled'));
+    (process.env.LUCKY_SLIP2GO_UI_ENABLED !== '0' ? 'canary-ready' : 'disabled'));
 }
 if(require.main===module) main().catch(error=>{console.error(error.message);process.exitCode=1});
 module.exports={build,sanitizeTokenRequests};
