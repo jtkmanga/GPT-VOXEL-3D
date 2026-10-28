@@ -152,7 +152,7 @@ async function run() {
     throw new Error('Token pool must contain BOT_COUNT unique UID/ID-token pairs');
 
   const stats = {
-    started: 0, opened: 0, active: 0, welcomed: 0, authErrors: 0,
+    started: 0, opened: 0, active: 0, welcomed: 0, liveWelcomed: 0, peakWelcomed: 0, authErrors: 0,
     connectionErrors: 0, unexpectedResponses: 0, serverErrors: 0,
     welcomeTimeouts: 0, prematureCloses: 0, closed: 0, messages: 0,
     movesSent: 0, moveAcks: 0, remoteMoves: 0, joins: 0, leaves: 0,
@@ -272,6 +272,8 @@ async function run() {
           welcomed = true;
           clearTimeout(timeout);
           stats.welcomed++;
+          stats.liveWelcomed++;
+          stats.peakWelcomed=Math.max(stats.peakWelcomed,stats.liveWelcomed);
           welcomeLatencyMs.push(Date.now() - startedAt);
           const lastSeq = Number(message?.movement?.lastSeq ?? message?.motion?.lastSeq);
           if (Number.isFinite(message?.spawn?.x) && Number.isFinite(message?.spawn?.z)) {
@@ -315,6 +317,7 @@ async function run() {
         clearTimeout(timeout);
         stopMovement(ws);
         if (open && stats.active > 0) stats.active--;
+        if (welcomed && stats.liveWelcomed > 0) stats.liveWelcomed--;
         stats.closed++;
         if (!finishing && welcomed) {
           stats.prematureCloses++;
@@ -372,7 +375,9 @@ async function run() {
   const countedErrors = stats.authErrors + stats.connectionErrors + stats.unexpectedResponses +
     stats.serverErrors + stats.welcomeTimeouts + stats.prematureCloses;
   const generatorHealthy = eventLoopP95Ms <= maxGeneratorLagMs && stats.generatorBackpressure === 0;
-  const passed = welcomeRate >= minWelcomeRate && ackRate >= minAckRate &&
+  const hasPeakConcurrency = stats.peakWelcomed >= Math.ceil(botCount * minWelcomeRate) &&
+    (botCount !== 10000 || stats.peakWelcomed === 10000);
+  const passed = hasPeakConcurrency && welcomeRate >= minWelcomeRate && ackRate >= minAckRate &&
     countedErrors === 0 && stats.zoneChanges === 0 && generatorHealthy;
 
   const report = {
@@ -385,7 +390,7 @@ async function run() {
       minWelcomeRate, minAckRate, maxGeneratorLagMs
     },
     result: {
-      passed, generatorHealthy, welcomeRate, ackRate, countedErrors,
+      passed, hasPeakConcurrency, generatorHealthy, welcomeRate, ackRate, countedErrors,
       eventLoopP95Ms,
       welcomeLatencyMs: {
         samples: welcomeLatencyMs.length,
@@ -395,7 +400,7 @@ async function run() {
       }
     },
     stats,
-    scheduler: { mode:'pooled-40ms', ticks:schedulerTicks, peakOpen:stats.opened },
+    scheduler: { mode:'pooled-40ms', ticks:schedulerTicks, peakAuthenticatedConcurrent:stats.peakWelcomed },
     budget: { estimatedDurableObjectRequests:estimate, approvedMax:dailyBudget,
       note:'Conservative safety projection, not Cloudflare invoice or measured usage' },
     messageTypes: typeCounts,
