@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#102b2b">
+<title>GPT Treasure Hunt 2D — Offline Prototype</title>
+<style>
+:root{color-scheme:dark;--bg:#091a20;--panel:#102a31;--panel2:#16383e;--edge:#2b5859;--ink:#edf7ec;--muted:#a8c6be;--gold:#ffce64;--accent:#74ebad}*{box-sizing:border-box}
+body{margin:0;min-height:100dvh;background:radial-gradient(ellipse at top,#205047 0,#091a20 70%);font-family:system-ui,-apple-system,"Noto Sans Thai",sans-serif;color:var(--ink)}
+button{font:inherit;cursor:pointer;border:0;-webkit-tap-highlight-color:transparent}button:focus-visible{outline:3px solid var(--gold);outline-offset:3px}
+.wrap{max-width:940px;margin:auto;padding:12px 12px 18px;display:flex;flex-direction:column;gap:10px}
+header{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.brand{font-size:clamp(19px,4.7vw,30px);letter-spacing:.02em;font-weight:900;line-height:1.1}.brand span{color:var(--gold)}
+.flag{border:1px solid #6c7755;background:#404329;color:#ffefb7;border-radius:24px;font-size:11px;padding:6px 10px;font-weight:700}
+.subtitle{font-size:12px;color:var(--muted);margin:0}
+.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px}
+.stat{background:#103138;border:1px solid var(--edge);padding:8px 5px;border-radius:12px;text-align:center}
+.stat b{display:block;color:var(--gold);font-size:clamp(15px,4vw,22px);font-variant-numeric:tabular-nums}
+.stat small{display:block;font-size:11px;color:var(--muted);white-space:nowrap}
+.game{background:#071d22;border:2px solid #4a7770;border-radius:17px;position:relative;overflow:hidden;box-shadow:0 12px 28px #0005}
+canvas{display:block;width:100%;height:min(53dvh,510px);min-height:310px;touch-action:none;background:#315746}
+.worldlabel{position:absolute;top:10px;left:10px;padding:5px 9px;border-radius:8px;background:#071f22b8;font-weight:750;font-size:12px;pointer-events:none}
+.instructions{position:absolute;top:10px;right:10px;max-width:50%;padding:6px 9px;border-radius:8px;background:#071f22be;color:#e8f4e4;font-size:11px;text-align:right;pointer-events:none}
+.pad{position:absolute;left:15px;bottom:14px;width:116px;height:116px;border:2px solid #ffffff5c;border-radius:100%;background:#09262780;touch-action:none;display:grid;place-items:center}
+.knob{width:53px;height:53px;background:#9bdbaa9c;border:2px solid #f0ffdfaa;border-radius:50%;pointer-events:none;box-shadow:0 2px 9px #0005}
+.act{position:absolute;right:17px;bottom:30px;width:80px;height:80px;border:2px solid #fff4a7;border-radius:50%;background:linear-gradient(#ffdc79,#c18437);color:#2d2917;font-weight:900;box-shadow:0 5px 0 #78532b;touch-action:manipulation}
+.act:active{transform:translateY(3px);box-shadow:0 2px 0 #78532b}
+.toast{position:absolute;left:50%;top:24%;transform:translateX(-50%);background:#102f2eea;border:1px solid var(--gold);border-radius:12px;padding:9px 15px;font-weight:800;pointer-events:none;opacity:0;transition:opacity .18s;white-space:nowrap;max-width:95%;overflow:hidden;text-overflow:ellipsis}
+.toast.show{opacity:1}
+.toolbar{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px}
+.tool{min-height:43px;background:var(--panel);border:1px solid var(--edge);border-radius:11px;color:#e4f4e3;font-size:12px;font-weight:750;padding:5px}
+.tool.primary{background:#21856a;border-color:#6ee4af;color:white}
+.tool:disabled{opacity:.5;cursor:not-allowed}
+.note{font-size:11px;color:#b7c8bf;line-height:1.5;margin:0}
+.sheet[hidden],.shade[hidden]{display:none!important}
+.shade{position:fixed;inset:0;background:#020b0bca;z-index:5;display:grid;place-items:center;padding:16px}
+.sheet{width:min(100%,480px);max-height:85dvh;overflow:auto;background:#102d34;border:1px solid #508a77;border-radius:19px;padding:20px;box-shadow:0 25px 70px #000b}
+.sheet h2{margin:0 0 9px;font-size:22px;color:var(--gold)}.sheet p{font-size:14px;color:#d7e6dd;line-height:1.6}
+.sheet .line{display:flex;gap:8px;align-items:center;justify-content:space-between;border-bottom:1px solid #35635a;padding:10px 0;font-size:14px}
+.sheet .line:last-child{border:0}
+.sheet .pill{border:1px solid var(--edge);border-radius:12px;background:#1a4445;padding:8px;color:white}
+.sheet .pill.sel{background:#277b64;border-color:var(--accent)}
+.sheet .actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.sheet .action{background:#248a6c;color:white;border-radius:10px;padding:10px 15px;font-weight:800}
+.sheet .action.secondary{background:#2a4a4c}
+.sheet .action:disabled{opacity:.5}
+.small{font-size:12px!important;color:var(--muted)!important}
+.kbd{border:1px solid #668d86;border-radius:4px;padding:0 4px}
+@media (min-width:700px){.wrap{padding:20px}.pad{width:130px;height:130px}.knob{width:60px;height:60px}.act{width:90px;height:90px}.tool{font-size:14px}.worldlabel,.instructions{font-size:13px}}
+@media (max-height:700px){canvas{height:45dvh;min-height:260px}.pad{width:95px;height:95px}.act{width:70px;height:70px}}
+</style>
+</head>
+<body>
+<main class="wrap">
+  <header><div class="brand">GPT <span>TREASURE HUNT</span> 2D</div><div class="flag">ต้นแบบออฟไลน์ • ไม่ใช่ Production</div></header>
+  <p class="subtitle">ผจญภัยล่าสมบัติบนมือถือ • ระบบการแข่งขัน ร้านค้า และ VIP ในหน้านี้เป็นตัวอย่างเท่านั้น</p>
+  <section class="stats" aria-label="สถานะการเล่น">
+    <div class="stat"><small>คะแนน</small><b id="score">0</b></div>
+    <div class="stat"><small>เหรียญ</small><b id="wallet">0</b></div>
+    <div class="stat"><small>เวลา</small><b id="time">03:00</b></div>
+    <div class="stat"><small>เก็บแล้ว</small><b id="collected">0</b></div>
+  </section>
+  <section class="game" aria-label="แผนที่เกม">
+    <canvas id="scene" aria-label="แผนที่ 2D ผู้เล่นเดินเก็บเหรียญและหีบ"></canvas>
+    <div class="worldlabel" id="levelLabel">ป่าล่าสมบัติ</div>
+    <div class="instructions">ใช้จอย / WASD หรือปุ่มลูกศร<br>เข้าใกล้เหรียญแล้วกด เก็บ</div>
+    <div class="pad" id="pad" role="group" aria-label="จอยควบคุมทิศทาง"><div class="knob" id="knob"></div></div>
+    <button class="act" id="collect" type="button">เก็บ ✦</button>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  </section>
+  <nav class="toolbar" aria-label="เมนูเกม">
+    <button class="tool primary" id="newRun">เริ่มด่าน</button>
+    <button class="tool" id="levels">แผนที่</button>
+    <button class="tool" id="ranking">🏆 อันดับ</button>
+    <button class="tool" id="shop">🛍 ร้านค้า</button>
+  </nav>
+  <p class="note">ต้นแบบนี้ไม่เชื่อม Google Login, WebSocket, ฐานข้อมูล, Slip2Go หรือระบบคะแนนจริง ข้อมูลคะแนน เหรียญ VIP และของรางวัลเป็นข้อมูลในเครื่องชั่วคราวเท่านั้น จึงยังใช้แข่งขันหรือรับรางวัลจริงไม่ได้</p>
+</main>
+<div class="shade" id="shade" hidden>
+  <section class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="panelTitle">
+    <h2 id="panelTitle"></h2><div id="panelBody"></div><div class="actions" id="panelActions"></div>
+  </section>
+</div>
+<script>
+"use strict";
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const canvas = $("scene"), ctx = canvas.getContext("2d", { alpha: false });
+  if (!ctx) { $("levelLabel").textContent = "เบราว์เซอร์นี้ไม่รองรับ Canvas"; return; }
+  const SIZE = 26, TILE = 45, RUN_LENGTH = 180000, COIN_RESPAWN = 60000, CHEST_RESPAWN = 4 * 60 * 60 * 1000;
+  const LEVELS = [
+    {name:"ป่าล่าสมบัติ", seed:2121, ground:"#4c8250", dark:"#386941", accent:"#6a985a", hazard:"#28616a"},
+    {name:"ถ้ำทองคำ", seed:6381, ground:"#726047", dark:"#594936", accent:"#98734c", hazard:"#344c63"},
+    {name:"วิหารโบราณ", seed:9477, ground:"#6b8269", dark:"#526450", accent:"#91a386", hazard:"#33616b"}
+  ];
+  const state = {level:0,tiles:[],coins:[],chest:null,player:{x:2.5,y:2.5},score:0,wallet:0,got:0,run:false,completed:false,start:0,last:0,mode:"free",cosmetic:false,bonus:false,joy:{x:0,y:0},held:new Set(),toastUntil:0,panel:""};
+  function rng(seed){let a=seed>>>0;return function(){a+=0x6D2B79F5;let t=a;t=Math.imul(t^(t>>>15),t|1);t^=t+Math.imul(t^(t>>>7),t|61);return((t^(t>>>14))>>>0)/4294967296;};}
+  function buildWorld(level){
+    const random=rng(LEVELS[level].seed), tiles=[], coins=[];
+    for(let y=0;y<SIZE;y++){const row=[];for(let x=0;x<SIZE;x++){
+      const safe=(Math.abs(x-2)<3&&Math.abs(y-2)<3)||(Math.abs(x-23)<3&&Math.abs(y-23)<3)||(y===2&&x>=2&&x<=23)||(x===23&&y>=2&&y<=23);
+      const n=random(), edge=x===0||y===0||x===SIZE-1||y===SIZE-1;
+      row.push(edge?2:safe?0:n<.105?1:n<.165?2:n<.205?3:0);
+    }tiles.push(row);}
+    let attempts=0;
+    while(coins.length<82&&attempts++<4000){
+      const x=1+Math.floor(random()*(SIZE-2)),y=1+Math.floor(random()*(SIZE-2));
+      if(tiles[y][x]||Math.hypot(x-2.5,y-2.5)<2||Math.hypot(x-23.5,y-23.5)<1.5||coins.some(c=>c.x===x+.5&&c.y===y+.5))continue;
+      coins.push({x:x+.5,y:y+.5,respawnAt:0});
+    }
+    state.tiles=tiles;state.coins=coins;state.chest={x:23.5,y:23.5,respawnAt:0};
+  }
+  function reset(level){
+    state.level=level;state.player={x:2.5,y:2.5};state.score=0;state.wallet=0;state.got=0;state.bonus=false;state.cosmetic=false;state.start=performance.now();state.run=true;state.completed=false;state.last=state.start;
+    buildWorld(level);$("levelLabel").textContent=LEVELS[level].name+" • ด่านทดลอง";updateHUD();
+    notify("เริ่มด่าน! ล่าสมบัติภายใน 3 นาที");
+  }
+  function walkable(x,y){
+    const r=.26, points=[[x-r,y-r],[x+r,y-r],[x-r,y+r],[x+r,y+r]];
+    return points.every(p=>{const xx=Math.floor(p[0]),yy=Math.floor(p[1]);return xx>=0&&xx<SIZE&&yy>=0&&yy<SIZE&&state.tiles[yy][xx]===0;});
+  }
+  function direction(){
+    let x=state.joy.x,y=state.joy.y;
+    if(state.held.has("ArrowLeft")||state.held.has("a"))x-=1;
+    if(state.held.has("ArrowRight")||state.held.has("d"))x+=1;
+    if(state.held.has("ArrowUp")||state.held.has("w"))y-=1;
+    if(state.held.has("ArrowDown")||state.held.has("s"))y+=1;
+    const mag=Math.hypot(x,y);return mag>1?{x:x/mag,y:y/mag}:{x,y};
+  }
+  function notify(message){$("toast").textContent=message;$("toast").classList.add("show");state.toastUntil=performance.now()+1500;}
+  function updateHUD(){
+    $("score").textContent=state.score.toLocaleString("th-TH");
+    $("wallet").textContent=state.wallet.toLocaleString("th-TH");
+    $("collected").textContent=state.got.toLocaleString("th-TH");
+    const remaining=state.run?Math.max(0,Math.ceil((RUN_LENGTH-(performance.now()-state.start))/1000)):(state.completed?0:180);
+    $("time").textContent=String(Math.floor(remaining/60)).padStart(2,"0")+":"+String(remaining%60).padStart(2,"0");
+  }
+  function finish(){
+    if(!state.run)return;
+    state.run=false;state.completed=true;updateHUD();
+    openPanel("ผลการเล่นต้นแบบ",function(root,actions){
+      addText(root,"คะแนนรอบนี้: "+state.score+" คะแนน • เก็บเหรียญ "+state.got+" เหรียญ");
+      addText(root,"ยังไม่มีการส่งคะแนนขึ้นเซิร์ฟเวอร์ ผลนี้ไม่ถูกบันทึกลงอันดับจริง","small");
+      addButton(actions,"เล่นใหม่",function(){closePanel();reset(state.level);});
+      addButton(actions,"ปิด",closePanel,true);
+    });
+  }
+  function collect(){
+    if(!state.run){notify("กด เริ่มด่าน ก่อน");return;}
+    const now=performance.now();let nearest=null,distance=Infinity;
+    for(const coin of state.coins){
+      if(coin.respawnAt>now)continue;
+      const d=Math.hypot(coin.x-state.player.x,coin.y-state.player.y);
+      if(d<distance){nearest=coin;distance=d;}
+    }
+    const chest=state.chest,chestDist=Math.hypot(chest.x-state.player.x,chest.y-state.player.y);
+    if(chest.respawnAt<=now&&chestDist<.82&&chestDist<=distance){
+      chest.respawnAt=now+CHEST_RESPAWN;state.score+=100;state.wallet+=5;state.got+=1;
+      notify("เปิด Lucky Box! +100 คะแนน (ทดลอง)");updateHUD();return;
+    }
+    if(nearest&&distance<.75){
+      nearest.respawnAt=now+COIN_RESPAWN;state.score+=10;state.wallet+=1;state.got+=1;
+      notify("+10 คะแนน • +1 เหรียญ");updateHUD();return;
+    }
+    notify("เดินเข้าใกล้เหรียญหรือหีบก่อน");
+  }
+  function roundRect(x,y,w,h,r,fill){
+    ctx.fillStyle=fill;ctx.beginPath();ctx.roundRect(x,y,w,h,r);ctx.fill();
+  }
+  function drawWorld(){
+    const dpr=Math.min(2,window.devicePixelRatio||1),w=canvas.clientWidth,h=canvas.clientHeight;
+    if(canvas.width!==Math.round(w*dpr)||canvas.height!==Math.round(h*dpr)){canvas.width=Math.round(w*dpr);canvas.height=Math.round(h*dpr);}
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    ctx.clearRect(0,0,w,h);
+    const level=LEVELS[state.level],camX=state.player.x*TILE-w/2,camY=state.player.y*TILE-h/2;
+    ctx.fillStyle="#09191b";ctx.fillRect(0,0,w,h);
+    const minX=Math.max(0,Math.floor(camX/TILE)),maxX=Math.min(SIZE-1,Math.ceil((camX+w)/TILE));
+    const minY=Math.max(0,Math.floor(camY/TILE)),maxY=Math.min(SIZE-1,Math.ceil((camY+h)/TILE));
+    for(let y=minY;y<=maxY;y++)for(let x=minX;x<=maxX;x++){
+      const sx=x*TILE-camX,sy=y*TILE-camY,t=state.tiles[y][x],pattern=(x*11+y*17)%6;
+      ctx.fillStyle=(x+y)%2?level.ground:level.accent;ctx.fillRect(sx,sy,TILE+1,TILE+1);
+      if(t===0){
+        if(pattern===0){ctx.fillStyle="#d2ca7b66";ctx.fillRect(sx+12,sy+9,3,3);ctx.fillRect(sx+30,sy+26,3,3);}
+        if(pattern===3){ctx.fillStyle="#1f673d88";ctx.fillRect(sx+23,sy+30,5,3);}
+      }else if(t===1){
+        roundRect(sx+18,sy+22,10,19,3,"#634b35");ctx.fillStyle="#194d39";ctx.beginPath();ctx.arc(sx+22,sy+17,17,0,Math.PI*2);ctx.fill();
+        ctx.fillStyle="#31794a";ctx.beginPath();ctx.arc(sx+17,sy+11,11,0,Math.PI*2);ctx.fill();
+      }else if(t===2){
+        roundRect(sx+6,sy+12,35,28,9,"#525e63");roundRect(sx+9,sy+12,28,17,7,"#899490");
+        ctx.fillStyle="#b5bfba";ctx.fillRect(sx+15,sy+16,8,2);
+      }else{
+        ctx.fillStyle=level.hazard;ctx.fillRect(sx+3,sy+3,TILE-6,TILE-6);
+        ctx.strokeStyle="#a2e1d0";ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(sx+20,sy+18,9,0,Math.PI);ctx.stroke();
+      }
+    }
+    const now=performance.now();
+    for(const coin of state.coins){
+      if(coin.respawnAt>now)continue;
+      const sx=coin.x*TILE-camX,sy=coin.y*TILE-camY;
+      if(sx< -20||sx>w+20||sy< -20||sy>h+20)continue;
+      ctx.fillStyle="#6d4c22";ctx.beginPath();ctx.ellipse(sx,sy+4,9,5,0,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle="#ffdc73";ctx.beginPath();ctx.arc(sx,sy-2,8,0,Math.PI*2);ctx.fill();
+      ctx.strokeStyle="#b67728";ctx.lineWidth=2;ctx.beginPath();ctx.arc(sx,sy-2,5,0,Math.PI*2);ctx.stroke();
+    }
+    const chest=state.chest;
+    if(chest.respawnAt<=now){
+      const x=chest.x*TILE-camX,y=chest.y*TILE-camY;
+      if(x>-50&&x<w+50&&y>-50&&y<h+50){
+        ctx.fillStyle="#ffe7a3";ctx.globalAlpha=.17;ctx.beginPath();ctx.arc(x,y,32+2*Math.sin(now/260),0,Math.PI*2);ctx.fill();ctx.globalAlpha=1;
+        roundRect(x-18,y-8,36,26,5,"#5b3017");roundRect(x-18,y-14,36,18,6,"#c17827");
+        roundRect(x-3,y-10,8,26,2,"#ffe179");ctx.fillStyle="#ffedb0";ctx.fillRect(x-2,y+1,6,6);
+      }
+    }
+    const px=state.player.x*TILE-camX,py=state.player.y*TILE-camY;
+    ctx.fillStyle="#0b231d88";ctx.beginPath();ctx.ellipse(px,py+17,15,6,0,0,Math.PI*2);ctx.fill();
+    roundRect(px-10,py-2,20,23,5,state.cosmetic?"#db70c8":"#428de3");
+    roundRect(px-10,py-16,20,20,6,"#e9b785");roundRect(px-12,py-21,24,10,4,"#473628");
+    ctx.fillStyle="#2a2924";ctx.fillRect(px-5,py-7,3,3);ctx.fillRect(px+3,py-7,3,3);
+    if(state.cosmetic){ctx.strokeStyle="#ffe780";ctx.lineWidth=2;ctx.strokeRect(px-13,py-25,26,5);}
+    if(!state.run){ctx.fillStyle="#061718b5";ctx.fillRect(0,0,w,h);roundRect(w/2-138,h/2-48,276,95,13,"#102f35");
+      ctx.fillStyle="#ffdb78";ctx.font="bold 20px system-ui";ctx.textAlign="center";ctx.fillText("TREASURE HUNT 2D",w/2,h/2-9);
+      ctx.fillStyle="#e9f5e6";ctx.font="14px system-ui";ctx.fillText("กด เริ่มด่าน เพื่อออกสำรวจ",w/2,h/2+21);}
+  }
+  function frame(now){
+    const dt=Math.min(.05,Math.max(0,(now-state.last)/1000||0));state.last=now;
+    if(state.run&&!state.panel){
+      if(now-state.start>=RUN_LENGTH){finish();}
+      else{const v=direction(),speed=3.9,dx=v.x*speed*dt,dy=v.y*speed*dt;
+        if(walkable(state.player.x+dx,state.player.y))state.player.x+=dx;
+        if(walkable(state.player.x,state.player.y+dy))state.player.y+=dy;
+      }
+    }
+    drawWorld();
+    if(state.toastUntil<now)$("toast").classList.remove("show");
+    if(!state.hudAt||now-state.hudAt>250){updateHUD();state.hudAt=now;}
+    requestAnimationFrame(frame);
+  }
+  function addText(root,message,kind){
+    const p=document.createElement("p");p.textContent=message;if(kind)p.className=kind;root.appendChild(p);return p;
+  }
+  function addButton(root,label,onClick,secondary){
+    const b=document.createElement("button");b.type="button";b.className="action"+(secondary?" secondary":"");b.textContent=label;b.addEventListener("click",onClick);root.appendChild(b);return b;
+  }
+  function addRow(root,left,right){
+    const d=document.createElement("div"),a=document.createElement("span"),b=document.createElement("strong");
+    d.className="line";a.textContent=left;b.textContent=right;d.append(a,b);root.appendChild(d);
+  }
+  function openPanel(title,render){
+    state.panel=title;$("panelTitle").textContent=title;
+    $("panelBody").replaceChildren();$("panelActions").replaceChildren();
+    render($("panelBody"),$("panelActions"));$("shade").hidden=false;
+    $("sheet").querySelector("button")?.focus();
+  }
+  function closePanel(){state.panel="";$("shade").hidden=true;$("newRun").focus();}
+  function pickLevel(){
+    openPanel("เลือกแผนที่",function(root,actions){
+      addText(root,"เลือกหนึ่งในสามพื้นที่ แต่ละแผนที่มีเหรียญและเส้นทางแตกต่างกัน");
+      LEVELS.forEach(function(level,i){addButton(root,level.name,function(){closePanel();reset(i);},false);});
+      addButton(actions,"ยกเลิก",closePanel,true);
+    });
+  }
+  function showRanking(){
+    openPanel("🏆 ตารางอันดับ (จำลอง)",function(root,actions){
+      addText(root,"ยังไม่มีผู้เล่นออนไลน์และไม่มีฐานข้อมูลคะแนนจริง ตัวเลขด้านล่างมีไว้ทดสอบหน้าจอเท่านั้น","small");
+      addRow(root,"อันดับ 1 • ผู้เล่นตัวอย่าง A","1,250");
+      addRow(root,"อันดับ 2 • ผู้เล่นตัวอย่าง B","990");
+      addRow(root,"คุณ (คะแนนในเครื่อง)",state.score.toLocaleString("th-TH"));
+      addText(root,"Free รีเซ็ตวันอาทิตย์ 00:00 น. • VIP รีเซ็ตทุกวัน 00:00 น. (กติกาที่จะพัฒนา)","small");
+      addButton(actions,"ปิด",closePanel,true);
+    });
+  }
+  function showShop(){
+    openPanel("🛍 ร้านค้าตัวอย่าง",function(root,actions){
+      addText(root,"เหรียญในเครื่อง "+state.wallet+" • ทดลองซื้อได้ แต่ไม่มีเงินจริงหรือระบบ Payment","small");
+      addRow(root,"หมวกนักล่า (ตกแต่ง)","10 เหรียญ");
+      const hat=addButton(actions,state.cosmetic?"มีแล้ว":"ซื้อหมวก",function(){
+        if(state.cosmetic)return;
+        if(state.wallet<10){notify("เหรียญไม่พอ");return;}
+        state.wallet-=10;state.cosmetic=true;updateHUD();showShop();
+      });hat.disabled=state.cosmetic;
+      addRow(root,"VIP Pass (ตัวอย่างราคาเดิม)","50 บาท/30 วัน");
+      addText(root,"ระบบ VIP และ Slip2Go ไม่เชื่อมต่อในต้นแบบนี้ ไม่มีปุ่มจ่ายเงินจริง","small");
+      addButton(actions,"ปิด",closePanel,true);
+    });
+  }
+  $("collect").addEventListener("click",collect);
+  $("newRun").addEventListener("click",function(){reset(state.level);});
+  $("levels").addEventListener("click",pickLevel);
+  $("ranking").addEventListener("click",showRanking);
+  $("shop").addEventListener("click",showShop);
+  $("shade").addEventListener("click",function(e){if(e.target===$("shade"))closePanel();});
+  document.addEventListener("keydown",function(e){
+    const k=e.key.length===1?e.key.toLowerCase():e.key;
+    if(["ArrowLeft","ArrowRight","ArrowUp","ArrowDown","w","a","s","d"," "].includes(k)){e.preventDefault();}
+    if(k===" "&&!e.repeat&&!state.panel)collect();
+    state.held.add(k);if(k==="Escape"&&state.panel)closePanel();
+  });
+  document.addEventListener("keyup",function(e){state.held.delete(e.key.length===1?e.key.toLowerCase():e.key);});
+  window.addEventListener("blur",function(){state.held.clear();state.joy={x:0,y:0};$("knob").style.transform="translate(0,0)";});
+  const pad=$("pad");let activePointer=null;
+  function setJoystick(e){
+    const rect=pad.getBoundingClientRect(),midX=rect.left+rect.width/2,midY=rect.top+rect.height/2;
+    const dx=e.clientX-midX,dy=e.clientY-midY,lim=rect.width*.32,dist=Math.hypot(dx,dy);
+    const ratio=dist>lim?lim/dist:1,x=dx*ratio,y=dy*ratio;
+    state.joy={x:x/lim,y:y/lim};$("knob").style.transform="translate("+x+"px,"+y+"px)";
+  }
+  pad.addEventListener("pointerdown",function(e){if(activePointer!==null)return;activePointer=e.pointerId;pad.setPointerCapture(e.pointerId);setJoystick(e);e.preventDefault();});
+  pad.addEventListener("pointermove",function(e){if(activePointer===e.pointerId)setJoystick(e);});
+  function releaseJoystick(e){if(activePointer===e.pointerId){activePointer=null;state.joy={x:0,y:0};$("knob").style.transform="translate(0,0)";}}
+  pad.addEventListener("pointerup",releaseJoystick);pad.addEventListener("pointercancel",releaseJoystick);pad.addEventListener("lostpointercapture",releaseJoystick);
+  buildWorld(0);state.last=performance.now();requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
