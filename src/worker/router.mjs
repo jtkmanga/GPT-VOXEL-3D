@@ -1,4 +1,4 @@
-import { corsHeaders, jsonResponse, handleVerifySlip, handleGetEntitlements, handlePaymentWebhook } from './http.mjs';
+import { corsHeaders, jsonResponse, handlePaymentQr, handleVerifySlip, handleGetEntitlements, handlePaymentWebhook } from './http.mjs';
 import { normalizeZoneId } from './spatial.mjs';
 import { stagingContext, stagingError, stagingAsset } from './staging-boundary.mjs';
 import { handle2c2pSandbox } from './twoc2p-sandbox.mjs';
@@ -87,6 +87,13 @@ const worker = {
         },405);
 
       return handleGetEntitlements(request,env);
+    }
+
+    if (url.pathname==='/payment-qr') {
+      if (staging.enabled) return Response.json({ok:false,error:'Real payments disabled in staging'},{status:503});
+      if (request.method==='OPTIONS') return new Response(null,{status:204,headers:corsHeaders(request,env)});
+      if (request.method!=='POST') return jsonResponse(request,env,{ok:false,error:'Method not allowed'},405);
+      return handlePaymentQr(request,env);
     }
 
     if (url.pathname==='/verify-slip') {
