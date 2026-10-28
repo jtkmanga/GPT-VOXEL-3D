@@ -12,7 +12,7 @@ async function admitVip(h,uid){
   const now=h.now();
   const event={eventId:'vip-scale:'+uid,subscriptionId:'vip-scale-sub:'+uid,uid,
     version:1,status:'active',product:'vip1',amount:50,currency:'THB',
-    periodStart:now-1000,periodEnd:now+30*86400_000};
+    periodStart:now-1000,periodEnd:now-1000+30*86400_000};
   const body=JSON.stringify(event),timestamp=String(Math.floor(now/1000));
   const signature=createHmac('sha256',SECRET).update(timestamp+'.'+body).digest('hex');
   const result=await h.request('/payments/webhook',{method:'POST',body,headers:{
