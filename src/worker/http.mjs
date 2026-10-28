@@ -234,7 +234,7 @@ export async function handlePaymentQr(request, env) {
     return jsonResponse(request,env,{
       ok:true,item,price,currency:'THB',
       qrImageUrl:cacheClaim.qrImageUrl,
-      accountName:cacheClaim.accountName||receiver.accountName
+      merchantName:'Lucky Game'
     });
   }
   if(cacheClaim.state==='busy') {
@@ -295,7 +295,7 @@ export async function handlePaymentQr(request, env) {
   }
   return jsonResponse(request,env,{
     ok:true,item,price,currency:'THB',qrImageUrl:qr.href,
-    accountName
+    merchantName:'Lucky Game'
   });
 }
 
