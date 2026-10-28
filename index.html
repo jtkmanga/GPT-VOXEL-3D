@@ -170,7 +170,7 @@
     </style>
 </head>
 <body class="relative">
-<div id="staging-status" role="status" style="position:fixed;top:0;left:0;right:0;z-index:10000;background:#5b21b6;color:white;text-align:center;font:12px sans-serif;padding:3px">STAGING GAMEPLAY · REAL PAYMENTS DISABLED</div>
+<div id="staging-status" role="status" style="position:fixed;top:0;left:0;right:0;z-index:10000;background:#5b21b6;color:white;text-align:center;font:12px sans-serif;padding:3px">STAGING GAMEPLAY · SLIP2GO CANARY (OWNER ONLY)</div>
 
     <!-- Canvas for Three.js Rendering -->
     <canvas id="game-canvas"></canvas>
@@ -411,7 +411,7 @@
             <div class="flex items-center justify-between border-b border-slate-800 pb-2 mb-3">
                 <div class="flex items-center gap-2 text-amber-400 font-bold text-base">
                     <i class="fa-solid fa-qrcode"></i>
-                    <span>ระบบทดลอง · ปิดการชำระเงินจริง</span>
+                    <span>ชำระเงินผ่าน PromptPay</span>
                 </div>
                 <button onclick="closePaymentModal()" class="text-slate-400 hover:text-white p-1 rounded-lg bg-slate-800/80 w-7 h-7 flex items-center justify-center active:scale-90 transition">
                     <i class="fa-solid fa-xmark text-base"></i>
@@ -508,7 +508,8 @@
 
     <script>const STAGING_PUBLIC_CONFIG = Object.freeze({authMode:"popup"});
 const STAGING_CLIENT_ENABLED = window.location.origin === "https://jtkmanga.github.io";
-const LUCKY_SLIP2GO_UI_ENABLED = false;
+const LUCKY_SLIP2GO_UI_ENABLED = true;
+const LUCKY_SLIP2GO_CANARY_OWNER_EMAIL = "jtkmanga@gmail.com";
 const movement = (() => {
 // Shared deterministic prediction kernel. The Worker selects elapsed time,
 // speed entitlement and world geometry; packets contain intent only.
@@ -3012,6 +3013,16 @@ firebase.appCheck().activate(new firebase.appCheck.ReCaptchaEnterpriseProvider("
             };
         }
 
+        function secureSlip2GoCanaryOwner(user) {
+            // UI convenience only; the Worker separately verifies Firebase
+            // identity and restricts both QR and slip processing by owner.
+            return Boolean(typeof LUCKY_SLIP2GO_UI_ENABLED !== 'undefined' &&
+                LUCKY_SLIP2GO_UI_ENABLED &&
+                typeof LUCKY_SLIP2GO_CANARY_OWNER_EMAIL === 'string' &&
+                String(user?.email || '').trim().toLowerCase() ===
+                    LUCKY_SLIP2GO_CANARY_OWNER_EMAIL.toLowerCase());
+        }
+
         async function secureOpenSlip2GoPayment(type, title) {
             const user = auth.currentUser;
             const cfg = SECURE_PAYMENT_ITEMS[type];
@@ -3021,6 +3032,10 @@ firebase.appCheck().activate(new firebase.appCheck.ReCaptchaEnterpriseProvider("
             }
             if (!cfg) {
                 alert('รายการสินค้าไม่ถูกต้อง');
+                return false;
+            }
+            if (!secureSlip2GoCanaryOwner(user)) {
+                alert('Slip2Go อยู่ระหว่างทดสอบเฉพาะบัญชี Admin เท่านั้น');
                 return false;
             }
 
@@ -3088,6 +3103,10 @@ firebase.appCheck().activate(new firebase.appCheck.ReCaptchaEnterpriseProvider("
             if (!user) {
                 alert('กรุณาล็อกอินใหม่ก่อนตรวจสอบสลิป');
                 return;
+            }
+            if (!secureSlip2GoCanaryOwner(user)) {
+                alert('Slip2Go อยู่ระหว่างทดสอบเฉพาะบัญชี Admin เท่านั้น');
+                return false;
             }
 
             const item = state.pendingPayment?.type;
