@@ -65,10 +65,10 @@ test('VIP QR uses authoritative 50 THB server price and Slip2Go secret only on W
   const result=await response.json();
   assert.deepEqual({
     ok:result.ok,item:result.item,price:result.price,currency:result.currency,
-    accountName:result.accountName,qrImageUrl:result.qrImageUrl
+    merchantName:result.merchantName,qrImageUrl:result.qrImageUrl
   },{
     ok:true,item:'vip1',price:50,currency:'THB',
-    accountName:'Synthetic Receiver',qrImageUrl:'https://cdn.synthetic.invalid/promptpay-qr.jpg'
+    merchantName:'Lucky Game',qrImageUrl:'https://cdn.synthetic.invalid/promptpay-qr.jpg'
   });
   assert.equal(h.records.fetches.filter(record=>record.url===SLIP_QR_URL).length,1);
 });
@@ -105,7 +105,8 @@ test('Slip2Go QR accepts provider display-name normalization but still pins amou
   const result=await response.json();
   assert.equal(result.ok,true);
   assert.equal(result.price,50);
-  assert.equal(result.accountName,'Normalized Receiver Name');
+  assert.equal(result.merchantName,'Lucky Game');
+  assert.equal(Object.hasOwn(result,'accountName'),false,'provider personal name must not be returned to browser');
 });
 
 test('Slip2Go canary allows only the configured owner account',async t=>{
