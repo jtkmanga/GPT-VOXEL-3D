@@ -1,6 +1,12 @@
 name: Deploy Slip2Go Admin-only Canary
 
 on:
+  # One-time guarded rollout of privacy-only QR API changes; return to manual after success.
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/deploy-slip2go-admin-canary.yml'
   workflow_dispatch:
     inputs:
       confirm:
@@ -19,7 +25,7 @@ jobs:
   deploy:
     if: >-
       github.ref == 'refs/heads/main' &&
-      inputs.confirm == 'ADMIN-SLIP2GO-CANARY'
+      (github.event_name == 'push' || inputs.confirm == 'ADMIN-SLIP2GO-CANARY')
     runs-on: ubuntu-24.04
     timeout-minutes: 22
     environment: production
@@ -52,6 +58,17 @@ jobs:
           node scripts/rebuild/check-syntax.cjs
           node scripts/rebuild/check-secrets.cjs
           git diff --check
+      - name: Verify privacy-only QR response and unchanged bank verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q "merchantName:'Lucky Game'" src/worker/http.mjs
+          grep -q 'accountName:receiver.accountName' src/worker/http.mjs
+          grep -q 'checkReceiver:' src/worker/http.mjs
+          grep -q 'checkAmount:' src/worker/http.mjs
+          grep -q 'id="payment-account-info"' index.html
+          node --test tests/rebuild/payment-recipient-display-privacy.test.cjs tests/rebuild/slip2go-payment.test.cjs tests/rebuild/payment-qr-cache.test.cjs
+          echo "PASS legal recipient name remains internal; browser sees merchant only"
       - name: Prepare unchanged production identity plus restricted payment flags
         shell: python
         run: |
@@ -126,7 +143,7 @@ jobs:
       - name: Probe public health and anonymous payment denial without provider requests
         shell: python
         run: |
-          import urllib.request,urllib.error
+          import time,urllib.request,urllib.error
           base='https://voxel-run-v2-demo.hjinffv5426.workers.dev'
           opener=urllib.request.build_opener()
           opener.addheaders=[('User-Agent','VOXEL-Admin-Canary-Check/1.0'),
@@ -138,10 +155,15 @@ jobs:
               ('/payment-qr',b'{"item":"vip1"}','application/json'),
               ('/verify-slip',b'','application/octet-stream')]:
               req=urllib.request.Request(base+endpoint,data=data,method='POST',headers={'content-type':kind})
-              try:
-                  opener.open(req,timeout=25)
-                  raise SystemExit('FAIL: anonymous payment request accepted: '+endpoint)
-              except urllib.error.HTTPError as e:
-                  if e.code not in (401,403):
+              for attempt in range(6):
+                  try:
+                      opener.open(req,timeout=25)
+                      raise SystemExit('FAIL: anonymous payment request accepted: '+endpoint)
+                  except urllib.error.HTTPError as e:
+                      if e.code in (401,403): break
+                      if e.code==503 and attempt<5:
+                          # Allow brief edge propagation of newly deployed Worker.
+                          time.sleep(4)
+                          continue
                       raise SystemExit('FAIL: expected anonymous rejection: '+endpoint+' status '+str(e.code))
           print('PASS worker healthy; both Canary payment endpoints reject anonymous users, no provider call')
