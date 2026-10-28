@@ -8,8 +8,8 @@ const {spawn}=require('node:child_process');
 const WebSocket=require('ws');
 const ROOT=path.resolve(__dirname,'../..');
 const users=Number(process.env.LOCAL_BOT_COUNT || 250);
-if(!Number.isSafeInteger(users)||users<1||users>1000)
-  throw Error('Local smoke permits 1..1000 actual loopback sockets');
+if(!Number.isSafeInteger(users)||users<1||users>10000)
+  throw Error('Local smoke permits 1..10000 actual loopback sockets');
 const folder=path.join(ROOT,'work','load');
 fs.mkdirSync(folder,{recursive:true});
 const tokenFile=path.join(folder,'loopback-v2-tokens.json');
@@ -41,8 +41,8 @@ server.on('listening',()=>{
   fs.writeFileSync(tokenFile,JSON.stringify({users:fakeUsers}));
   const port=server.address().port;
   const env={...process.env,
-    TARGET:'loopback', BOT_COUNT:String(users),DURATION_SEC:'10',MOVE_HZ:'2',
-    CONNECT_RATE_PER_SEC:'100',MIN_ACK_RATE:'0.95',MIN_WELCOME_RATE:'0.995',
+    TARGET:'loopback', BOT_COUNT:String(users),DURATION_SEC:'10',MOVE_HZ:users>=5000?'1':'2',
+    CONNECT_RATE_PER_SEC:users>=5000?'500':'100',MIN_ACK_RATE:'0.95',MIN_WELCOME_RATE:'0.995',
     WS_URL:'ws://127.0.0.1:'+port+'/play',ORIGIN:'https://loopback.invalid',
     TOKEN_FILE:'work/load/loopback-v2-tokens.json',
     LOAD_REPORT_FILE:'work/load/loopback-v2-report.json',
@@ -51,7 +51,7 @@ server.on('listening',()=>{
   const child=spawn(process.execPath,[path.join(ROOT,'scripts/load/live-10k-v2.cjs')],{
     cwd:ROOT,env,stdio:'inherit'
   });
-  const stop=setTimeout(()=>child.kill('SIGTERM'),90000);
+  const stop=setTimeout(()=>child.kill('SIGTERM'),200000);
   child.on('error',error=>{console.error(error);process.exitCode=1;});
   child.on('exit',(code,signal)=>{
     clearTimeout(stop);
