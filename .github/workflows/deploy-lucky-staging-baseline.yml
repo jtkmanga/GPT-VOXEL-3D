@@ -1,12 +1,6 @@
 name: Deploy Lucky Game From Staging Baseline
 
 on:
-  # One-time guarded deployment of restored payment handlers with all payments OFF.
-  push:
-    branches:
-      - main
-    paths:
-      - '.github/workflows/deploy-lucky-staging-baseline.yml'
   workflow_dispatch:
     inputs:
       confirm:
@@ -25,7 +19,7 @@ jobs:
   deploy:
     if: >-
       github.ref == 'refs/heads/main' &&
-      (github.event_name == 'push' || inputs.confirm == 'RESTORE-STAGING-BASELINE')
+      inputs.confirm == 'RESTORE-STAGING-BASELINE'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     environment: production
