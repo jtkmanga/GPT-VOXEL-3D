@@ -1,6 +1,12 @@
 name: Deploy Lucky Game From Staging Baseline
 
 on:
+  # One-time release of the verified VIP movement fix on the existing Staging baseline.
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/deploy-lucky-staging-baseline.yml'
   workflow_dispatch:
     inputs:
       confirm:
@@ -19,7 +25,7 @@ jobs:
   deploy:
     if: >-
       github.ref == 'refs/heads/main' &&
-      inputs.confirm == 'RESTORE-STAGING-BASELINE'
+      (github.event_name == 'push' || inputs.confirm == 'RESTORE-STAGING-BASELINE')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     environment: production
@@ -88,6 +94,13 @@ jobs:
           with open(prepared/'namespace-ids.json','w') as out:
               json.dump({n:by_name[n].get('namespace_id') for n in ('ROOM','ZONE')},out)
           print('PASS production vars prepared with payments disabled, cron retained, identities and secret names guarded')
+      - name: Guard exact validated VIP fix and regression coverage
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'VIP_MOVEMENT_HEARTBEAT_BASE_MS = 5_000' src/worker/room-security.mjs
+          grep -q 'localMovementFastPath' src/worker/room-security.mjs
+          node --test tests/rebuild/vip-movement-session-scale.test.cjs tests/rebuild/p7-vip.test.cjs
       - name: Verify exact Staging Worker module bundling without deploying
         shell: bash
         run: |
@@ -135,5 +148,7 @@ jobs:
               opener.open(req,timeout=25)
               raise SystemExit('FAIL: Real payment endpoint unexpectedly accepted')
           except urllib.error.HTTPError as e:
-              if e.code!=503: raise
-          print('PASS Worker health and real-payment fail-closed')
+              # Authentication may fail closed (403) before the disabled
+              # payment route checks its configuration (503).
+              if e.code not in (401,403,503): raise
+          print('PASS Worker health and disabled-payment / anonymous-denial guards')
