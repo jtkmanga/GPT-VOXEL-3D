@@ -256,7 +256,7 @@
                 const result = await response.json().catch(() => ({}));
                 if (!response.ok || !result?.ok || result.item !== type ||
                     !Number.isSafeInteger(result.price) || result.price < 1 ||
-                    typeof result.qrImageUrl !== 'string' || typeof result.accountName !== 'string') {
+                    typeof result.qrImageUrl !== 'string' || result.merchantName !== 'Lucky Game') {
                     throw new Error(result?.error || 'ไม่สามารถสร้าง PromptPay QR ได้');
                 }
                 const qr = new URL(result.qrImageUrl);
@@ -269,7 +269,7 @@
                 document.getElementById('pay-item-price').innerText =
                     result.price + (type === 'vip1' ? ' บาท / 30 วัน' : ' บาท');
                 if (qrImage) qrImage.src = qr.href;
-                if (accountInfo) accountInfo.innerText = 'ชื่อบัญชีผู้รับ: ' + result.accountName;
+                if (accountInfo) accountInfo.innerText = 'ร้านค้า: Lucky Game — ตรวจสอบชื่อผู้รับจริงในแอปธนาคารก่อนโอน';
                 if (status) status.innerText = 'สแกน QR ชำระเงิน แล้วอัปโหลดสลิปเพื่อตรวจสอบอัตโนมัติ';
                 if (verifyButton) verifyButton.disabled = false;
                 return true;
