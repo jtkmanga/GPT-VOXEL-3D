@@ -1,0 +1,140 @@
+name: Deploy Lucky Game From Staging Baseline
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/deploy-lucky-staging-baseline.yml'
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type RESTORE-STAGING-BASELINE'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-voxel-run-v2-demo-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || inputs.confirm == 'RESTORE-STAGING-BASELINE')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci
+      - name: Guard complete Staging runtime and fail-closed production payments
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/main"
+          grep -q '"name": "voxel-run-v2-demo"' wrangler.jsonc
+          grep -q '"PAYMENT_MODE": "disabled"' wrangler.jsonc
+          grep -q '"FIREBASE_PROJECT_ID": "lucky-game-6936b"' wrangler.jsonc
+          test ! -e src/client/production-staging-gameplay.js
+          test ! -e .github/workflows/deploy-slip2go-production.yml
+          grep -q 'STAGING_CLIENT_ENABLED' index.html
+          grep -q 'stagingGetAppCheckToken' index.html
+          grep -q 'STAGING GAMEPLAY · REAL PAYMENTS DISABLED' index.html
+          node --check scripts/rebuild/build-lucky-from-staging.cjs
+          node scripts/rebuild/check-syntax.cjs
+          git diff --check
+      - name: Validate no secret/data loss and freeze public-origin identity
+        shell: python
+        run: |
+          import os,json,urllib.request
+          token=os.environ.get('CLOUDFLARE_API_TOKEN','')
+          account=os.environ.get('CLOUDFLARE_ACCOUNT_ID','')
+          if not token or not account: raise SystemExit('Production deploy credentials unavailable')
+          url=f'https://api.cloudflare.com/client/v4/accounts/{account}/workers/scripts/voxel-run-v2-demo/settings'
+          req=urllib.request.Request(url,headers={'Authorization':'Bearer '+token,'Accept':'application/json'})
+          with urllib.request.urlopen(req,timeout=30) as r: data=json.load(r)
+          bindings=data.get('result',{}).get('bindings',[])
+          by_name={b.get('name'):b for b in bindings}
+          for name in ('SLIP2GO_API_SECRET','PAYMENT_RECEIVER_ACCOUNT'):
+              if by_name.get(name,{}).get('type')!='secret_text':
+                  raise SystemExit('Protected payment rollback secret is absent')
+          for name,clazz in (('ROOM','GameRoom'),('ZONE','ZoneRoom')):
+              if by_name.get(name,{}).get('class_name')!=clazz:
+                  raise SystemExit('Durable Object binding mismatch')
+          if by_name.get('ALLOWED_ORIGIN',{}).get('text')!='https://jtkmanga.github.io':
+              raise SystemExit('Production origin mismatch')
+          if by_name.get('FIREBASE_PROJECT_ID',{}).get('text')!='lucky-game-6936b':
+              raise SystemExit('Production Firebase project mismatch')
+          import pathlib
+          prepared=pathlib.Path('work/lucky-stage-deploy')
+          prepared.mkdir(parents=True,exist_ok=True)
+          cfg=json.load(open('wrangler.jsonc'))
+          cfg['main']='../../worker.js'
+          cfg['vars']={b['name']:b['text'] for b in bindings if b.get('type')=='plain_text'}
+          cfg['vars']['PAYMENT_MODE']='disabled'
+          cfg['vars']['PAYMENT_ROLLOUT']='disabled'
+          cfg['triggers']={'crons':['0 17 * * *']}
+          if any(k in cfg['vars'] for k in ('STAGING_WORKER_NAME','STAGING_WORKER_ORIGIN','APP_ENV')):
+              raise SystemExit('Staging environment selectors must not leak into Lucky Worker')
+          with open(prepared/'wrangler.jsonc','w') as out: json.dump(cfg,out)
+          with open(prepared/'namespace-ids.json','w') as out:
+              json.dump({n:by_name[n].get('namespace_id') for n in ('ROOM','ZONE')},out)
+          print('PASS production vars prepared with payments disabled, cron retained, identities and secret names guarded')
+      - name: Verify exact Staging Worker module bundling without deploying
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --dry-run --config work/lucky-stage-deploy/wrangler.jsonc --outdir work/lucky-staging-dry-run
+          test -d work/lucky-staging-dry-run
+      - name: Deploy Staging source to existing Lucky Worker, preserving secrets and variables
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --config work/lucky-stage-deploy/wrangler.jsonc
+      - name: Verify production payment is off and rollback secrets survived
+        shell: python
+        run: |
+          import os,json,urllib.request
+          token=os.environ['CLOUDFLARE_API_TOKEN']
+          account=os.environ['CLOUDFLARE_ACCOUNT_ID']
+          url=f'https://api.cloudflare.com/client/v4/accounts/{account}/workers/scripts/voxel-run-v2-demo/settings'
+          req=urllib.request.Request(url,headers={'Authorization':'Bearer '+token,'Accept':'application/json'})
+          with urllib.request.urlopen(req,timeout=30) as r: data=json.load(r)
+          bindings={b.get('name'):b for b in data.get('result',{}).get('bindings',[])}
+          with open('work/lucky-stage-deploy/namespace-ids.json') as f: old_ids=json.load(f)
+          for name in ('ROOM','ZONE'):
+              if not old_ids.get(name) or old_ids[name]!=bindings.get(name,{}).get('namespace_id'):
+                  raise SystemExit('FAIL: Durable Object namespace changed')
+          if bindings.get('PAYMENT_MODE',{}).get('text')!='disabled':
+              raise SystemExit('FAIL: Payment mode was not disabled')
+          if not ({'SLIP2GO_API_SECRET','PAYMENT_RECEIVER_ACCOUNT'} <= {n for n,b in bindings.items() if b.get('type')=='secret_text'}):
+              raise SystemExit('FAIL: Rollback secret bindings missing')
+          print('PASS payments disabled and protected secrets preserved')
+      - name: Verify read-only production HTTP and disabled live Slip2Go
+        shell: python
+        run: |
+          import urllib.request,urllib.error
+          origin='https://voxel-run-v2-demo.hjinffv5426.workers.dev'
+          with urllib.request.urlopen(origin+'/health',timeout=25) as r:
+              assert r.status==200 and r.read().decode().strip()=='VOXEL RUN v4 online'
+          req=urllib.request.Request(origin+'/verify-slip',data=b'',method='POST',
+              headers={'content-type':'application/octet-stream'})
+          try:
+              urllib.request.urlopen(req,timeout=25)
+              raise SystemExit('FAIL: Real payment endpoint unexpectedly accepted')
+          except urllib.error.HTTPError as e:
+              if e.code!=503: raise
+          print('PASS Worker health and real-payment fail-closed')

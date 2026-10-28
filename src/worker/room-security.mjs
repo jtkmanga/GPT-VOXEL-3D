@@ -7,6 +7,37 @@ const queues = new WeakMap();
 const pendingFrames = new WeakMap();
 const owned = result => result === true || result?.ok === true;
 
+// Zone movement is already fenced by a server-issued session generation,
+// revocation delivery and the local 120-second lease. Calling the single
+// coordinator twice for every 5 Hz movement packet turns that coordinator into
+// a global bottleneck. Keep strict coordinator checks for economy/handoff
+// traffic, but renew ordinary movement in a staggered bounded heartbeat.
+const MOVEMENT_SESSION_HEARTBEAT_BASE_MS = 30_000;
+const MOVEMENT_SESSION_HEARTBEAT_JITTER_MS = 15_000;
+
+function movementHeartbeatDelay(player) {
+  const value=String(player?.sessionId||player?.uid||'');
+  let hash=2166136261;
+  for (let index=0; index<value.length; index++)
+    hash=Math.imul(hash^value.charCodeAt(index),16777619)>>>0;
+  return MOVEMENT_SESSION_HEARTBEAT_BASE_MS +
+    (hash % (MOVEMENT_SESSION_HEARTBEAT_JITTER_MS + 1));
+}
+
+function zoneMovementFastPath(room, packet, provisional) {
+  return !provisional && packet?.type===WS_MESSAGE.MOVE &&
+    typeof room?.sessionOwner==='function' &&
+    String(room.sessionOwner()).startsWith('zone:');
+}
+
+function movementHeartbeatDue(player, now) {
+  if (!Number.isFinite(Number(player?.nextSessionCheckpointAt))) {
+    player.nextSessionCheckpointAt=now+movementHeartbeatDelay(player);
+    return false;
+  }
+  return now>=Number(player.nextSessionCheckpointAt);
+}
+
 export function sessionMetadata(player) {
   return {
     sessionId: player.sessionId,
@@ -67,11 +98,12 @@ async function handleFrame(room, ws, raw, protocol, dispatch) {
     ws.close(1008, 'Sign in required'); return;
   }
   const provisional = Boolean(player.handoffResume);
+  const movementFastPath = zoneMovementFastPath(room, packet, provisional);
   if (provisional) {
     if (packet.type !== WS_MESSAGE.HANDOFF_RESUME && packet.type !== WS_MESSAGE.HANDOFF_CANCEL) {
       ws.close(1008, 'Handoff acknowledgement required'); return;
     }
-  } else if (!owned(await room.sessionCall('validate', {
+  } else if (!movementFastPath && !owned(await room.sessionCall('validate', {
     uid: player.uid, sessionId: player.sessionId, owner: room.sessionOwner()
   }))) {
     ws.close(1008, 'Session no longer owned'); return;
@@ -117,6 +149,11 @@ async function handleFrame(room, ws, raw, protocol, dispatch) {
     ws.serializeAttachment(player);
   }
   if (ws.readyState !== 1 || !player?.uid || player.revoked || player.handoffResume) return;
+  const checkpointNow=Date.now();
+  if (movementFastPath && !movementHeartbeatDue(player,checkpointNow)) {
+    ws.serializeAttachment(player);
+    return;
+  }
   const checkpointUid = player.uid, checkpointSessionId = player.sessionId;
   const checkpoint = await checkpointPlayer(room, ws, player);
   // Border projection and revocation may update the attachment during this
@@ -127,6 +164,8 @@ async function handleFrame(room, ws, raw, protocol, dispatch) {
   if (!owned(checkpoint)) { ws.close(1008, 'Session no longer owned'); return; }
   if (Number.isFinite(checkpoint.resumeExpiresAt)) player.resumeExpiresAt = checkpoint.resumeExpiresAt;
   const now = Date.now();
+  if (String(room.sessionOwner()).startsWith('zone:'))
+    player.nextSessionCheckpointAt=now+movementHeartbeatDelay(player);
   if (!Number.isFinite(player.sessionNoticeAt)) player.sessionNoticeAt = now;
   if (now - player.sessionNoticeAt >= 30_000) {
     player.sessionNoticeAt = now;

@@ -1,5 +1,45 @@
 # S001: public repository credential audit
 
+## D085 reviewed continuous-Zone handoff increment — 2026-10-27
+
+Reviewed the bounded committed-history increment from the prior Gate 7 exclusion
+baseline 865ec976d6f79d28f508843cfe8247e09b3ddbaf through
+1da57429880bbfd80e1b31f5ac52098433bd494c. The incremental scanner reported no
+coverage gaps and exactly three credential-assignment candidates, all at the
+same existing synthetic Staging Zone transition fixture location in
+`tests/rebuild/staging-zone-transition-server.test.cjs`. That fixture contains
+only synthetic/public test configuration shapes and intentionally undefined
+secret placeholders so isolated tests can verify fail-closed behavior. Rewriting
+the fixture to add the Production continuous-handoff regression made those
+existing synthetic assignments newly reachable to the committed-history scan.
+
+No Firebase admin credential, payment/provider secret, Cloudflare token, GitHub
+token, bank/account credential or other usable private credential was introduced
+or used. The continuous handoff feature itself adds no credential material and
+does not change payment, Admin, Slip2Go, pricing, receiver or secret bindings.
+
+Advance only the Gate 7 exclusion baseline to this reviewed source. Scanner
+patterns, coverage-gap checks, current-file checks and fail-on-new-finding
+behavior remain unchanged.
+
+## D081 reviewed Admin payment-history increment — 2026-10-27
+
+Reviewed the bounded committed-history increment from the prior Gate 7 exclusion
+baseline 81b3f0a60aea02835daac19221569d1123ee46b9 through
+865ec976d6f79d28f508843cfe8247e09b3ddbaf. The scanner reported no coverage
+gaps and exactly two credential-assignment candidates, both at the same existing
+synthetic invalid-auth fixture location in `tests/rebuild/p0-runtime.test.cjs`.
+That test value predates this feature; rewriting the P0 blob to add payment-history
+assertions made the unchanged synthetic fixture newly reachable to the incremental
+scanner. It is not a provider, Firebase admin, GitHub, payment, Cloudflare or
+account credential and was not used against any service.
+
+The payment-history feature stores no credentials, slip images or bank account
+numbers. Newly added history tests use only synthetic identifiers and example
+domains. No secret value is reproduced in this review. Advance only the Gate 7
+exclusion baseline to this reviewed source; scanner patterns, gap detection and
+fail-on-new-finding behavior remain unchanged.
+
 ## D072 reviewed incremental history — 2026-10-23
 
 Reviewed 8a333eb..1ace8fd: 18 development commits covering staging-only

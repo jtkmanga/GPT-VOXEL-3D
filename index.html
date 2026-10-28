@@ -22,7 +22,7 @@
     <!-- Firebase SDKs (v10.8.0 - Compat Version for Web) -->
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-check-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-check-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
 
     <style>
@@ -170,6 +170,7 @@
     </style>
 </head>
 <body class="relative">
+<div id="staging-status" role="status" style="position:fixed;top:0;left:0;right:0;z-index:10000;background:#5b21b6;color:white;text-align:center;font:12px sans-serif;padding:3px">STAGING GAMEPLAY · REAL PAYMENTS DISABLED</div>
 
     <!-- Canvas for Three.js Rendering -->
     <canvas id="game-canvas"></canvas>
@@ -410,7 +411,7 @@
             <div class="flex items-center justify-between border-b border-slate-800 pb-2 mb-3">
                 <div class="flex items-center gap-2 text-amber-400 font-bold text-base">
                     <i class="fa-solid fa-qrcode"></i>
-                    <span>ชำระเงินผ่าน PromptPay</span>
+                    <span>ระบบทดลอง · ปิดการชำระเงินจริง</span>
                 </div>
                 <button onclick="closePaymentModal()" class="text-slate-400 hover:text-white p-1 rounded-lg bg-slate-800/80 w-7 h-7 flex items-center justify-center active:scale-90 transition">
                     <i class="fa-solid fa-xmark text-base"></i>
@@ -427,11 +428,9 @@
                 <div class="bg-white p-3 rounded-xl inline-block shadow-lg mx-auto">
                     <img id="promptpay-qr-img" src="" alt="PromptPay QR" class="w-48 h-48 object-contain mx-auto">
                 </div>
-                <div id="payment-account-info" class="text-[11px] text-slate-400">
-                    ระบบจะสร้าง PromptPay QR จาก Server
-                </div>
-                <div id="payment-status" class="text-xs text-amber-300 font-semibold">
-                    พร้อมสร้างรายการชำระเงิน
+                <div class="text-[11px] text-slate-400">
+                    ชื่อบัญชี: <span class="text-white font-bold">นาย จิตกร</span><br>
+                    เลขที่อ้างอิง: <span class="text-amber-400 font-bold">004999086038089</span>
                 </div>
 
                 <!-- Slip Upload & Check Section -->
@@ -507,7 +506,9 @@
         </div>
     </div>
 
-    <script>const movement = (() => {
+    <script>const STAGING_PUBLIC_CONFIG = Object.freeze({authMode:"popup"});
+const STAGING_CLIENT_ENABLED = window.location.origin === "https://jtkmanga.github.io";
+const movement = (() => {
 // Shared deterministic prediction kernel. The Worker selects elapsed time,
 // speed entitlement and world geometry; packets contain intent only.
 const MOVEMENT = {
@@ -701,29 +702,8 @@ setTimeout(() => {
         };
 
         // Initialize Firebase
-        const PRODUCTION_APP_CHECK_SITE_KEY = "6LcKvwAuAAAAAIHinTMGJ_FBKuNr83ndyuryhEnF";
         firebase.initializeApp(firebaseConfig);
-        let productionAppCheck = null;
-        if (typeof STAGING_CLIENT_ENABLED === 'undefined' &&
-            !PRODUCTION_APP_CHECK_SITE_KEY.startsWith("__VOXEL_")) {
-            productionAppCheck = firebase.appCheck();
-            productionAppCheck.activate(
-                new firebase.appCheck.ReCaptchaEnterpriseProvider(PRODUCTION_APP_CHECK_SITE_KEY),
-                true
-            );
-        }
-        async function secureGetAppCheckToken(forceRefresh = false) {
-            if (typeof stagingGetAppCheckToken === 'function') {
-                return stagingGetAppCheckToken(forceRefresh);
-            }
-            if (!productionAppCheck) throw new Error('App Check unavailable');
-            const result = await productionAppCheck.getToken(Boolean(forceRefresh));
-            const token = result?.token;
-            if (typeof token !== 'string' || token.length < 20 || token.length > 8192) {
-                throw new Error('App Check token unavailable');
-            }
-            return token;
-        }
+firebase.appCheck().activate(new firebase.appCheck.ReCaptchaEnterpriseProvider("6LcKvwAuAAAAAIHinTMGJ_FBKuNr83ndyuryhEnF"), true);
         const auth = firebase.auth();
         const database = firebase.database();
         const googleProvider = new firebase.auth.GoogleAuthProvider();
@@ -2844,6 +2824,7 @@ setTimeout(() => {
         // border, and coin pickup uses instant visual prediction + fast server ACK.
         const SECURE_WORKER_HTTP_BASE = 'https://voxel-run-v2-demo.hjinffv5426.workers.dev';
         const SECURE_WORKER_WS_BASE = SECURE_WORKER_HTTP_BASE.replace(/^http/, 'ws') + '/play';
+        const SECURE_PAYMENT_PROMPTPAY_TARGET = '0999999999'; // MUST match PAYMENT_RECEIVER_ACCOUNT before public launch.
         const SECURE_ZONE_GRID_SIZE = 10;
         const SECURE_ZONE_SIZE = 150;
 
@@ -2947,13 +2928,13 @@ setTimeout(() => {
             }
 
             const uid = user.uid;
-            const token = await user.getIdToken(forceTokenRefresh);
+            const token = await stagingGetIdToken(user, forceTokenRefresh);
             if (auth.currentUser !== user || auth.currentUser?.uid !== uid) {
                 throw new Error('บัญชีเปลี่ยนระหว่างตรวจสอบสิทธิ์');
             }
             const headers = { 'Authorization': 'Bearer ' + token };
-            if (typeof secureGetAppCheckToken === 'function') {
-                headers['X-Firebase-AppCheck'] = await secureGetAppCheckToken(false);
+            if (typeof stagingGetAppCheckToken === 'function') {
+                headers['X-Firebase-AppCheck'] = await stagingGetAppCheckToken(false);
             }
             const response = await fetch(SECURE_WORKER_HTTP_BASE + '/entitlements', {
                 method: 'GET', headers
@@ -3019,86 +3000,34 @@ setTimeout(() => {
 
         const SECURE_PAYMENT_ITEMS = ({"speed":{"price":10,"title":"เพิ่มความเร็วเคลื่อนที่ x2 (24 ช.ม.)"},"coin":{"price":20,"title":"เหรียญตามแมพ x2 (24 ช.ม.)"},"vip1":{"price":50,"title":"สิทธิ์ VIP Server 1 (30 วัน)"}});
 
-        async function securePaymentHeaders(user, refresh = false) {
-            const token = await user.getIdToken(refresh);
-            if (auth.currentUser !== user) throw new Error('บัญชีเปลี่ยนระหว่างชำระเงิน');
-            const appCheckToken = typeof secureGetAppCheckToken === 'function'
-                ? await secureGetAppCheckToken(false) : '';
-            return {
-                'Authorization': 'Bearer ' + token,
-                ...(appCheckToken ? { 'X-Firebase-AppCheck': appCheckToken } : {})
-            };
-        }
-
-        async function secureOpenSlip2GoPayment(type, title) {
-            const user = auth.currentUser;
-            const cfg = SECURE_PAYMENT_ITEMS[type];
-            if (!state.isLoggedIn || !user) {
+        openPaymentModal = function(type, _price, title) {
+            if (!state.isLoggedIn || !auth.currentUser) {
                 alert('กรุณาล็อกอินด้วย Google Account ก่อนทำรายการ');
-                return false;
+                return;
             }
+
+            if (type === 'vip1') {
+                const livePricing = typeof liveSiteConfig !== 'undefined' ? liveSiteConfig?.pricing : null;
+                const vipPrice = Number(livePricing?.vip1) || SECURE_PAYMENT_ITEMS.vip1.price;
+                alert('การชำระเงิน VIP ยังไม่เปิดใช้งาน: ราคา ' + vipPrice + ' บาท/เดือน ต้องยืนยันผู้ให้บริการชำระเงินก่อน');
+                return;
+            }
+
+            const cfg = SECURE_PAYMENT_ITEMS[type];
             if (!cfg) {
                 alert('รายการสินค้าไม่ถูกต้อง');
-                return false;
+                return;
             }
 
-            const modal = document.getElementById('payment-modal');
-            const qrImage = document.getElementById('promptpay-qr-img');
-            const accountInfo = document.getElementById('payment-account-info');
-            const status = document.getElementById('payment-status');
-            const fileInput = document.getElementById('slip-file-input');
-            const verifyButton = document.getElementById('btn-verify-slip');
-
-            state.pendingPayment = null;
-            document.getElementById('pay-item-title').innerText = title || cfg.title;
-            document.getElementById('pay-item-price').innerText = 'กำลังโหลดราคา...';
-            if (qrImage) qrImage.src = '';
-            if (accountInfo) accountInfo.innerText = 'กำลังสร้าง PromptPay QR จาก Server...';
-            if (status) status.innerText = 'กรุณารอสักครู่';
-            if (fileInput) fileInput.value = '';
-            if (verifyButton) verifyButton.disabled = true;
-            modal.classList.remove('hidden');
-
-            try {
-                const headers = await securePaymentHeaders(user, true);
-                headers['Content-Type'] = 'application/json';
-                const response = await fetch(SECURE_WORKER_HTTP_BASE + '/payment-qr', {
-                    method: 'POST',
-                    headers,
-                    body: JSON.stringify({ item: type })
-                });
-                const result = await response.json().catch(() => ({}));
-                if (!response.ok || !result?.ok || result.item !== type ||
-                    !Number.isSafeInteger(result.price) || result.price < 1 ||
-                    typeof result.qrImageUrl !== 'string' || typeof result.accountName !== 'string') {
-                    throw new Error(result?.error || 'ไม่สามารถสร้าง PromptPay QR ได้');
-                }
-                const qr = new URL(result.qrImageUrl);
-                if (qr.protocol !== 'https:' || qr.username || qr.password) {
-                    throw new Error('QR URL ไม่ปลอดภัย');
-                }
-                if (auth.currentUser !== user) throw new Error('บัญชีเปลี่ยนระหว่างชำระเงิน');
-
-                state.pendingPayment = { type, price: result.price, title: title || cfg.title };
-                document.getElementById('pay-item-price').innerText =
-                    result.price + (type === 'vip1' ? ' บาท / 30 วัน' : ' บาท');
-                if (qrImage) qrImage.src = qr.href;
-                if (accountInfo) accountInfo.innerText = 'ชื่อบัญชีผู้รับ: ' + result.accountName;
-                if (status) status.innerText = 'สแกน QR ชำระเงิน แล้วอัปโหลดสลิปเพื่อตรวจสอบอัตโนมัติ';
-                if (verifyButton) verifyButton.disabled = false;
-                return true;
-            } catch (error) {
-                state.pendingPayment = null;
-                if (status) status.innerText = 'ระบบชำระเงินยังไม่พร้อมใช้งาน';
-                if (accountInfo) accountInfo.innerText = 'ยังไม่ได้สร้าง QR';
-                if (verifyButton) verifyButton.disabled = true;
-                alert('PromptPay: ' + (error?.message || 'ไม่สามารถสร้างรายการชำระเงินได้'));
-                return false;
-            }
-        }
-
-        openPaymentModal = function(type, _price, title) {
-            void secureOpenSlip2GoPayment(type, title);
+            const livePricing = typeof liveSiteConfig !== 'undefined' ? liveSiteConfig?.pricing : null;
+            const livePrice = Number(livePricing?.[type]);
+            const price = Number.isSafeInteger(livePrice) && livePrice > 0 ? livePrice : cfg.price;
+            state.pendingPayment = { type, price, title: title || cfg.title };
+            document.getElementById('pay-item-title').innerText = state.pendingPayment.title;
+            document.getElementById('pay-item-price').innerText = price + ' บาท';
+            document.getElementById('promptpay-qr-img').src = `https://promptpay.io/${SECURE_PAYMENT_PROMPTPAY_TARGET}/${price}.png`;
+            document.getElementById('slip-file-input').value = '';
+            document.getElementById('payment-modal').classList.remove('hidden');
         };
 
         verifyAndBuySlip = async function() {
@@ -3109,8 +3038,8 @@ setTimeout(() => {
             }
 
             const item = state.pendingPayment?.type;
-            if (!SECURE_PAYMENT_ITEMS[item]) {
-                alert('กรุณาสร้าง PromptPay QR ใหม่ก่อนตรวจสอบสลิป');
+            if (!SECURE_PAYMENT_ITEMS[item] || item === 'vip1') {
+                alert('รายการชำระเงินนี้ยังไม่เปิดใช้งานใน Security Test');
                 return;
             }
 
@@ -3122,17 +3051,17 @@ setTimeout(() => {
 
             const btnVerify = document.getElementById('btn-verify-slip');
             btnVerify.disabled = true;
-            btnVerify.innerHTML = `<i class="fa-solid fa-spinner animate-spin"></i> กำลังตรวจสอบกับ Slip2Go...`;
+            btnVerify.innerHTML = `<i class="fa-solid fa-spinner animate-spin"></i> กำลังตรวจสอบกับ Server...`;
 
             try {
-                const headers = await securePaymentHeaders(user, true);
+                const token = await stagingGetIdToken(user, true);
                 const formData = new FormData();
                 formData.append('file', fileInput.files[0]);
                 formData.append('item', item);
 
                 const response = await fetch(SECURE_WORKER_HTTP_BASE + '/verify-slip', {
                     method: 'POST',
-                    headers,
+                    headers: { 'Authorization': 'Bearer ' + token },
                     body: formData
                 });
                 const result = await response.json().catch(() => ({}));
@@ -3147,12 +3076,9 @@ setTimeout(() => {
                 secureApplyEntitlements(result.entitlements, null, null);
                 await secureLoadEntitlements().catch(() => null);
 
-                const successMessage = item === 'speed'
+                alert(item === 'speed'
                     ? 'ชำระเงินสำเร็จ! Speed ×2 ถูกบันทึกบน Server 24 ชั่วโมง'
-                    : item === 'coin'
-                        ? 'ชำระเงินสำเร็จ! Coin ×2 ถูกบันทึกบน Server 24 ชั่วโมง'
-                        : 'ชำระเงินสำเร็จ! เปิดสิทธิ์ VIP Server 30 วันแล้ว';
-                alert(successMessage);
+                    : 'ชำระเงินสำเร็จ! Coin ×2 ถูกบันทึกบน Server 24 ชั่วโมง');
 
                 closePaymentModal();
                 closeShopModal();
@@ -3458,19 +3384,28 @@ setTimeout(() => {
         }
 
         function securePredictMovement(delta) {
-            // Lost connections and provisional handoffs cannot advance a player.
-            // Camera and rendering continue while authority is being recovered.
             if (!secureGameReady || (secureHandoffInProgress &&
-                !(typeof secureContinuousHandoffPredictionAllowed === 'function' && secureContinuousHandoffPredictionAllowed())) || !secureGameSocket ||
-                secureGameSocket.readyState !== WebSocket.OPEN) return;
+                !(typeof secureContinuousHandoffPredictionAllowed === 'function' && secureContinuousHandoffPredictionAllowed())) ||
+                !secureGameSocket || secureGameSocket.readyState !== WebSocket.OPEN) return;
+            const elapsed = Math.min(.1, Math.max(0, Number.isFinite(delta) ? delta : 0));
+
+            const unsent = secureUnsentMovementFrames();
+            const pendingSeconds = unsent.reduce((total, frame) => total + frame.delta, 0);
+            if (unsent.length >= 63 || pendingSeconds + elapsed > .5 + 1e-9) {
+                if (typeof syncMyPlayerData !== 'function' || syncMyPlayerData(true) === false) return;
+            }
+
             const input = secureMovementIntent();
             input.jump = secureJumpIntent;
-            const elapsed = Math.min(.1, Math.max(0, Number.isFinite(delta) ? delta : 0));
             const options = secureMovementOptions();
             secureApplyMovementState(movement.integrateMovement(secureMovementState(), input, elapsed, options));
             securePendingFrames.push({ seq: secureInputSequence, input, delta: elapsed, speed: options.speed });
-            // A long stalled connection cannot retain unbounded prediction work.
             if (securePendingFrames.length > 256) securePendingFrames.splice(0, securePendingFrames.length - 256);
+
+            const next = secureUnsentMovementFrames();
+            if (next.length >= 48 || next.reduce((total, frame) => total + frame.delta, 0) >= .45) {
+                if (typeof syncMyPlayerData === 'function') syncMyPlayerData(true);
+            }
         }
 
         function secureResetPrediction(position, motion = {}) {
@@ -3528,9 +3463,7 @@ setTimeout(() => {
             }
             secureApplyMovementState(corrected);
             const difference = Math.hypot(before.x - corrected.x, before.y - corrected.y, before.z - corrected.z);
-            const correctionLimit = Math.max(6,
-                options.speed * movement.MOVEMENT.maxElapsedSeconds + 1);
-            if (difference <= correctionLimit) {
+            if (difference <= 4) {
                 securePredictionCorrection.x += before.x - corrected.x;
                 securePredictionCorrection.y += before.y - corrected.y;
                 securePredictionCorrection.z += before.z - corrected.z;
@@ -3716,9 +3649,7 @@ setTimeout(() => {
                 corrected = movement.integrateMovement(corrected, frame.input, frame.delta, { ...options, speed: frame.speed });
             }
             secureApplyMovementState(corrected);
-            const correctionLimit = Math.max(6,
-                options.speed * movement.MOVEMENT.maxElapsedSeconds + 1);
-            if (Math.hypot(before.x - corrected.x, before.y - corrected.y, before.z - corrected.z) <= correctionLimit) {
+            if (Math.hypot(before.x - corrected.x, before.y - corrected.y, before.z - corrected.z) <= 4) {
                 securePredictionCorrection.x += before.x - corrected.x;
                 securePredictionCorrection.y += before.y - corrected.y;
                 securePredictionCorrection.z += before.z - corrected.z;
@@ -3939,7 +3870,7 @@ setTimeout(() => {
                     return;
                 }
                 try {
-                    const token = await auth.currentUser.getIdToken(true);
+                    const token = await stagingGetIdToken(auth.currentUser, true);
                     if (ws !== secureGameSocket || ws.readyState !== WebSocket.OPEN) return;
                     if (auth.currentUser?.uid !== uid) {
                         secureCloseSocket(ws, 1008, 'Account changed');
@@ -4282,7 +4213,7 @@ setTimeout(() => {
             const connectionCurrent = () => auth.currentUser === user && auth.currentUser?.uid === uid &&
                 (state.selectedServerId || 'free1') === serverId &&
                 (connectionEpoch === null || typeof secureConnectionIsCurrent !== 'function' || secureConnectionIsCurrent(connectionEpoch));
-            const token = await user.getIdToken(forceTokenRefresh);
+            const token = await stagingGetIdToken(user, forceTokenRefresh);
             if (!connectionCurrent()) {
                 throw new Error('บัญชีเปลี่ยนระหว่างเชื่อมต่อ Game Server');
             }
@@ -5169,13 +5100,52 @@ setTimeout(() => {
         loadSavedBuffs();
         listenToVipServersRealtime();
         gameLoop();
-// Production gameplay override intentionally mirrors the proven staging runtime.
-// Auth, App Check, payment and staging-only diagnostics are excluded.
+
+// Assembled only by the staging builder. Default/P0-P8 client behavior is unchanged.
+async function stagingGetIdToken(user, refresh = false) {
+    try { return await user.getIdToken(refresh); }
+    catch (_) { throw new Error('Staging authentication token is unavailable.'); }
+}
+loginWithGoogle = async function() {
+    if (!STAGING_CLIENT_ENABLED) {
+        alert('Staging authentication is not configured for this origin.');
+        return false;
+    }
+    try {
+        if (STAGING_PUBLIC_CONFIG.authMode === 'redirect') await auth.signInWithRedirect(googleProvider);
+        else await auth.signInWithPopup(googleProvider);
+        return true;
+    } catch (_) {
+        alert('Staging Google sign-in failed. Check the authorized staging domain.');
+        return false;
+    }
+};
+logoutGoogle = async function() {
+    try { await auth.signOut(); return true; }
+    catch (_) { alert('Staging sign-out failed.'); return false; }
+};
+
+// Rebuild testing never offers a real payment or sends a slip to a payment API.
+openPaymentModal = function() {
+    alert('Staging test entitlement events only. Real payments are disabled.');
+    return false;
+};
+verifyAndBuySlip = async function() { return false; };
+grantPurchasedItem = function() { return false; };
+document.getElementById('slip-file-input').disabled = true;
+document.getElementById('btn-verify-slip').disabled = true;
+document.getElementById('promptpay-qr-img').src = '';
+const stagingAuthoritativeStart = startGame;
+startGame = async function() {
+    if (!STAGING_CLIENT_ENABLED) { alert('Staging is not configured for this origin.'); return false; }
+    return stagingAuthoritativeStart();
+};
+
 // Staging sends the exact ordered prediction intervals, rather than asking
 // authority to apply the newest input to the preceding network-time window.
 // Sequence ACKs therefore retire the same work on both sides of the socket.
 function secureUseContinuousHandoff(serverId = state.selectedServerId) {
-    return serverId === 'free1' && state.selectedServerId === 'free1';
+    return STAGING_CLIENT_ENABLED && serverId === 'free1' && state.selectedServerId === 'free1';
 }
 function stagingContinuousOperation() {
     if (!secureUseContinuousHandoff() || typeof secureActiveHandoff === 'undefined' ||
@@ -5290,9 +5260,7 @@ function stagingReconcileTransferAuthority(message) {
         corrected = movement.integrateMovement(corrected, frame.input, frame.delta, { ...options, speed: frame.speed });
     }
     secureApplyMovementState(corrected);
-    const correctionLimit = Math.max(6,
-        options.speed * movement.MOVEMENT.maxElapsedSeconds + 1);
-    if (Math.hypot(before.x - corrected.x, before.y - corrected.y, before.z - corrected.z) <= correctionLimit) {
+    if (Math.hypot(before.x - corrected.x, before.y - corrected.y, before.z - corrected.z) <= 4) {
         securePredictionCorrection.x += before.x - corrected.x;
         securePredictionCorrection.y += before.y - corrected.y;
         securePredictionCorrection.z += before.z - corrected.z;
@@ -5412,7 +5380,7 @@ function stagingUnsentMovementFrames() {
 }
 syncMyPlayerData = function(force = false) {
     const socket = stagingMovementSocket();
-    if (!state.isPlaying || !secureGameReady ||
+    if (!STAGING_CLIENT_ENABLED || !state.isPlaying || !secureGameReady ||
         !socket || socket.readyState !== WebSocket.OPEN) return false;
     const now = Date.now();
     if (!force && now - secureLastMoveSentAt < 200) return false;
@@ -5434,13 +5402,13 @@ syncMyPlayerData = function(force = false) {
 };
 function secureFlushMovementForPickup() {
     const socket = stagingMovementSocket();
-    if (!state.isPlaying || !secureGameReady ||
+    if (!STAGING_CLIENT_ENABLED || !state.isPlaying || !secureGameReady ||
         !socket || socket.readyState !== WebSocket.OPEN) return false;
     return stagingUnsentMovementFrames().length === 0 || syncMyPlayerData(true);
 }
 const stagingPredictMovement = typeof securePredictMovement === 'function' ? securePredictMovement : null;
 if (stagingPredictMovement) securePredictMovement = function(delta) {
-    if (!secureGameReady || (secureHandoffInProgress && !secureContinuousHandoffPredictionAllowed()) || !secureGameSocket ||
+    if (!STAGING_CLIENT_ENABLED || !secureGameReady || (secureHandoffInProgress && !secureContinuousHandoffPredictionAllowed()) || !secureGameSocket ||
         secureGameSocket.readyState !== WebSocket.OPEN) return;
     // Reset/spawn/handoff authority starts a new prediction timeline. The
     // render delta from before that reset cannot claim pre-session movement.
@@ -5463,6 +5431,206 @@ if (stagingPredictMovement) securePredictMovement = function(delta) {
 
 let stagingForegroundRefresh = null;
 let stagingAuthRefreshCount = 0;
+async function stagingGetAppCheckToken(forceRefresh = false) {
+    if (!STAGING_CLIENT_ENABLED || typeof firebase?.appCheck !== 'function') {
+        throw new Error('App Check unavailable');
+    }
+    const result = await firebase.appCheck().getToken(Boolean(forceRefresh));
+    const token = result?.token;
+    if (typeof token !== 'string' || token.length < 20 || token.length > 8192) {
+        throw new Error('App Check token unavailable');
+    }
+    return token;
+}
+function stagingSetStatus(text) {
+    const element = document.getElementById('staging-status');
+    if (element) element.innerText = text;
+}
+function stagingOnSocketClose(_ws, event) {
+    if (!STAGING_CLIENT_ENABLED || !event || event.code !== 1008) return;
+    const handoffActive = typeof secureHandoffInProgress !== 'undefined' && secureHandoffInProgress;
+    if (handoffActive) return;
+    if (['Session replaced', 'Session no longer owned'].includes(String(event.reason || ''))) {
+        stagingSetStatus('STAGING · SESSION REVOKED · TEST PAYMENTS ONLY');
+    }
+}
+if (typeof secureHandleSocketMessage === 'function') {
+    const stagingBaseHandleSocketMessage = secureHandleSocketMessage;
+    secureHandleSocketMessage = function(message) {
+        if (message?.type === "auth_refreshed") {
+            stagingAuthRefreshCount++;
+            stagingSetStatus(`STAGING · AUTH REFRESHED #${stagingAuthRefreshCount} · TEST PAYMENTS ONLY`);
+        } else if (message?.type === "auth_error") {
+            stagingSetStatus('STAGING · AUTH REJECTED · SESSION CLOSED');
+        }
+        return stagingBaseHandleSocketMessage(message);
+    };
+}
+function stagingClearInput() {
+    for (const key of Object.keys(keys)) keys[key] = false;
+    joystickVec.x = joystickVec.y = 0;
+    secureJumpIntent = false;
+    secureJumpHeld = false;
+}
+async function stagingResumeForeground() {
+    if (!STAGING_CLIENT_ENABLED || document.hidden || !state.isPlaying || !auth.currentUser) return false;
+    if (stagingForegroundRefresh) return stagingForegroundRefresh;
+    const user = auth.currentUser, uid = user.uid, epoch = secureConnectionEpoch();
+    const ws = secureGameSocket, serverId = state.selectedServerId;
+    stagingForegroundRefresh = (async () => {
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+            if (secureReconnectInProgress) return false;
+            return secureResumeDisconnectedSocket(secureCurrentZoneId, uid, serverId);
+        }
+        try {
+            const token = await user.getIdToken(true);
+            if (auth.currentUser !== user || auth.currentUser?.uid !== uid ||
+                !secureConnectionIsCurrent(epoch) || secureGameSocket !== ws || ws.readyState !== WebSocket.OPEN ||
+                state.selectedServerId !== serverId) return false;
+            ws.send(JSON.stringify({ type: "auth", token,
+                protocol: serverId === 'vip1' ? 4 : 6 }));
+            return true;
+        } catch (_) {
+            if (auth.currentUser === user && secureConnectionIsCurrent(epoch) && secureGameSocket === ws) {
+                stagingSetStatus('STAGING · AUTH REFRESH FAILED · SESSION CLOSED');
+                secureCloseSocket(ws, 1008, 'Staging foreground authentication failed');
+                secureReturnToMenu();
+            }
+            return false;
+        }
+    })();
+    try { return await stagingForegroundRefresh; }
+    finally { stagingForegroundRefresh = null; }
+}
+document.addEventListener('visibilitychange', () => {
+    stagingClearInput();
+    if (!document.hidden) void stagingResumeForeground();
+});
+window.addEventListener('online', () => { void stagingResumeForeground(); });
+window.addEventListener('pagehide', () => {
+    stagingClearInput();
+    secureAbortClientConnections('Staging page hidden');
+});
+window.addEventListener('pageshow', event => {
+    if (event.persisted) void stagingResumeForeground();
+});
+
+if (!STAGING_CLIENT_ENABLED) {
+    document.getElementById('staging-status').innerText = 'STAGING NOT CONFIGURED · AUTH/GAMEPLAY DISABLED';
+    document.getElementById('btn-google-login').disabled = true;
+    document.getElementById('btn-start-game').disabled = true;
+} else if (STAGING_PUBLIC_CONFIG.authMode === 'redirect') {
+    auth.getRedirectResult().catch(() => {
+        alert('Staging Google redirect could not complete. Check the authorized staging domain.');
+    });
+}
+
+
+const stagingOriginalOpenPaymentModal = typeof openPaymentModal === 'function' ? openPaymentModal : null;
+function stagingSandboxRequestId() {
+    const nonce = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID().replace(/-/g, '')
+        : Math.random().toString(36).slice(2) + Date.now().toString(36);
+    return ('vip1sandbox:' + nonce).slice(0, 96);
+}
+async function stagingStartVipSandboxCheckout() {
+    if (!STAGING_CLIENT_ENABLED || !auth.currentUser) {
+        alert('กรุณาล็อกอินด้วย Google Account ก่อนทดสอบ VIP Sandbox');
+        return false;
+    }
+    const user = auth.currentUser;
+    try {
+        stagingSetStatus('STAGING · CREATING 2C2P SANDBOX CHECKOUT');
+        const [token, appCheckToken] = await Promise.all([
+            stagingGetIdToken(user, true), stagingGetAppCheckToken(false)
+        ]);
+        if (auth.currentUser !== user) return false;
+        const response = await fetch(STAGING_PUBLIC_CONFIG.workerOrigin + '/payments/2c2p/checkout', {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + token, 'X-Firebase-AppCheck': appCheckToken,
+                'Content-Type': 'application/json' },
+            body: JSON.stringify({ requestId: stagingSandboxRequestId() })
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok || !result?.ok || typeof result.invoiceNo !== 'string' ||
+            typeof result.webPaymentUrl !== 'string') {
+            throw new Error(result?.error || 'Sandbox checkout unavailable');
+        }
+        const hosted = new URL(result.webPaymentUrl);
+        if (hosted.origin !== 'https://sandbox-pgw-ui.2c2p.com' || hosted.pathname !== '/payment/4.5/') {
+            throw new Error('Unexpected sandbox payment destination');
+        }
+        if (typeof sessionStorage !== 'undefined') {
+            sessionStorage.setItem('voxel_staging_2c2p_invoice', result.invoiceNo);
+        }
+        stagingSetStatus('STAGING · 2C2P SANDBOX · NO REAL MONEY');
+        window.location.assign(result.webPaymentUrl);
+        return true;
+    } catch (error) {
+        stagingSetStatus('STAGING · SANDBOX CHECKOUT FAILED');
+        alert('2C2P Sandbox: ' + (error?.message || 'ไม่สามารถเริ่มรายการทดสอบได้'));
+        return false;
+    }
+}
+if (stagingOriginalOpenPaymentModal) {
+    openPaymentModal = function(type, price, title) {
+        if (STAGING_CLIENT_ENABLED && type === 'vip1') {
+            void stagingStartVipSandboxCheckout();
+            return;
+        }
+        return stagingOriginalOpenPaymentModal(type, price, title);
+    };
+}
+
+function stagingSandboxPaymentReturnRequested() {
+    try {
+        return STAGING_CLIENT_ENABLED && typeof window.location?.search === 'string' &&
+            new URLSearchParams(window.location.search).get('payment') === 'sandbox-return';
+    } catch (_) { return false; }
+}
+async function stagingReconcileSandboxPaymentReturn() {
+    if (!stagingSandboxPaymentReturnRequested() || !auth.currentUser ||
+        typeof sessionStorage === 'undefined') return false;
+    const invoiceNo = sessionStorage.getItem('voxel_staging_2c2p_invoice');
+    if (!invoiceNo || !/^[A-Za-z0-9._:-]{1,20}$/.test(invoiceNo)) return false;
+    const user = auth.currentUser;
+    for (let attempt = 0; attempt < 10; attempt++) {
+        try {
+            const [token, appCheckToken] = await Promise.all([
+                stagingGetIdToken(user, attempt === 0), stagingGetAppCheckToken(false)
+            ]);
+            if (auth.currentUser !== user) return false;
+            const response = await fetch(STAGING_PUBLIC_CONFIG.workerOrigin +
+                '/payments/2c2p/status?invoiceNo=' + encodeURIComponent(invoiceNo), {
+                    headers: { 'Authorization': 'Bearer ' + token, 'X-Firebase-AppCheck': appCheckToken }
+                });
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok || !result?.ok) throw new Error(result?.error || 'Sandbox status unavailable');
+            if (result.status === 'paid' || Number(result.vipExpiresAt || 0) > Date.now()) {
+                sessionStorage.removeItem('voxel_staging_2c2p_invoice');
+                await secureLoadEntitlements(true);
+                stagingSetStatus('STAGING · VIP SANDBOX PAYMENT VERIFIED · TEST ONLY');
+                try { history.replaceState(null, '', '/'); } catch (_) {}
+                alert('VIP Sandbox สำเร็จ: สิทธิ์ถูกยืนยันจาก Server แล้ว (ไม่มีเงินจริง)');
+                return true;
+            }
+            if (['failed', 'cancelled', 'expired'].includes(result.status)) {
+                sessionStorage.removeItem('voxel_staging_2c2p_invoice');
+                stagingSetStatus('STAGING · VIP SANDBOX PAYMENT NOT COMPLETED');
+                try { history.replaceState(null, '', '/'); } catch (_) {}
+                return false;
+            }
+        } catch (_) {}
+        await new Promise(resolve => setTimeout(resolve, 1500));
+    }
+    stagingSetStatus('STAGING · VIP SANDBOX CALLBACK PENDING');
+    return false;
+}
+if (typeof auth?.onAuthStateChanged === 'function') {
+    auth.onAuthStateChanged(user => {
+        if (user && stagingSandboxPaymentReturnRequested()) void stagingReconcileSandboxPaymentReturn();
+    });
+}
 </script>
 </body>
 </html>

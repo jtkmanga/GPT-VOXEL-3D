@@ -52,7 +52,6 @@ jobs:
         run: |
           set -euo pipefail
           node scripts/rebuild/check-production-readiness.cjs
-          node scripts/rebuild/prepare-production.cjs
           npm ci
           node scripts/rebuild/run-tests.cjs
           node scripts/rebuild/build-client.cjs --check
@@ -65,11 +64,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          npx wrangler deploy --dry-run --config work/production/prepared/wrangler.jsonc --outdir work/production-dry-run
+          npx wrangler deploy --dry-run --config wrangler.jsonc --outdir work/production-dry-run
           test -d work/production-dry-run
       - name: Deploy production Worker with payment disabled
         shell: bash
-        run: npx wrangler deploy --config work/production/prepared/wrangler.jsonc
+        run: npx wrangler deploy --config wrangler.jsonc
       - name: Verify production health and payment fail-closed
         shell: python
         run: |

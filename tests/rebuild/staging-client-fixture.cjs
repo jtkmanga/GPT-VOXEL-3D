@@ -56,10 +56,7 @@ async function stagingClientFixture(options = {}) {
     addOtherPlayer() {}, updateOtherPlayer() {}, removeOtherPlayer() {}, removeAllOtherPlayers() {},
     updateScoreDisplay() {}, audio: { playJump() {}, playCoin() {} }
   });
-  const fragments = ['secure-snapshots.js', 'secure-socket-handoff.js', 'secure-menu-economy.js'];
-  if (options.includeStagingRuntime === false) fragments.push('production-staging-gameplay.js');
-  else fragments.push('staging-runtime.js');
-  for (const fragment of fragments) {
+  for (const fragment of ['secure-snapshots.js', 'secure-socket-handoff.js', 'secure-menu-economy.js', 'staging-runtime.js']) {
     vm.runInContext(fs.readFileSync(sourcePath(`client/${fragment}`), 'utf8'), context, { filename: fragment });
   }
   return { context, movement, sent,

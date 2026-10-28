@@ -7,9 +7,6 @@ export function stagingContext(request, env) {
   const stagingHost = new URL(request.url).hostname.startsWith('gpt-voxel-3d-staging');
   const explicitlyStaging = env.APP_ENV === 'staging' || stagingHost ||
     stagingSelectors.some(key => env[key] !== undefined);
-  // FIREBASE_PUBLIC_CONFIG and FIREBASE_APP_CHECK_SITE_KEY are shared by both
-  // staging and production Admin/Auth. Their presence alone must never switch a
-  // production Worker into the staging boundary.
   if (!explicitlyStaging) return { enabled: false };
   try {
     if (env.APP_ENV !== 'staging' || env.PAYMENT_MODE !== 'provider-neutral-test' ||

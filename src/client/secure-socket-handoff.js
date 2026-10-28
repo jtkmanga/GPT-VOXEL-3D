@@ -65,19 +65,28 @@
         }
 
         function securePredictMovement(delta) {
-            // Lost connections and provisional handoffs cannot advance a player.
-            // Camera and rendering continue while authority is being recovered.
             if (!secureGameReady || (secureHandoffInProgress &&
-                !(typeof secureContinuousHandoffPredictionAllowed === 'function' && secureContinuousHandoffPredictionAllowed())) || !secureGameSocket ||
-                secureGameSocket.readyState !== WebSocket.OPEN) return;
+                !(typeof secureContinuousHandoffPredictionAllowed === 'function' && secureContinuousHandoffPredictionAllowed())) ||
+                !secureGameSocket || secureGameSocket.readyState !== WebSocket.OPEN) return;
+            const elapsed = Math.min(.1, Math.max(0, Number.isFinite(delta) ? delta : 0));
+
+            const unsent = secureUnsentMovementFrames();
+            const pendingSeconds = unsent.reduce((total, frame) => total + frame.delta, 0);
+            if (unsent.length >= 63 || pendingSeconds + elapsed > .5 + 1e-9) {
+                if (typeof syncMyPlayerData !== 'function' || syncMyPlayerData(true) === false) return;
+            }
+
             const input = secureMovementIntent();
             input.jump = secureJumpIntent;
-            const elapsed = Math.min(.1, Math.max(0, Number.isFinite(delta) ? delta : 0));
             const options = secureMovementOptions();
             secureApplyMovementState(movement.integrateMovement(secureMovementState(), input, elapsed, options));
             securePendingFrames.push({ seq: secureInputSequence, input, delta: elapsed, speed: options.speed });
-            // A long stalled connection cannot retain unbounded prediction work.
             if (securePendingFrames.length > 256) securePendingFrames.splice(0, securePendingFrames.length - 256);
+
+            const next = secureUnsentMovementFrames();
+            if (next.length >= 48 || next.reduce((total, frame) => total + frame.delta, 0) >= .45) {
+                if (typeof syncMyPlayerData === 'function') syncMyPlayerData(true);
+            }
         }
 
         function secureResetPrediction(position, motion = {}) {
@@ -135,9 +144,7 @@
             }
             secureApplyMovementState(corrected);
             const difference = Math.hypot(before.x - corrected.x, before.y - corrected.y, before.z - corrected.z);
-            const correctionLimit = Math.max(6,
-                options.speed * movement.MOVEMENT.maxElapsedSeconds + 1);
-            if (difference <= correctionLimit) {
+            if (difference <= 4) {
                 securePredictionCorrection.x += before.x - corrected.x;
                 securePredictionCorrection.y += before.y - corrected.y;
                 securePredictionCorrection.z += before.z - corrected.z;
@@ -323,9 +330,7 @@
                 corrected = movement.integrateMovement(corrected, frame.input, frame.delta, { ...options, speed: frame.speed });
             }
             secureApplyMovementState(corrected);
-            const correctionLimit = Math.max(6,
-                options.speed * movement.MOVEMENT.maxElapsedSeconds + 1);
-            if (Math.hypot(before.x - corrected.x, before.y - corrected.y, before.z - corrected.z) <= correctionLimit) {
+            if (Math.hypot(before.x - corrected.x, before.y - corrected.y, before.z - corrected.z) <= 4) {
                 securePredictionCorrection.x += before.x - corrected.x;
                 securePredictionCorrection.y += before.y - corrected.y;
                 securePredictionCorrection.z += before.z - corrected.z;

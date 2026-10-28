@@ -23,7 +23,9 @@ async function recordPaymentHistory(env,event) {
   try {
     await env.ROOM.getByName('free-v2-demo').fetch(new Request(
       'https://internal/_internal/payment-history/record',{
-        method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(event)
+        method:'POST',
+        headers:{'content-type':'application/json'},
+        body:JSON.stringify(event)
       }));
   } catch (_) {}
 }
@@ -78,227 +80,6 @@ export function allowedRequestOrigin(request, env) {
     new URL(request.url).origin === env.STAGING_WORKER_ORIGIN;
 }
 
-const PROMPTPAY_TYPES = Object.freeze({
-  phone_number: { accountType: '02001', pattern: /^0\d{9}$/ },
-  citizen_id: { accountType: '02003', pattern: /^\d{13}$/ },
-  e_wallet: { accountType: '02004', pattern: /^\d{1,32}$/ }
-});
-
-function paymentRolloutAllowed(env, identity) {
-  const rollout=String(env.PAYMENT_ROLLOUT||'canary').trim();
-  if(rollout==='public') return true;
-  if(rollout!=='canary') return false;
-  const owner=String(env.ADMIN_OWNER_EMAIL||'').trim().toLowerCase();
-  const email=String(identity?.email||'').trim().toLowerCase();
-  return Boolean(owner&&email&&email===owner);
-}
-
-export function slip2goReceiverConfig(env) {
-  const promptPayType=String(env.PAYMENT_RECEIVER_TYPE||'phone_number').trim();
-  const rule=PROMPTPAY_TYPES[promptPayType];
-  const account=String(env.PAYMENT_RECEIVER_ACCOUNT||'').replace(/\s+/g,'');
-  const accountName=String(env.PAYMENT_RECEIVER_NAME||'Lucky Game').trim();
-  if(!rule||!rule.pattern.test(account)||accountName.length<2||accountName.length>160)
-    throw Error('Payment receiver is not configured');
-  return {promptPayType,accountType:rule.accountType,account,accountName};
-}
-
-export function buildSlip2GoQrPayload({receiver,price}) {
-  if(!receiver||!Number.isSafeInteger(price)||price<1||price>100000)
-    throw Error('Invalid payment QR request');
-  return {
-    promptPayCode:receiver.account,
-    promptPayType:receiver.promptPayType,
-    accountName:receiver.accountName,
-    amount:price.toFixed(2)
-  };
-}
-
-const PAYMENT_QR_CACHE_TTL_MS=20*60*60*1000;
-const PAYMENT_QR_CACHE_WAIT_MS=150;
-const PAYMENT_QR_CACHE_RETRIES=12;
-
-async function paymentQrCacheKey(receiver,price) {
-  const source=[
-    receiver.promptPayType,
-    receiver.account,
-    receiver.accountName,
-    String(price)
-  ].join('\n');
-  const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(source));
-  return Array.from(new Uint8Array(digest),byte=>byte.toString(16).padStart(2,'0')).join('');
-}
-
-async function paymentQrCacheClaim(env,key,amount) {
-  const room=env.ROOM.getByName('free-v2-demo');
-  for(let attempt=0;attempt<PAYMENT_QR_CACHE_RETRIES;attempt++) {
-    let response,data;
-    try {
-      response=await room.fetch(new Request('https://internal/_internal/payment-qr-cache/claim',{
-        method:'POST',
-        headers:{'content-type':'application/json'},
-        body:JSON.stringify({key,amount})
-      }));
-      data=await response.json();
-    } catch (_) {
-      return {state:'bypass'};
-    }
-    if(!response.ok||!data?.ok) return {state:'bypass'};
-    if(data.state==='lease') return {state:'lease'};
-    if(data.state==='hit') {
-      let qr;
-      try { qr=new URL(String(data.qrImageUrl||'')); } catch (_) {}
-      if(qr&&qr.protocol==='https:'&&!qr.username&&!qr.password&&Number(data.amount)===amount)
-        return {state:'hit',qrImageUrl:qr.href,accountName:String(data.accountName||'')};
-      return {state:'bypass'};
-    }
-    if(data.state!=='pending') return {state:'bypass'};
-    await new Promise(resolve=>setTimeout(resolve,PAYMENT_QR_CACHE_WAIT_MS));
-  }
-  return {state:'busy'};
-}
-
-async function paymentQrCacheStore(env,entry) {
-  try {
-    await env.ROOM.getByName('free-v2-demo').fetch(new Request(
-      'https://internal/_internal/payment-qr-cache/store',{
-        method:'POST',
-        headers:{'content-type':'application/json'},
-        body:JSON.stringify(entry)
-      }));
-  } catch (_) {}
-}
-
-async function paymentQrCacheRelease(env,key) {
-  try {
-    await env.ROOM.getByName('free-v2-demo').fetch(new Request(
-      'https://internal/_internal/payment-qr-cache/release',{
-        method:'POST',
-        headers:{'content-type':'application/json'},
-        body:JSON.stringify({key})
-      }));
-  } catch (_) {}
-}
-
-export async function handlePaymentQr(request, env) {
-  if (env.PAYMENT_MODE !== 'slip2go-production') {
-    return jsonResponse(request, env, {ok:false,error:'Production payment is disabled'}, 503);
-  }
-  if (request.method !== 'POST') {
-    return jsonResponse(request, env, {ok:false,error:'Method not allowed'}, 405);
-  }
-  if (await paymentsPaused(env)) {
-    return jsonResponse(request, env, {ok:false,error:'Payments are temporarily paused'}, 503);
-  }
-  if (env.ALLOWED_ORIGIN && request.headers.get('Origin') !== env.ALLOWED_ORIGIN) {
-    return jsonResponse(request, env, {ok:false,error:'Origin not allowed'}, 403);
-  }
-  const match=/^Bearer\s+(.+)$/i.exec(request.headers.get('Authorization')||'');
-  if(!match) return jsonResponse(request, env, {ok:false,error:'Sign in required'}, 401);
-  let verified;
-  try {
-    verified=await verifyFirebaseRequestTokens(match[1],request.headers.get('X-Firebase-AppCheck'),env);
-  } catch (_) {
-    return jsonResponse(request, env, {ok:false,error:'Invalid Firebase token'}, 401);
-  }
-  if(!paymentRolloutAllowed(env,verified)) {
-    return jsonResponse(request,env,{ok:false,error:'Payment canary is restricted'},403);
-  }
-  let input;
-  try { input=await request.json(); }
-  catch (_) { return jsonResponse(request,env,{ok:false,error:'Invalid JSON'},400); }
-  if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).length!==1||
-      !Object.hasOwn(input,'item')) {
-    return jsonResponse(request,env,{ok:false,error:'Invalid payment QR request'},400);
-  }
-  const item=String(input.item||'');
-  let price;
-  try { price=await currentPrice(env,item); }
-  catch (_) { return jsonResponse(request,env,{ok:false,error:'Pricing authority unavailable'},503); }
-  if(!env.SLIP2GO_API_SECRET) {
-    return jsonResponse(request,env,{ok:false,error:'Payment server is not configured'},503);
-  }
-  let receiver;
-  try { receiver=slip2goReceiverConfig(env); }
-  catch (_) { return jsonResponse(request,env,{ok:false,error:'Payment server is not configured'},503); }
-
-  let cacheKey=null,cacheClaim={state:'bypass'};
-  try {
-    cacheKey=await paymentQrCacheKey(receiver,price);
-    cacheClaim=await paymentQrCacheClaim(env,cacheKey,price);
-  } catch (_) {
-    cacheKey=null;
-    cacheClaim={state:'bypass'};
-  }
-  if(cacheClaim.state==='hit') {
-    return jsonResponse(request,env,{
-      ok:true,item,price,currency:'THB',
-      qrImageUrl:cacheClaim.qrImageUrl,
-      accountName:cacheClaim.accountName||receiver.accountName
-    });
-  }
-  if(cacheClaim.state==='busy') {
-    return jsonResponse(request,env,{ok:false,error:'Payment QR generation is busy; retry shortly'},503);
-  }
-  const ownsCacheLease=cacheClaim.state==='lease';
-
-  let slipResponse;
-  try {
-    slipResponse=await fetch('https://connect.slip2go.com/api/qr-payment/generate-qr-image-link',{
-      method:'POST',
-      headers:{'Authorization':`Bearer ${env.SLIP2GO_API_SECRET}`,'Content-Type':'application/json'},
-      body:JSON.stringify(buildSlip2GoQrPayload({receiver,price}))
-    });
-  } catch (_) {
-    if(ownsCacheLease&&cacheKey) await paymentQrCacheRelease(env,cacheKey);
-    return jsonResponse(request,env,{ok:false,error:'Payment QR service unavailable'},502);
-  }
-  let result;
-  try { result=await slipResponse.json(); }
-  catch (_) {
-    if(ownsCacheLease&&cacheKey) await paymentQrCacheRelease(env,cacheKey);
-    return jsonResponse(request,env,{ok:false,error:'Invalid response from QR service'},502);
-  }
-  const providerCode=String(result?.code??'').trim();
-  const providerMessage=typeof result?.message==='string' ? result.message.trim().slice(0,160) : '';
-  if(!slipResponse.ok||providerCode!=='200') {
-    if(ownsCacheLease&&cacheKey) await paymentQrCacheRelease(env,cacheKey);
-    const safeCode=/^\d{3,6}$/.test(providerCode)?providerCode:'unknown';
-    return jsonResponse(request,env,{
-      ok:false,
-      error:'Slip2Go QR error ['+safeCode+']'+(providerMessage?' '+providerMessage:'')
-    },502);
-  }
-  const data=result?.data||{};
-  let qr;
-  try { qr=new URL(String(data.qrImageLink||'')); }
-  catch (_) {
-    if(ownsCacheLease&&cacheKey) await paymentQrCacheRelease(env,cacheKey);
-    return jsonResponse(request,env,{ok:false,error:'Slip2Go QR success response is missing a valid image URL'},502);
-  }
-  const returnedAmount=Number(data.amount);
-  const returnedName=String(data.accountName||'').trim();
-  if(qr.protocol!=='https:'||qr.username||qr.password||
-      !Number.isFinite(returnedAmount)||returnedAmount!==price) {
-    if(ownsCacheLease&&cacheKey) await paymentQrCacheRelease(env,cacheKey);
-    return jsonResponse(request,env,{ok:false,error:'Slip2Go QR success response failed integrity checks'},502);
-  }
-  const accountName=returnedName||receiver.accountName;
-  if(cacheKey) {
-    await paymentQrCacheStore(env,{
-      key:cacheKey,
-      amount:price,
-      qrImageUrl:qr.href,
-      accountName,
-      expiresAt:Date.now()+PAYMENT_QR_CACHE_TTL_MS
-    });
-  }
-  return jsonResponse(request,env,{
-    ok:true,item,price,currency:'THB',qrImageUrl:qr.href,
-    accountName
-  });
-}
-
 export async function handleVerifySlip(request, env) {
   if (env.PAYMENT_MODE !== 'slip2go-production') {
     return jsonResponse(request, env, {
@@ -340,13 +121,6 @@ export async function handleVerifySlip(request, env) {
       ok: false,
       error: 'Invalid Firebase token'
     }, 401);
-  }
-
-  if (!paymentRolloutAllowed(env, verified)) {
-    return jsonResponse(request, env, {
-      ok: false,
-      error: 'Payment canary is restricted'
-    }, 403);
   }
 
   let input;
@@ -400,18 +174,12 @@ export async function handleVerifySlip(request, env) {
     }, 500);
   }
 
-  let receiver;
-  try { receiver=slip2goReceiverConfig(env); }
-  catch (_) {
-    return jsonResponse(request,env,{ok:false,error:'Payment server is not configured'},503);
-  }
-
   const historyBase={uid:verified.uid,email:String(verified.email||''),item,amount:price};
 
   const payload = {
     checkReceiver: [{
-      accountType: receiver.accountType,
-      accountNumber: receiver.account
+      accountType: '02001',
+      accountNumber: env.PAYMENT_RECEIVER_ACCOUNT
     }],
     checkAmount: {
       type: 'eq',

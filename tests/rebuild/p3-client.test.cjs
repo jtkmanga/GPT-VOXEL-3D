@@ -161,7 +161,6 @@ test('P3 prediction executes the shared physics kernel and remains bounded durin
   const before = fixture.state();
   const expected = fixture.movement.integrateMovement(before, { x: 1, z: 0, jump: false }, 0.05,
     { speed: 22, obstacles: [], bounds: 748 });
-  fixture.context.securePredictMovement(0);
   fixture.context.securePredictMovement(0.05);
   sameMovement(fixture.state(), expected);
   for (let frame = 0; frame < 400; frame++) fixture.context.securePredictMovement(0.016);
@@ -250,7 +249,6 @@ test('P3 forced ordered-frame flush spends only predicted time and clears jump a
   assert.equal(fixture.context.playerVelocityY, 16);
   await h.advance(100);
   fixture.setTime(h.now());
-  fixture.context.securePredictMovement(0);
   fixture.context.securePredictMovement(0.1);
   fixture.context.syncMyPlayerData(true);
   await fixture.flush();
@@ -345,8 +343,7 @@ test('P3 actual handoff cancellation restores client state from the server and p
   fixture.context.keys = { a: true };
   await h.advance(200);
   fixture.setTime(h.now());
-  fixture.context.securePredictMovement(0);
-  fixture.context.securePredictMovement(0.1);
+  fixture.context.securePredictMovement(0.2);
   fixture.context.syncMyPlayerData(true);
   await fixture.flush();
   assert.ok(fixture.sent.at(-1).seq >= 1);

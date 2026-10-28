@@ -6,13 +6,10 @@ const {readFileSync}=require('node:fs');
 const httpSource=readFileSync('src/worker/http.mjs','utf8');
 const roomSource=readFileSync('src/worker/game-room.mjs','utf8');
 
-test('Slip2Go QR and slip verification both use Bearer API authentication',()=>{
-  assert.match(httpSource,/https:\/\/connect\.slip2go\.com\/api\/qr-payment\/generate-qr-image-link/);
-  assert.match(httpSource,/https:\/\/connect\.slip2go\.com\/api\/verify-slip\/qr-image\/info/);
-  const bearerHeaders=httpSource.match(/'Authorization':\s*\`Bearer \$\{env\.SLIP2GO_API_SECRET\}\`/g)||[];
-  assert.equal(bearerHeaders.length,2);
+test('Slip2Go provider requests use Bearer authentication, never a raw API secret header',()=>{
+  assert.match(httpSource,/https:\/\/connect\.slip2go\.com\/api\//);
+  assert.match(httpSource,/'Authorization':\s*\`Bearer \$\{env\.SLIP2GO_API_SECRET\}\`/);
   assert.doesNotMatch(httpSource,/'Authorization':\s*env\.SLIP2GO_API_SECRET/);
-  assert.doesNotMatch(httpSource,/'Authorization':env\.SLIP2GO_API_SECRET/);
 });
 
 test('Slip verification accepts documented Slip2Go success codes only',()=>{

@@ -114,8 +114,7 @@ test('P9 staging bundle removes production Firebase/Worker defaults and contains
   assert.match(html, /ReCaptchaEnterpriseProvider/);
   assert.match(html, /appCheck\.activate/);
   for (const forbidden of ['lucky-game-6936b', 'voxel-run-v2-demo', 'localhost', '127.0.0.1',
-    'PAYMENT_WEBHOOK_SECRET', 'SLIP2GO_API_SECRET', 'PAYMENT_RECEIVER_ACCOUNT',
-    'FIREBASE_ADMIN_PRIVATE_KEY']) assert.ok(!html.includes(forbidden), forbidden);
+    'PAYMENT_WEBHOOK_SECRET', 'SLIP2GO_API_SECRET', 'FIREBASE_ADMIN_PRIVATE_KEY', '0999999999']) assert.ok(!html.includes(forbidden), forbidden);
   const disabled = await buildStagingClient(STAGING_UNCONFIGURED);
   assert.match(disabled, /"configured":false/);
   assert.ok(!disabled.includes('synthetic-public-staging-key'));

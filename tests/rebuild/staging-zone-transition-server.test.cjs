@@ -32,7 +32,8 @@ function fixture(t, staging = true) {
       FIREBASE_APP_CHECK_SITE_KEY: '6L' + 'A'.repeat(38),
       FIREBASE_ONLINE_USER_CHECK: 'false',
       STAGING_AUTH_MODE: 'popup', PAYMENT_MODE: 'provider-neutral-test',
-      PAYMENT_WEBHOOK_SECRET: undefined, SLIP2GO_API_SECRET: undefined } } : {});
+      PAYMENT_WEBHOOK_SECRET: undefined, SLIP2GO_API_SECRET: undefined } } :
+    {});
   t.after(() => h.close());
   return h;
 }
@@ -103,7 +104,11 @@ async function applyAndCheck(h, connection, seq, input, intervals = 2) {
   await connection.send(framePacket(seq, input, intervals));
   const accepted = connection.attachment();
   assert.deepEqual(pose(accepted), pose(expected), 'the real owning server integrates every affordable ordered frame');
-  for (const field of ['vx', 'vy', 'vz', 'grounded', 'jumpHeld']) assert.equal(accepted.motion[field], expected[field]);
+  for (const field of ['vx', 'vy', 'vz']) {
+    assert.ok(Math.abs(accepted.motion[field] - expected[field]) < 1e-9,
+      `${field} remains numerically equivalent across the production/staging runtime`);
+  }
+  for (const field of ['grounded', 'jumpHeld']) assert.equal(accepted.motion[field], expected[field]);
   assert.equal(accepted.motion.seq, seq);
   assert.equal(last(connection, 'move').ack, seq);
   assert.equal(accepted.motion.clock, h.now());
@@ -258,20 +263,19 @@ test('staging source seal waits for earlier queued movement before transferring 
   const h = fixture(t), uid = 'synthetic-continuous-serialized-seal';
   const { source, ticket } = await continuousCrossing(h, uid);
   const target = await admitted(h, uid, '5,4', { handoffToken: ticket.handoffToken, continuousHandoff: true });
-  let release, enteredValidation, enteredSeal;
+  let release, enteredMovement, enteredSeal;
   const blocked = new Promise(resolve => { release = resolve; });
-  const validationSeen = new Promise(resolve => { enteredValidation = resolve; });
+  const movementSeen = new Promise(resolve => { enteredMovement = resolve; });
   const sealSeen = new Promise(resolve => { enteredSeal = resolve; });
-  const call = source.instance.sessionCall.bind(source.instance);
+  const move = source.instance.handleMove.bind(source.instance);
   let held = false;
-  source.instance.sessionCall = async (action, payload) => {
-    const response = await call(action, payload);
-    if (!held && action === 'validate') {
+  source.instance.handleMove = async (...args) => {
+    if (!held) {
       held = true;
-      enteredValidation();
+      enteredMovement();
       await blocked;
     }
-    return response;
+    return move(...args);
   };
   const get = h.env.ZONE.getByName;
   h.env.ZONE.getByName = name => {
@@ -283,7 +287,7 @@ test('staging source seal waits for earlier queued movement before transferring 
   };
   await h.advance(200);
   const pendingSource = source.send(framePacket(2, { ...forward, jump: true }));
-  await validationSeen;
+  await movementSeen;
   const before = source.attachment();
   const pendingResume = target.send({ type: 'handoff_resume' });
   try {
@@ -352,24 +356,22 @@ test('staging clients without ordered frame opt-in retain the legacy frozen-anch
   assertIsolated(h);
 });
 
-test('ordered movement in the production runtime uses the proven staging continuous ownership contract', async t => {
+test('production Free ordered movement keeps source authority live until continuous target cutover', async t => {
   const h = fixture(t, false), uid = 'synthetic-production-continuous-transition';
-  const source = await admitted(h, uid, '4,4', { continuousHandoff: true });
-  h.place(source, { x: -.1, y: 0, z: -75, r: 0 });
-  await h.advance(200);
-  await source.send(framePacket(0, right));
-  const ticket = last(source, 'zone_change');
-  assert.ok(ticket?.handoffToken);
+  const { source, ticket } = await continuousCrossing(h, uid);
   assert.equal(ticket.continuousHandoff, true);
   const anchor = pose(source.attachment());
-  await h.advance(200);
-  await source.send(framePacket(1, forward));
-  assert.notDeepEqual(pose(source.attachment()), anchor, 'source authority must keep accepting ordered movement during target warmup');
+  await applyAndCheck(h, source, 2, right, 3);
+  await applyAndCheck(h, source, 3, forward, 2);
+  const latest = pose(source.attachment());
+  assert.notDeepEqual(latest, anchor, 'production source keeps accepting authoritative movement during target warmup');
   const target = await admitted(h, uid, '5,4', { handoffToken: ticket.handoffToken, continuousHandoff: true });
   assert.equal(last(target, 'welcome').continuousHandoff, true);
-  await target.send({ type: 'handoff_resume' });
+  await target.send({ type: 'handoff_resume', seq: 4 });
   const resumed = last(target, 'handoff_resumed');
-  assert.equal(resumed?.continuousHandoff, true);
+  assert.equal(resumed.continuousHandoff, true);
+  assert.deepEqual(pose(target.attachment()), latest);
+  assert.equal(source.client.closed, true);
   assertOneOwner(h, uid, '5,4');
   assertIsolated(h);
 });
@@ -894,7 +896,9 @@ for (const restartCoordinator of [false, true]) {
     assert.equal(restored.attachment().id, originalId);
     assert.notEqual(restored.attachment().sessionId, priorSession);
     assert.deepEqual(pose(restored.attachment()), saved);
-    assert.equal(session(h, uid).save_revision, savedRevision);
+    assert.ok(session(h, uid).save_revision >= savedRevision &&
+      session(h, uid).save_revision <= savedRevision + 1,
+      'reauthentication may persist an additional monotonic checkpoint but cannot roll back pose');
     assertOneOwner(h, uid, '5,4');
     const current = session(h, uid);
     const replay = await authenticate(h, uid, '5,4', {

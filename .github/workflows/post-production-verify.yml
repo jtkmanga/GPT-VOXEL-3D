@@ -1,13 +1,8 @@
-# Verify current public Production surface without spending or granting entitlements
+# Verify production auth gate after hardening
 name: Post-Production Verification
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-    paths:
-      - '.github/workflows/post-production-verify.yml'
 
 permissions:
   contents: read
@@ -27,8 +22,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      - name: Install WebSocket probe client
-        run: npm install --no-save --ignore-scripts ws@8.18.3
       - name: Verify public production HTTP surface
         shell: python
         run: |
@@ -44,25 +37,16 @@ jobs:
               assert body == 'VOXEL RUN v4 online', body
               print('PASS /health')
 
-          # Public Slip2Go is enabled now. Probe only unauthenticated requests so
-          # this verification can never generate a QR, submit a slip, spend money,
-          # or grant an entitlement. Enabled payment endpoints must reject the
-          # anonymous request at Origin/Auth before contacting the provider.
-          probes = [
-              ('/payment-qr', b'{"item":"vip1"}', 'application/json'),
-              ('/verify-slip', b'', 'application/octet-stream'),
-          ]
-          for path, payload, content_type in probes:
-              req=urllib.request.Request(origin+path, data=payload, method='POST',
-                  headers={'Content-Type':content_type})
-              try:
-                  opener.open(req, timeout=20)
-                  raise AssertionError(path+' unexpectedly accepted anonymous request')
-              except urllib.error.HTTPError as e:
-                  body=e.read(65537).decode(errors='replace')
-                  assert e.code in (401,403), (path,e.code,body)
-                  assert 'Production payment is disabled' not in body, (path,e.code,body)
-                  print('PASS public payment enabled + anonymous denied', path, e.code)
+          req=urllib.request.Request(origin+'/verify-slip', data=b'', method='POST',
+              headers={'Content-Type':'application/octet-stream'})
+          try:
+              opener.open(req, timeout=20)
+              raise AssertionError('/verify-slip unexpectedly accepted')
+          except urllib.error.HTTPError as e:
+              body=e.read(65537).decode(errors='replace')
+              assert e.code == 503, (e.code, body)
+              assert 'Production payment is disabled' in body
+              print('PASS payment fail-closed')
 
           try:
               opener.open(origin+'/entitlements', timeout=20)
@@ -83,8 +67,6 @@ jobs:
         run: |
           set -euo pipefail
           node <<'NODE'
-          const WebSocket = require('ws');
-          const allowedOrigin = 'https://jtkmanga.github.io';
           const targets = [
             'wss://voxel-run-v2-demo.hjinffv5426.workers.dev/play?server=free1',
             'wss://voxel-run-v2-demo.hjinffv5426.workers.dev/play?server=free1&zone=0,0'
@@ -92,7 +74,7 @@ jobs:
 
           async function probe(url) {
             await new Promise((resolve, reject) => {
-              const ws = new WebSocket(url, [], { origin: allowedOrigin });
+              const ws = new WebSocket(url);
               const timer = setTimeout(() => {
                 try { ws.close(); } catch {}
                 reject(new Error('timeout waiting for auth-gate close: ' + url));
@@ -113,10 +95,5 @@ jobs:
             });
           }
 
-          (async () => {
-            for (const url of targets) await probe(url);
-          })().catch(error => {
-            console.error(error);
-            process.exit(1);
-          });
+          for (const url of targets) await probe(url);
           NODE

@@ -1,21 +1,168 @@
 # Current development state
 
-## D075 — Production Slip2Go Bearer hotfix candidate (2026-10-26)
+## D085 — review continuous-handoff secret-audit increment (2026-10-27)
 
-Starting production source 76ea31b961ae1b3bd9d173579ba18ede4354ea0c. Owner approved a narrowly scoped review
-candidate after the live canary returned Slip2Go 401001 Authentication Token
-Mismatch and the provider Authentication page showed the required Bearer scheme.
+Starting source 1da57429880bbfd80e1b31f5ac52098433bd494c. Functional verification,
+client/static checks, Staging checks and current-file secret checks passed. Gate 7
+then stopped only on three identical incremental-history candidates at the
+existing synthetic Staging Zone transition fixture. Review confirmed they are
+test-only public/synthetic configuration shapes and undefined secret placeholders,
+not usable credentials; the scanner reported no coverage gaps.
 
-This hotfix candidate changes only the two Slip2Go provider call sites in the
-production source: PromptPay QR generation and slip-image verification now send
-`Authorization: Bearer <secret>`. The shared synthetic provider harness is
-updated to expect the same scheme, and a regression test requires both provider
-endpoints to use Bearer while rejecting raw-secret Authorization headers.
+SECRET_AUDIT.md records the bounded review and Gate 7 advances only its exclusion
+baseline. Scanner patterns, allowlists, gap detection, runtime code and production
+configuration are unchanged.
 
-No secret value is read or written. No production Worker, Cloudflare binding,
-payment, entitlement, account permission or public rollout is changed by this
-commit. This branch is for review and CI only; production deployment remains a
-separate owner-approved action.
+## D084 — align production handoff gate with deployed environment semantics (2026-10-27)
+
+Cloudflare production inspection confirmed voxel-run-v2-demo intentionally has
+no APP_ENV or staging selector bindings. The router treats that exact unset state
+as the legacy Production deployment; only APP_ENV=staging selects the isolated
+Staging boundary. The first D083 test revision used a nonexistent
+APP_ENV=production value and was therefore correctly rejected by the staging
+boundary before ZoneRoom.
+
+Continuous Free handoff now follows the same trusted deployment distinction as
+the router: it is enabled only for the legacy Production environment
+(APP_ENV undefined) or explicit Staging (APP_ENV=staging). Any other APP_ENV
+value remains fail-closed. The production runtime fixture again uses the normal
+unset environment and exercises the full continuous cutover.
+
+## D083 — promote continuous Free Zone handoff to production path (2026-10-27)
+
+Production mobile video 7586.mp4 reproduced a legacy Zone rollback: a boundary
+crossing displayed “ย้าย Zone ไม่สำเร็จ...” and restored the old source pose,
+visible as a teleport. Ordered movement batching fixed ordinary in-zone
+reconciliation, but the verified continuous handoff was still gated to staging.
+
+This change enables the same bounded continuous ownership protocol for explicit
+production and staging Free Server environments only. During target warmup the
+source remains authoritative and accepts ordered frames; cutover seals the
+source queue, commits the latest server-authored position/motion/session/world
+snapshot, ACKs the target, then revokes the exact source generation.
+Cancellation returns to the still-owning source without rollback or time-credit
+refund. VIP remains on its separate room path.
+
+The default production client now includes continuous handoff hooks and its
+movement/economy sender follows the current authoritative source or confirmed
+target socket during handoff. Server physics, adjacent-zone checks, one-use
+tickets, Firebase/session ownership, frame validation, sequence fencing,
+economy idempotency and the 0.5-second movement budget are unchanged.
+Payment/Admin/Slip2Go/pricing/receiver/secrets are untouched.
+
+## D082 — promote ordered movement-frame batching to default client (2026-10-27)
+
+Starting source e56176232c8a3abf49e097fde7f4c8f80d1b0d2a. Mobile production video showed repeated walking
+rubber-banding/teleport corrections. Production still predicted every render
+frame but transmitted only the newest input every 200 ms. The already-verified
+Staging gameplay correction proved this causes client/server elapsed-time
+mismatch and hard reconciliation snaps under direction changes or packet delay.
+
+This bounded change promotes only ordered movement-frame batching to the default
+client. Each MOVE carries the exact predicted frames for that sequence, batches
+remain within the Worker's existing 0.5-second authority budget, high render
+rates flush before overflow, spawn/reconnect resets discard pre-reset render
+time, and coin pickup flushes unsent movement before COLLECT. Server physics,
+speed entitlement, collision, sequence validation, anti-cheat and the 200 ms
+network cadence remain unchanged.
+
+Continuous Zone handoff remains staging-only in this commit; this targets the
+repeated in-zone snap visible in the production recording first. Payment, Admin,
+Slip2Go, pricing and rollout paths are untouched.
+
+## D081 — review Gate 7 synthetic credential candidate (2026-10-27)
+
+Starting source 865ec976d6f79d28f508843cfe8247e09b3ddbaf. The corrected payment-history
+tests passed the full development verification suite, but Gate 7 then stopped on
+two identical incremental secret-scanner candidates at the pre-existing synthetic
+invalid-auth fixture in `tests/rebuild/p0-runtime.test.cjs`. The scanner reported
+no coverage gaps. Private review confirmed the candidate is test-only and is not
+a usable credential; the feature itself adds no secret or account values.
+
+SECRET_AUDIT.md records the bounded review and Gate 7 advances only its exclusion
+baseline to the reviewed source. No scanner pattern, allowlist, rejection rule,
+runtime code, payment behavior, production configuration or provider integration
+is weakened or changed. P9 on the D079 runtime source passed.
+
+## D080 — payment-history test ordering correction (2026-10-27)
+
+Starting source 471fb5caf13e102a9b323cf34c0590fabfb3183c. Gate 7 showed the new
+payment-history runtime and Admin tests passing, with one failure only in the
+existing P0 payment test because the synthetic clock gave the successful grant
+and duplicate retry the same millisecond timestamp. SQLite therefore returned
+the two history rows in an unspecified order.
+
+Commit c5ddf9e217deb2ba86887bfd35676be39d175348 changes only that assertion to
+verify the same exact set of statuses without assuming row order. No runtime,
+Admin UI, payment behavior, provider request, production configuration or secret
+is changed. P9 on D079 passed; Gate 7 must rerun on this corrected source.
+
+## D076 — remove Slip2Go global duplicate flag; keep server transaction idempotency (2026-10-27)
+
+Starting source 71ee0cacc3aceae8a901d4d66a6c0463ecb97f0c. Owner approved this bounded change after a real
+50 THB transfer was accepted by the bank but Slip2Go returned 200501
+"Slip is Duplicated" when the game submitted the receipt with
+`checkDuplicate: true`.
+
+Slip2Go documents `checkDuplicate` as an optional condition. This change omits
+that provider-global duplicate condition while preserving the receiver-account
+and exact-amount checks. The game continues to derive a provider transaction
+identifier from `transRef`/reference data and enforces one-time granting in the
+Durable Object payment ledger, where `voxel_payments.transaction_id` is a
+PRIMARY KEY and existing transactions fail closed as duplicates.
+
+The regression test now requires receiver and amount checks, rejects any
+`checkDuplicate` field in the Slip2Go payload, and preserves Bearer auth.
+No secret, payment recipient, price, entitlement duration, public rollout or
+production Worker is changed by this development commit.
+
+## D074 — align synthetic Slip2Go harness with Bearer auth (2026-10-26)
+
+Starting source d8e2ba508afcb6b71be20679637500cb66b709a3. Gate 7 on D073 reached the new Slip2Go Bearer
+regression successfully, then three pre-existing payment-dependent tests failed
+with HTTP 502 because the shared synthetic harness still accepted only the old
+raw-secret Authorization value. This is fixture drift caused by the D073 auth
+correction, not a provider or entitlement regression.
+
+Updated only the local synthetic Slip2Go fetch guard to require
+`Bearer synthetic-slip-secret`. No application runtime, Cloudflare binding,
+secret, production configuration or payment behavior changed in this follow-up.
+The failed tests were P0 synthetic VIP payment, P2 entitlement refresh and P3
+authoritative speed entitlement; all three depend on the same harness provider
+stub. GitHub CI must re-run before promotion.
+
+Production main remains unchanged and still requires a separate narrow hotfix for
+both PR #7 Slip2Go provider call sites. The earlier automatic staging workflow
+completed successfully, but staging remained `PAYMENT_MODE=provider-neutral-test`;
+production was read-only verified unchanged.
+
+## D073 — Slip2Go Bearer authentication guard (2026-10-26)
+
+Starting source ac99cf30be1d97cbad13998546ceeeec2aa20aea. Owner-approved correction after the live production
+canary returned Slip2Go 401001 Authentication Token Mismatch. The merged
+production payment change in PR #7 introduced two provider call sites on main
+(QR generation and slip verification) that sent the protected API secret as the
+entire Authorization value. The Slip2Go Authentication example shown by the
+owner requires a Bearer credential scheme.
+
+This bounded development-branch change updates the existing Slip2Go verification
+call to send `Authorization: Bearer <secret>` without exposing the secret and
+adds a regression that rejects any raw `Authorization: env.SLIP2GO_API_SECRET`
+usage in `src/worker/http.mjs`. The current development branch does not yet
+contain main's production QR-generation handler, so this task does not claim the
+live production QR call is fixed yet.
+
+Pre-publish checks available in this execution: exact-source guard confirmed one
+raw development call before replacement; patched-source guard confirmed no raw
+call remains and the Bearer form is present; the new Node test file passed
+`node --check`. The full repository runner could not be executed locally because
+this environment cannot resolve github.com for cloning. GitHub CI is required
+before any promotion. No main change, merge, production deployment, payment,
+secret read/rotation, account permission change or provider request was made.
+
+Unresolved blocker: production main still needs a narrowly reviewed hotfix for
+both PR #7 provider call sites, followed by full tests/dry-run and separate owner
+authorization before production deployment.
 
 ## D070 — reconcile Gate 7 reviewed history baseline (2026-10-23)
 

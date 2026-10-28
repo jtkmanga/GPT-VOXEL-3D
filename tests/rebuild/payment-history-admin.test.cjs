@@ -41,15 +41,6 @@ test('payment history rejects unsupported statuses and oversized unsafe fields',
   assert.equal(invalid.body.ok,false);
 });
 
-test('production payment adapter records success, duplicate and failure outcomes without slip bytes',()=>{
-  const source=readFileSync('src/worker/http.mjs','utf8');
-  assert.match(source,/recordPaymentHistory/);
-  assert.match(source,/status:'granted'/);
-  assert.match(source,/duplicate\?'duplicate':'grant_failed'/);
-  assert.match(source,/status:'rejected'/);
-  assert.doesNotMatch(source,/recordPaymentHistory[^\n]*file/);
-});
-
 test('admin UI exposes payment/slip history controls without raw slip/account fields',()=>{
   const source=readFileSync('src/worker/admin.mjs','utf8');
   assert.match(source,/ประวัติการชำระเงิน \/ สลิป/);

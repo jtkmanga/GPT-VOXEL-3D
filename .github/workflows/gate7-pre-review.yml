@@ -43,7 +43,7 @@ jobs:
         run: |
           set +e
           set -uo pipefail
-          python scripts/rebuild/audit-git-secrets.py             --include "$(git rev-parse HEAD)"             --exclude 81b3f0a60aea02835daac19221569d1123ee46b9             > /tmp/gate7-secret-audit.json
+          python scripts/rebuild/audit-git-secrets.py             --include "$(git rev-parse HEAD)"             --exclude 1da57429880bbfd80e1b31f5ac52098433bd494c             > /tmp/gate7-secret-audit.json
           set -e
           node -e "const r=require('/tmp/gate7-secret-audit.json'); const dangerous=r.findings.filter(f=>f.type!=='Firebase web API key'); const publicReview=r.findings.filter(f=>f.type==='Firebase web API key'); const expectedPublic=new Set(['index.html','src/client/auth-state.js']); const unexpectedPublic=publicReview.filter(f=>!expectedPublic.has(f.path)); if(dangerous.length||unexpectedPublic.length||r.gaps.length){console.error(JSON.stringify({findings:[...dangerous,...unexpectedPublic].map(({type,path,line})=>({type,path,line})),gaps:r.gaps.map(({path,reason})=>({path,reason}))},null,2));process.exit(1)} console.log('PASS incremental secret audit:',r.objects,'objects; reviewed baseline Firebase web config:',publicReview.length)"
       - name: Production payment remains fail-closed
