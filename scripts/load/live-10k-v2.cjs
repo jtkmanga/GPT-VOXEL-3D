@@ -412,7 +412,7 @@ async function run() {
         samples:ackLatencyMs.length,
         p50:percentile(ackLatencyMs,0.50),
         p95:percentile(ackLatencyMs,0.95),
-        max:ackLatencyMs.length?Math.max(...ackLatencyMs):null
+        max:ackLatencyMs.length?ackLatencyMs.reduce((max,v)=>Math.max(max,v),0):null
       }
     },
     stats,
