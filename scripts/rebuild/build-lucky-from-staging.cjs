@@ -44,7 +44,8 @@ async function build() {
   const prependScript =
     'const STAGING_PUBLIC_CONFIG = Object.freeze({authMode:"popup"});\n' +
     'const STAGING_CLIENT_ENABLED = window.location.origin === ' + JSON.stringify(origin) + ';\n' +
-    'const LUCKY_SLIP2GO_UI_ENABLED = ' + JSON.stringify(paymentEnabled) + ';\n';
+    'const LUCKY_SLIP2GO_UI_ENABLED = ' + JSON.stringify(paymentEnabled) + ';\n' +
+    'const LUCKY_SLIP2GO_CANARY_OWNER_EMAIL = ' + JSON.stringify('jtkmanga@gmail.com') + ';\n';
   let html = await buildClient({
     prependScript,
     appendScript: runtime,
