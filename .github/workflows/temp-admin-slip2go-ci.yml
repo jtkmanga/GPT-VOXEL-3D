@@ -9,6 +9,7 @@ on:
       - src/client/secure-entitlements-payment.js
       - scripts/rebuild/build-lucky-from-staging.cjs
       - tests/rebuild/slip2go-admin-canary-ui.test.cjs
+      - .github/workflows/deploy-slip2go-admin-canary.yml
 
 permissions:
   contents: write
@@ -71,6 +72,18 @@ jobs:
           grep -q 'const LUCKY_SLIP2GO_CANARY_OWNER_EMAIL' index.html
           grep -q 'SLIP2GO CANARY (OWNER ONLY)' index.html
           git diff --check
+      - name: Validate release workflow and Canary binding safeguards without deploying
+        shell: bash
+        run: |
+          set -euo pipefail
+          ruby -e "require 'yaml'; YAML.load_file('.github/workflows/deploy-slip2go-admin-canary.yml', aliases: true); puts 'PASS YAML syntax'"
+          grep -q "PAYMENT_ROLLOUT']='canary'" .github/workflows/deploy-slip2go-admin-canary.yml
+          grep -q "PAYMENT_MODE']='slip2go-production'" .github/workflows/deploy-slip2go-admin-canary.yml
+          grep -q "'secret_names'" .github/workflows/deploy-slip2go-admin-canary.yml
+          grep -q "'namespace_ids'" .github/workflows/deploy-slip2go-admin-canary.yml
+          grep -q 'anonymous payment request accepted' .github/workflows/deploy-slip2go-admin-canary.yml
+          npx wrangler deploy --dry-run --config wrangler.jsonc --outdir work/slip2go-admin-canary-ci
+          test -d work/slip2go-admin-canary-ci
       - name: Commit generated canary HTML only on guarded branch
         shell: bash
         run: |
