@@ -1,0 +1,96 @@
+name: Temporary Slip2Go Stable Gameplay CI
+
+on:
+  push:
+    branches:
+      - feat/restore-slip2go-on-stable-gameplay-20261028
+    paths:
+      - '.github/workflows/temp-slip2go-stable-ci.yml'
+      - 'src/worker/http.mjs'
+      - 'src/worker/router.mjs'
+      - 'src/client/secure-entitlements-payment.js'
+      - 'src/client/staging-runtime.js'
+      - 'scripts/rebuild/build-lucky-from-staging.cjs'
+      - 'tests/rebuild/slip2go-payment.test.cjs'
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    environment: production
+    timeout-minutes: 18
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci
+      - name: Verify unchanged stable gameplay and payment disabled
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git diff --quiet origin/main HEAD -- src/worker/room-security.mjs src/worker/game-room.mjs src/worker/zone-room.mjs src/worker/movement.mjs src/shared/movement.mjs src/client/secure-socket-handoff.js src/client/wheel-frame.js src/client/world.js
+          grep -q '"PAYMENT_MODE": "disabled"' wrangler.jsonc
+          test ! -e src/client/production-staging-gameplay.js
+          echo 'PASS Stable Free/VIP gameplay and disabled payment preserved'
+      - name: Fetch only existing public App Check site key, mask logs
+        shell: python
+        run: |
+          import os,json,urllib.request,re
+          token=os.environ['CLOUDFLARE_API_TOKEN']
+          account=os.environ['CLOUDFLARE_ACCOUNT_ID']
+          url=f'https://api.cloudflare.com/client/v4/accounts/{account}/workers/scripts/voxel-run-v2-demo/settings'
+          req=urllib.request.Request(url,headers={'Authorization':'Bearer '+token,'Accept':'application/json'})
+          with urllib.request.urlopen(req,timeout=25) as r: data=json.load(r)
+          bindings=data['result']['bindings']
+          secrets={b['name'] for b in bindings if b.get('type')=='secret_text'}
+          assert {'SLIP2GO_API_SECRET','PAYMENT_RECEIVER_ACCOUNT'} <= secrets
+          assert next(b['text'] for b in bindings if b.get('name')=='PAYMENT_MODE')=='disabled'
+          site=next(b.get('text') for b in bindings if b.get('name')=='FIREBASE_APP_CHECK_SITE_KEY')
+          assert re.fullmatch(r'6L[A-Za-z0-9_-]{30,80}',site)
+          print('::add-mask::'+site)
+          with open(os.environ['GITHUB_ENV'],'a') as f: f.write('LUCKY_APP_CHECK_SITE_KEY='+site+'\n')
+          print('PASS original payment secrets exist; no secret values retrieved')
+      - name: Rebuild disabled-payment public client and check canary compilation offline
+        run: |
+          node scripts/rebuild/build-lucky-from-staging.cjs
+          node scripts/rebuild/build-lucky-from-staging.cjs --check
+          node - <<'NODE'
+          const {build}=require('./scripts/rebuild/build-lucky-from-staging.cjs');
+          process.env.LUCKY_SLIP2GO_UI_ENABLED='1';
+          build().then(html=>{
+            if(!html.includes('LUCKY_SLIP2GO_UI_ENABLED = true')||!html.includes("'/payment-qr'")&&!html.includes("'/payment-qr'"))
+              throw Error('Canary payment UI not compiled');
+            console.log('PASS canary bundle available only in memory (not published)');
+          }).catch(e=>{console.error(e.message);process.exit(1)});
+          NODE
+          node scripts/rebuild/check-syntax.cjs
+          git diff --check
+      - name: Commit disabled-payment generated client only
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! git diff --quiet -- index.html; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add index.html
+            git commit -m "build(client): include gated Slip2Go UI on stable gameplay"
+            git push origin HEAD:feat/restore-slip2go-on-stable-gameplay-20261028
+          fi
+      - name: Run offline provider and gameplay regression tests
+        run: |
+          node --test tests/rebuild/slip2go-payment.test.cjs tests/rebuild/slip2go-auth.test.cjs tests/rebuild/payment-qr-cache.test.cjs tests/rebuild/vip-movement-session-scale.test.cjs tests/rebuild/staging-movement-regression.test.cjs
+          node scripts/rebuild/check-secrets.cjs
+      - name: Production Worker dry run without provider requests or live load
+        run: |
+          npx wrangler deploy --dry-run --config wrangler.jsonc --outdir work/slip2go-stable-dry-run
+          test -d work/slip2go-stable-dry-run
+          git diff --check
