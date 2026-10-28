@@ -5632,8 +5632,12 @@ async function stagingStartVipSandboxCheckout() {
         return false;
     }
 }
+// The legacy 2C2P Sandbox fallback belongs only to the original Staging
+// build, which does not define LUCKY_SLIP2GO_UI_ENABLED. On Lucky Game the
+// flag is always defined: false means payments are closed; true means the
+// secure Slip2Go handler owns the VIP button. Never route Lucky VIP to 2C2P.
 if (stagingOriginalOpenPaymentModal &&
-    (typeof LUCKY_SLIP2GO_UI_ENABLED === 'undefined' || !LUCKY_SLIP2GO_UI_ENABLED)) {
+    typeof LUCKY_SLIP2GO_UI_ENABLED === 'undefined') {
     openPaymentModal = function(type, price, title) {
         if (STAGING_CLIENT_ENABLED && type === 'vip1') {
             void stagingStartVipSandboxCheckout();
@@ -5645,7 +5649,8 @@ if (stagingOriginalOpenPaymentModal &&
 
 function stagingSandboxPaymentReturnRequested() {
     try {
-        return STAGING_CLIENT_ENABLED && typeof window.location?.search === 'string' &&
+        return typeof LUCKY_SLIP2GO_UI_ENABLED === 'undefined' &&
+            STAGING_CLIENT_ENABLED && typeof window.location?.search === 'string' &&
             new URLSearchParams(window.location.search).get('payment') === 'sandbox-return';
     } catch (_) { return false; }
 }
