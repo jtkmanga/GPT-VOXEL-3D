@@ -1,0 +1,152 @@
+name: Deploy Slip2Go Admin-only Canary
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/deploy-slip2go-admin-canary.yml'
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type ADMIN-SLIP2GO-CANARY to re-run the guarded release'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-voxel-run-v2-demo-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || inputs.confirm == 'ADMIN-SLIP2GO-CANARY')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 22
+    environment: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci
+      - name: Guard Admin-only frontend, stable movement and payment authorization
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/main"
+          grep -q '"name": "voxel-run-v2-demo"' wrangler.jsonc
+          grep -q '"PAYMENT_MODE": "disabled"' wrangler.jsonc
+          test ! -e src/client/production-staging-gameplay.js
+          grep -q 'const LUCKY_SLIP2GO_UI_ENABLED = true' index.html
+          grep -q 'const LUCKY_SLIP2GO_CANARY_OWNER_EMAIL = "jtkmanga@gmail.com"' index.html
+          grep -q 'SLIP2GO CANARY (OWNER ONLY)' index.html
+          grep -q 'VIP_MOVEMENT_HEARTBEAT_BASE_MS = 5_000' src/worker/room-security.mjs
+          grep -q "if(rollout!=='canary') return false" src/worker/http.mjs
+          node --test tests/rebuild/slip2go-admin-canary-ui.test.cjs tests/rebuild/slip2go-payment.test.cjs tests/rebuild/slip2go-auth.test.cjs tests/rebuild/payment-qr-cache.test.cjs tests/rebuild/vip-movement-session-scale.test.cjs tests/rebuild/staging-movement-regression.test.cjs
+          node scripts/rebuild/check-syntax.cjs
+          node scripts/rebuild/check-secrets.cjs
+          git diff --check
+      - name: Prepare unchanged production identity plus restricted payment flags
+        shell: python
+        run: |
+          import os,json,pathlib,urllib.request
+          token=os.environ.get('CLOUDFLARE_API_TOKEN','')
+          account=os.environ.get('CLOUDFLARE_ACCOUNT_ID','')
+          if not token or not account: raise SystemExit('Production deploy credentials unavailable')
+          url=f'https://api.cloudflare.com/client/v4/accounts/{account}/workers/scripts/voxel-run-v2-demo/settings'
+          req=urllib.request.Request(url,headers={'Authorization':'Bearer '+token,'Accept':'application/json'})
+          with urllib.request.urlopen(req,timeout=30) as r: data=json.load(r)
+          bindings=data.get('result',{}).get('bindings',[])
+          b={x['name']:x for x in bindings}
+          assert b['ADMIN_OWNER_EMAIL']['text'].strip().lower()=='jtkmanga@gmail.com'
+          assert b['ALLOWED_ORIGIN']['text']=='https://jtkmanga.github.io'
+          assert b['FIREBASE_PROJECT_ID']['text']=='lucky-game-6936b'
+          assert b['PAYMENT_MODE']['text'] in ('disabled','slip2go-production')
+          assert b['PAYMENT_ROLLOUT']['text'] in ('disabled','canary')
+          assert b['PAYMENT_MODE']['text']=='disabled' or b['PAYMENT_ROLLOUT']['text']=='canary'
+          assert all(b[n]['type']=='secret_text' for n in ('SLIP2GO_API_SECRET','PAYMENT_RECEIVER_ACCOUNT'))
+          for n,k in [('ROOM','GameRoom'),('ZONE','ZoneRoom')]:
+              assert b[n]['type']=='durable_object_namespace' and b[n]['class_name']==k and b[n].get('namespace_id')
+          assert b.get('PAYMENT_RECEIVER_TYPE',{}).get('text') in ('phone_number','citizen_id','e_wallet')
+          plain={x['name']:x['text'] for x in bindings if x.get('type')=='plain_text'}
+          assert not any(n in plain for n in ('APP_ENV','STAGING_WORKER_NAME','STAGING_WORKER_ORIGIN'))
+          prepared=pathlib.Path('work/admin-slip2go-canary')
+          prepared.mkdir(parents=True,exist_ok=True)
+          cfg=json.load(open('wrangler.jsonc'))
+          cfg['main']='../../worker.js'
+          cfg['vars']=dict(plain)
+          cfg['vars']['PAYMENT_MODE']='slip2go-production'
+          cfg['vars']['PAYMENT_ROLLOUT']='canary'
+          cfg['triggers']={'crons':['0 17 * * *']}
+          (prepared/'wrangler.jsonc').write_text(json.dumps(cfg))
+          before={'plain':{k:v for k,v in plain.items() if k not in ('PAYMENT_MODE','PAYMENT_ROLLOUT')},
+                  'namespace_ids':{k:b[k]['namespace_id'] for k in ('ROOM','ZONE')},
+                  'secret_names':sorted(x['name'] for x in bindings if x.get('type')=='secret_text')}
+          (prepared/'before.json').write_text(json.dumps(before))
+          print('PASS owner-only restriction, existing namespace IDs, protected secrets and cron-ready config')
+      - name: Dry-run full unchanged game Worker plus restricted Canary flags
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --dry-run --config work/admin-slip2go-canary/wrangler.jsonc --outdir work/admin-slip2go-dry-run
+          test -d work/admin-slip2go-dry-run
+      - name: Deploy canary to original Worker retaining secrets and data
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --config work/admin-slip2go-canary/wrangler.jsonc
+      - name: Verify owner restriction and original bindings after deploy
+        shell: python
+        run: |
+          import os,json,urllib.request
+          token=os.environ['CLOUDFLARE_API_TOKEN']
+          account=os.environ['CLOUDFLARE_ACCOUNT_ID']
+          url=f'https://api.cloudflare.com/client/v4/accounts/{account}/workers/scripts/voxel-run-v2-demo/settings'
+          req=urllib.request.Request(url,headers={'Authorization':'Bearer '+token,'Accept':'application/json'})
+          with urllib.request.urlopen(req,timeout=30) as r: data=json.load(r)
+          b={x['name']:x for x in data['result']['bindings']}
+          before=json.load(open('work/admin-slip2go-canary/before.json'))
+          assert b['PAYMENT_MODE']['text']=='slip2go-production'
+          assert b['PAYMENT_ROLLOUT']['text']=='canary'
+          assert b['ADMIN_OWNER_EMAIL']['text'].strip().lower()=='jtkmanga@gmail.com'
+          assert b['ALLOWED_ORIGIN']['text']=='https://jtkmanga.github.io'
+          assert b['FIREBASE_PROJECT_ID']['text']=='lucky-game-6936b'
+          for name,value in before['plain'].items():
+              assert b.get(name,{}).get('type')=='plain_text' and b[name].get('text')==value, 'Plain binding altered: '+name
+          for name,ns in before['namespace_ids'].items():
+              assert b.get(name,{}).get('namespace_id')==ns,'DO namespace changed'
+          assert all(b.get(n,{}).get('type')=='secret_text' for n in before['secret_names'])
+          print('PASS Admin-only live payment mode, unchanged player data namespaces, Firebase and secrets')
+      - name: Probe public health and anonymous payment denial without provider requests
+        shell: python
+        run: |
+          import urllib.request,urllib.error
+          base='https://voxel-run-v2-demo.hjinffv5426.workers.dev'
+          opener=urllib.request.build_opener()
+          opener.addheaders=[('User-Agent','VOXEL-Admin-Canary-Check/1.0'),
+                             ('Origin','https://jtkmanga.github.io'),
+                             ('Accept','application/json')]
+          with opener.open(base+'/health',timeout=25) as r:
+              assert r.status==200 and r.read().decode().strip()=='VOXEL RUN v4 online'
+          for endpoint,data,kind in [
+              ('/payment-qr',b'{"item":"vip1"}','application/json'),
+              ('/verify-slip',b'','application/octet-stream')]:
+              req=urllib.request.Request(base+endpoint,data=data,method='POST',headers={'content-type':kind})
+              try:
+                  opener.open(req,timeout=25)
+                  raise SystemExit('FAIL: anonymous payment request accepted: '+endpoint)
+              except urllib.error.HTTPError as e:
+                  if e.code not in (401,403):
+                      raise SystemExit('FAIL: expected anonymous rejection: '+endpoint+' status '+str(e.code))
+          print('PASS worker healthy; both Canary payment endpoints reject anonymous users, no provider call')
