@@ -1,0 +1,37 @@
+name: Temporary VIP Movement Regression
+
+on:
+  push:
+    branches:
+      - fix/vip-movement-local-lease-20261028
+    paths:
+      - .github/workflows/temp-vip-movement-ci.yml
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci
+      - name: VIP movement / entitlement / free-zone regressions
+        run: |
+          node --test tests/rebuild/vip-movement-session-scale.test.cjs \
+            tests/rebuild/p7-vip.test.cjs \
+            tests/rebuild/staging-session-scale.test.cjs \
+            tests/rebuild/staging-movement-regression.test.cjs
+      - name: Source syntax, secret, production config and dry-run bundle
+        run: |
+          node scripts/rebuild/check-syntax.cjs
+          node scripts/rebuild/check-secrets.cjs
+          npx wrangler deploy --dry-run --config wrangler.jsonc --outdir work/vip-dry-run
+          git diff --check
