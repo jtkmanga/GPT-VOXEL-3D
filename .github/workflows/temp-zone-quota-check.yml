@@ -1,0 +1,48 @@
+name: Temporary Staging Zone Quota Check
+
+on:
+  push:
+    branches:
+      - development/voxel-continuous
+    paths:
+      - .github/workflows/temp-zone-quota-check.yml
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostic:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm install --no-save --ignore-scripts ws@8.18.3
+      - name: Inspect single Staging Zone handshake after Worker update
+        shell: bash
+        run: |
+          node <<'NODE'
+          const WebSocket=require('ws');
+          const url='wss://gpt-voxel-3d-staging-01.hjinffv5426.workers.dev/play?zone=5%2C5';
+          const origin='https://gpt-voxel-3d-staging-01.hjinffv5426.workers.dev';
+          const w=new WebSocket(url,[],{origin,handshakeTimeout:8000});
+          let complete=false;
+          const done=()=>{ if(complete) return; complete=true; try{w.terminate()}catch{}; process.exit(0); };
+          setTimeout(()=>{console.log('ZONE RESULT timeout');done()},11000);
+          w.on('open',()=>{
+            console.log('ZONE RESULT 101 upgrade succeeded');
+            w.send(JSON.stringify({type:'move',seq:0,input:{x:0,z:0,jump:false}}));
+          });
+          w.on('unexpected-response',(_req,res)=>{
+            let body='';
+            res.on('data',chunk=>{if(body.length<300)body+=String(chunk)});
+            res.on('end',()=>{console.log('ZONE RESULT HTTP',res.statusCode,body.slice(0,220));done()});
+            res.on('error',()=>{console.log('ZONE RESULT HTTP',res.statusCode,'[body unavailable]');done()});
+          });
+          w.on('close',(code,reason)=>{console.log('ZONE RESULT CLOSE',code,String(reason).slice(0,80));done()});
+          w.on('error',e=>{console.log('ZONE ERROR',e.code||e.name)});
+          NODE
