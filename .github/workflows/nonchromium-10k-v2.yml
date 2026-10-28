@@ -70,6 +70,11 @@ jobs:
       - name: Actually connect 250 simulated users to local WebSocket server
         run: |
           LOCAL_BOT_COUNT=250 node scripts/load/loopback-v2-smoke.cjs
+      - name: Exercise all 10,000 real local WebSockets without Cloudflare or Firebase
+        run: |
+          set -euo pipefail
+          ulimit -n 65535 || true
+          LOCAL_BOT_COUNT=10000 node scripts/load/loopback-v2-smoke.cjs
       - name: Upload sanitized local generator report (not a Cloudflare capacity claim)
         if: always()
         uses: actions/upload-artifact@v4
